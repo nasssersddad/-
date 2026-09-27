@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">المزارع</string>
+    <string name="reminder_channel">تذكير المكافآت</string>
+    <string name="reminder_title">زعبول يناديك 🪔</string>
+    <string name="reminder_text">مكافأتك اليومية جاهزة، والخان جمع لك دراهم! 🎁</string>
+    <string name="ad_not_ready">الإعلان مو جاهز، جرّب بعد شوي</string>
+    <string name="press_back_again">اضغط رجوع مرة ثانية للخروج</string>
+</resources>

@@ -1,0 +1,922 @@
+// قلب اللعبة: الحركة، التفاعل، الضيوف، السرداب، الأيام
+import { buildWorld, tileAt, SOLID_TILES, TILE, MAP_W, MAP_H, T, WALL_N, WALL_S, KHAN } from './data/map.js';
+import { ITEMS, SEEDS, RELICS } from './data/items.js';
+import { BUILD_SPOTS } from './data/recipes.js';
+import { NPCS, GUEST_LOOKS, GUEST_NAMES, GUEST_WANTS, GUEST_LINES, WEEKDAYS } from './data/npcs.js';
+import { INTRO, LAMP_IDLE, MAIN_QUESTS } from './data/quests.js';
+import { GATHER_CHEST_CHANCE } from './data/rewards.js';
+import { newState, saveToStorage, loadFromStorage } from './systems/state.js';
+import { add, count, addStat } from './systems/inventory.js';
+import { applyReward, rollChestRarity, rollChest, doubleReward } from './systems/rewards.js';
+import { maxEnergy, maxHp, attackPower, coinMultiplier, stars, roomsBuilt } from './systems/progression.js';
+import { build, spotStatus } from './systems/crafting.js';
+import * as time from './systems/time.js';
+import * as farming from './systems/farming.js';
+import * as retention from './systems/retention.js';
+import { checkQuest, currentQuest } from './systems/quests.js';
+import { generateFloor, dTile, D, DW, DH, ENEMIES } from './systems/dungeon.js';
+import { mulberry32, pick, randInt } from './systems/util.js';
+import { showRewardedAd } from './systems/ads.js';
+
+const SPEED = 64;
+const ACTION_REPEAT = 0.34;
+
+export class Game {
+  constructor({ ui, audio, input, particles, storage }) {
+    this.ui = ui;
+    this.audio = audio;
+    this.input = input;
+    this.fx = particles;
+    this.storage = storage;
+    this.rng = Math.random;
+    this.clock = () => Date.now();
+    this.world = buildWorld();
+    this.worldObjById = Object.fromEntries(this.world.objects.map(o => [o.id, o]));
+    this.t = 0;
+    this.actionCd = 0;
+    this.swing = 0;
+    this.shake = 0;
+    this.hurtT = 0;
+    this.moving = false;
+    this.animT = 0;
+    this.target = null;
+    this.saveTimer = 0;
+    this.questTimer = 0;
+    this.tileDirty = true;
+    this.mode = 'world';
+    this.dungeon = null;
+    this.guestRt = [];
+    this.pausedBy = 0;
+    this.notifiedAch = new Set();
+  }
+
+  now() { return this.clock(); }
+
+  // حالة موقع البناء، ونخفي اللي يحتاج تقنية ما تعلمتها (إلا إذا كان هدف المهمة) عشان ما تزحم الشاشة
+  spotStatusFor(id) {
+    const st = spotStatus(this.state, id);
+    if (st.needTech) {
+      const q = currentQuest(this.state);
+      if (!q || q.target !== 'spot:' + id) return { ...st, hidden: true };
+    }
+    return st;
+  }
+
+  // ---------- البداية ----------
+  start() {
+    const loaded = loadFromStorage(this.storage, this.now());
+    this.state = loaded || newState(this.now());
+    const s = this.state;
+    if (!loaded) {
+      s.player.x = this.world.spawn.x;
+      s.player.y = this.world.spawn.y;
+    }
+    s.player.energy = Math.min(s.player.energy, maxEnergy(s));
+    s.player.hp = maxHp(s);
+    if (s.location !== 'world') { s.location = 'world'; this.placeAt(this.world.cryptExit); }
+    this.audio.music = s.settings.music;
+    this.audio.sfx = s.settings.sfx;
+    retention.ensureDailyQuests(s, this.now());
+    this.restoreGuests();
+    this.ui.bind(this);
+    this.welcome(!loaded);
+  }
+
+  async welcome(isNew) {
+    const s = this.state;
+    if (isNew || !s.introSeen) {
+      await this.ui.dialogue(INTRO);
+      s.introSeen = true;
+    } else {
+      const off = retention.offlineEarnings(s, this.now());
+      if (off) await this.offerOffline(off);
+    }
+    s.lastSeen = this.now();
+    const ds = retention.dailyStatus(s, this.now());
+    if (ds.available && s.quest.index >= 2) this.ui.openRewards('daily');
+    this.save();
+  }
+
+  async offerOffline(off) {
+    const hours = off.hours >= 1 ? `${Math.floor(off.hours)} ساعة` : `${Math.round(off.hours * 60)} دقيقة`;
+    const choice = await this.ui.offer({
+      title: 'رجعت؟ 🏜️',
+      subtitle: `الخان اشتغل وأنت غايب ${hours}${off.capped ? ' (الحد 8 ساعات)' : ''}، والضيوف دفعوا:`,
+      reward: { coins: off.coins },
+      ad: 'offline_x2',
+    });
+    this.claimReward({ coins: off.coins * (choice === 'x2' ? 2 : 1) }, null);
+  }
+
+  // ---------- الحفظ ----------
+  save() {
+    if (!this.state) return;
+    this.state.lastSeen = this.now();
+    this.state.guests.list = this.guestRt.map(g => ({ ...g }));
+    saveToStorage(this.state, this.storage);
+  }
+
+  // ---------- الحلقة ----------
+  update(dt) {
+    this.t += dt;
+    this.animT += dt;
+    this.fx.update(dt);
+    this.shake = Math.max(0, this.shake - dt * 30);
+    this.hurtT = Math.max(0, this.hurtT - dt);
+    this.saveTimer += dt;
+    if (this.saveTimer > 10) { this.saveTimer = 0; this.save(); }
+
+    if (this.ui.blocking()) { this.input.endFrame(); return; }
+    const s = this.state;
+
+    const newDays = time.advance(s, dt);
+    if (newDays) this.onNewDay(newDays);
+    this.audio.night = time.isNight(s) || this.mode === 'dungeon';
+
+    this.movePlayer(dt);
+    this.actionCd = Math.max(0, this.actionCd - dt);
+    this.swing = Math.max(0, this.swing - dt);
+
+    if (this.mode === 'world') this.updateWorld(dt);
+    else this.updateDungeon(dt);
+
+    this.target = this.findTarget();
+    if ((this.input.actionPressed || this.input.action) && this.actionCd <= 0) {
+      this.actionCd = ACTION_REPEAT;
+      this.doAction(this.target, this.input.actionPressed);
+    }
+    this.input.endFrame();
+
+    this.questTimer += dt;
+    if (this.questTimer > 0.5) { this.questTimer = 0; this.checkProgress(); }
+  }
+
+  updateWorld(dt) {
+    const s = this.state;
+    const h = time.hour(s);
+    if (s.guests.day !== s.time.day && h >= 7 && h < 17) this.spawnCaravan();
+    for (const g of this.guestRt) {
+      if (h >= 19 && !g.leaving) g.leaving = true;
+      const tgt = g.leaving ? this.world.caravanEntry : g.spot;
+      const dx = tgt.x - g.x, dy = tgt.y - g.y;
+      const d = Math.hypot(dx, dy);
+      g.moving = d > 2;
+      if (g.moving) {
+        const sp = 34 * dt;
+        g.x += (dx / d) * Math.min(sp, d);
+        g.y += (dy / d) * Math.min(sp, d);
+        g.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+      } else if (!g.leaving) g.dir = 'down';
+      if (g.leaving && !g.moving) g.gone = true;
+    }
+    if (this.guestRt.some(g => g.gone)) this.guestRt = this.guestRt.filter(g => !g.gone);
+  }
+
+  // ---------- الحركة والتصادم ----------
+  movePlayer(dt) {
+    const p = this.state.player;
+    const m = this.input.move();
+    this.moving = Math.hypot(m.x, m.y) > 0.1;
+    if (!this.moving) return;
+    const tired = p.energy <= 0 && this.mode === 'world';
+    const sp = SPEED * (tired ? 0.6 : 1) * Math.min(1, Math.hypot(m.x, m.y) * 1.3);
+    const len = Math.hypot(m.x, m.y) || 1;
+    const vx = (m.x / len) * sp * dt, vy = (m.y / len) * sp * dt;
+    if (Math.abs(m.x) > Math.abs(m.y)) p.dir = m.x > 0 ? 'right' : 'left';
+    else p.dir = m.y > 0 ? 'down' : 'up';
+    if (!this.blocked(p.x + vx, p.y)) p.x += vx;
+    if (!this.blocked(p.x, p.y + vy)) p.y += vy;
+  }
+
+  blocked(x, y) {
+    const pts = [[x - 4, y - 3], [x + 4, y - 3], [x - 4, y + 1], [x + 4, y + 1]];
+    if (this.mode === 'dungeon') {
+      return pts.some(([px, py]) => dTile(this.dungeon.tiles, Math.floor(px / TILE), Math.floor(py / TILE)) !== D.FLOOR);
+    }
+    for (const [px, py] of pts) {
+      if (SOLID_TILES.has(this.tileAtWorld(Math.floor(px / TILE), Math.floor(py / TILE)))) return true;
+    }
+    for (const b of this.solidBoxes()) {
+      if (x + 4 > b.x0 && x - 4 < b.x1 && y + 1 > b.y0 && y - 3 < b.y1) return true;
+    }
+    return false;
+  }
+
+  tileAtWorld(tx, ty) {
+    const t = tileAt(this.world.tiles, tx, ty);
+    if (t === T.RUBBLE) {
+      if (ty === WALL_N.y && this.state.built.wall_n) return T.WALL;
+      if (ty === KHAN.y1 && this.state.built.wall_s) return T.WALL;
+    }
+    return t;
+  }
+
+  solidBoxes() {
+    const s = this.state;
+    const key = Object.keys(s.built).length + ':' + s.time.day + ':' + Object.keys(s.nodes).length + ':' + (this.boxVersion || 0);
+    if (this._boxKey === key) return this._boxes;
+    const boxes = [];
+    const box = (o, w, h, dy = 0) => boxes.push({ x0: o.x - w / 2, x1: o.x + w / 2, y0: o.y - h + dy, y1: o.y + dy });
+    for (const o of this.world.objects) {
+      switch (o.kind) {
+        case 'palm': if (!this.depleted(o)) box(o, 8, 6); break;
+        case 'rock': if (!this.depleted(o)) box(o, 14, 7); break;
+        case 'well': box(o, 20, 8); break;
+        case 'station': box(o, o.station === 'hearth' ? 16 : 20, 6); break;
+        case 'tent': box(o, 40, 10); break;
+        case 'stall': box(o, 26, 7); break;
+        case 'spot':
+          if (s.built[o.spot] && ['kiln', 'mill', 'loom'].includes(o.spot)) box(o, 20, 7);
+          if (s.built[o.spot] && o.spot === 'fountain') box(o, 30, 9);
+          break;
+        default: break;
+      }
+    }
+    this._boxKey = key;
+    this._boxes = boxes;
+    return boxes;
+  }
+
+  placeAt(p) {
+    this.state.player.x = p.x;
+    this.state.player.y = p.y;
+  }
+
+  // ---------- الموارد ----------
+  depleted(o) {
+    const n = this.state.nodes[o.id];
+    return !!(n && n.respawnDay && n.respawnDay > this.state.time.day);
+  }
+
+  nodeHits(o) {
+    const n = this.state.nodes[o.id];
+    return n && !(n.respawnDay > this.state.time.day) ? n.hits || 0 : 0;
+  }
+
+  // ---------- الهدف ----------
+  interactables() {
+    const s = this.state;
+    const list = [];
+    if (this.mode === 'dungeon') {
+      const dg = this.dungeon;
+      for (const e of dg.enemies) if (e.hp > 0) list.push({ kind: 'enemy', ref: e, x: e.x, y: e.y, r: 26 });
+      for (const c of dg.chests) if (!c.opened) list.push({ kind: 'dchest', ref: c, x: c.x, y: c.y + 4 });
+      list.push({ kind: 'stairsUp', x: dg.up.x, y: dg.up.y + 6 });
+      if (dg.bossDead && dg.floor < 3) list.push({ kind: 'stairsDown', x: dg.down.x, y: dg.down.y + 6 });
+      return list;
+    }
+    for (const o of this.world.objects) {
+      switch (o.kind) {
+        case 'palm': case 'rock': case 'clay': case 'herb':
+          if (!this.depleted(o)) list.push({ kind: o.kind, ref: o, x: o.x, y: o.y });
+          break;
+        case 'well': case 'station': case 'lamp':
+          list.push({ kind: o.kind, ref: o, x: o.x, y: o.y });
+          break;
+        case 'plot':
+          if (o.group === 1 || s.built.farm2) list.push({ kind: 'plot', ref: o, x: o.x, y: o.y });
+          break;
+        case 'spot': {
+          const built = s.built[o.spot];
+          if (built && o.spot === 'my_bed') list.push({ kind: 'bed', ref: o, x: o.x, y: o.y });
+          else if (built && o.spot === 'crypt_door') list.push({ kind: 'crypt', ref: o, x: o.x, y: o.y });
+          else if (built && BUILD_SPOTS[o.spot].station) list.push({ kind: 'station', ref: { ...o, station: BUILD_SPOTS[o.spot].station }, x: o.x, y: o.y });
+          else if (!built) {
+            const st = this.spotStatusFor(o.spot);
+            if (o.spot === 'crypt_door' && st.hidden) list.push({ kind: 'sealed', ref: o, x: o.x, y: o.y });
+            else if (!st.hidden) list.push({ kind: 'spot', ref: o, x: o.x, y: o.y });
+          }
+          break;
+        }
+        default: break;
+      }
+    }
+    for (const c of s.groundChests || []) list.push({ kind: 'gchest', ref: c, x: c.x, y: c.y + 2 });
+    for (const [id, pos] of Object.entries(this.world.npcSpots)) {
+      if (this.npcPresent(id)) list.push({ kind: 'npc', id, x: pos.x, y: pos.y });
+    }
+    for (const g of this.guestRt) if (!g.leaving && !g.moving) list.push({ kind: 'guest', ref: g, x: g.x, y: g.y });
+    return list;
+  }
+
+  findTarget() {
+    const p = this.state.player;
+    const dirs = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+    const [dx, dy] = dirs[p.dir];
+    const probe = { x: p.x + dx * 10, y: p.y - 3 + dy * 10 };
+    let best = null, bd = 1e9;
+    for (const it of this.interactables()) {
+      const d = Math.hypot(it.x - probe.x, it.y - 4 - probe.y);
+      const dp = Math.hypot(it.x - p.x, it.y - p.y);
+      const lim = it.r || 20;
+      if ((d < lim || dp < 14) && Math.min(d, dp) < bd) { bd = Math.min(d, dp); best = it; }
+    }
+    return best;
+  }
+
+  npcPresent(id) {
+    const n = NPCS[id];
+    const s = this.state;
+    const h = time.hour(s);
+    return n.days.includes(time.weekday(s)) && h >= n.hours[0] && h < n.hours[1];
+  }
+
+  actionInfo(t) {
+    if (!t) return this.mode === 'dungeon' ? { icon: '⚔️', label: 'اضرب' } : { icon: '✋', label: '' };
+    const s = this.state;
+    switch (t.kind) {
+      case 'palm': return { icon: '🪓', label: 'اقطع' };
+      case 'rock': return { icon: '⛏️', label: 'اكسر' };
+      case 'clay': return { icon: '🪏', label: 'احفر' };
+      case 'herb': return { icon: '🌿', label: 'اقطف' };
+      case 'well': return { icon: '🪣', label: 'اسحب ماء' };
+      case 'station': return { icon: '🔨', label: 'اصنع' };
+      case 'spot': return { icon: '🏗️', label: 'ابنِ' };
+      case 'sealed': return { icon: '🔒', label: 'شوف' };
+      case 'lamp': return { icon: '💬', label: 'كلّم' };
+      case 'bed': return { icon: '😴', label: 'نام' };
+      case 'crypt': return { icon: '⬇️', label: 'انزل' };
+      case 'npc': return { icon: '🛒', label: 'بيع وشراء' };
+      case 'guest': return { icon: t.ref.served ? '💬' : '☕', label: 'قدّم' };
+      case 'gchest': case 'dchest': return { icon: '📦', label: 'افتح' };
+      case 'enemy': return { icon: '⚔️', label: 'اضرب' };
+      case 'stairsUp': return { icon: '⬆️', label: 'اطلع' };
+      case 'stairsDown': return { icon: '⬇️', label: 'انزل' };
+      case 'plot': {
+        const p = s.plots[t.ref.id];
+        if (!p) return { icon: '🌱', label: 'ازرع' };
+        if (farming.isReady(p)) return { icon: '🧺', label: 'احصد' };
+        if (!p.watered) return { icon: '💧', label: 'اسقِ' };
+        return { icon: '⏳', label: 'يكبر' };
+      }
+      default: return { icon: '✋', label: '' };
+    }
+  }
+
+  // ---------- الفعل ----------
+  spendEnergy(n) {
+    const p = this.state.player;
+    if (p.energy < n) {
+      this.audio.play('deny');
+      this.ui.energyPrompt();
+      this.input.action = false;
+      return false;
+    }
+    p.energy -= n;
+    return true;
+  }
+
+  doAction(t, fresh) {
+    if (this.mode === 'dungeon' && (!t || t.kind === 'enemy')) { this.attack(t); return; }
+    if (!t) return;
+    // الأفعال اللي تفتح قوائم ما تتكرر بالضغط المطوّل
+    const repeatable = ['palm', 'rock', 'clay', 'herb', 'well', 'plot'].includes(t.kind);
+    if (!fresh && !repeatable) return;
+    switch (t.kind) {
+      case 'palm': case 'rock': case 'clay': case 'herb': this.gather(t.ref); break;
+      case 'well': this.drawWater(t.ref); break;
+      case 'station': this.input.action = false; this.ui.openCraft(t.ref.station); break;
+      case 'spot': this.input.action = false; this.ui.openBuild(t.ref.spot); break;
+      case 'sealed': this.input.action = false; this.ui.dialogue([['lamp', 'هذا باب السرداب... مقفول بطلاسم. لا تستعجل، أقول لك متى.']]); break;
+      case 'lamp': this.input.action = false; this.talkLamp(); break;
+      case 'bed': this.input.action = false; this.trySleep(); break;
+      case 'crypt': this.input.action = false; this.enterCrypt(); break;
+      case 'npc': this.input.action = false; this.talkNpc(t.id); break;
+      case 'guest': this.input.action = false; this.serveGuest(t.ref); break;
+      case 'gchest': this.input.action = false; this.openGroundChest(t.ref); break;
+      case 'dchest': this.input.action = false; this.openDungeonChest(t.ref); break;
+      case 'stairsUp': this.input.action = false; this.exitDungeon(); break;
+      case 'stairsDown': this.input.action = false; this.enterFloor(this.dungeon.floor + 1); break;
+      case 'plot': this.plotAction(t.ref); break;
+      default: break;
+    }
+  }
+
+  hitFx(o, color, n = 6) {
+    this.swing = 0.25;
+    this.shake = Math.max(this.shake, 2);
+    o.shakeT = 0.15;
+    this.fx.burst(o.x, o.y - 8, color, n, 50, 0.5);
+    this.ui.vibrate(15);
+  }
+
+  gather(o) {
+    const s = this.state;
+    const tools = s.tech.t_tools ? 1 : 0;
+    const specs = {
+      palm: { hits: 3 - tools, cost: 3, sound: 'chop', color: ['#8a5a33', '#4f8a2f'], respawn: 2, stat: 'palms', kp: { n: 1 }, xp: 4 },
+      rock: { hits: 3 - tools, cost: 3, sound: 'mine', color: ['#9c948a', '#c4bcb0'], respawn: 2, stat: 'rocks', kp: { c: 1 }, xp: 4 },
+      clay: { hits: 1, cost: 3, sound: 'dig', color: ['#9a5a35', '#5a3620'], respawn: 1, stat: 'clay', kp: {}, xp: 3 },
+      herb: { hits: 1, cost: 1, sound: 'pick', color: ['#4f8a2f', '#e8e0f0'], respawn: 1, stat: 'herbs', kp: { n: 1 }, xp: 2 },
+    }[o.kind];
+    if (!this.spendEnergy(specs.cost)) return;
+    this.audio.play(specs.sound);
+    this.hitFx(o, specs.color);
+    const n = s.nodes[o.id] && !(s.nodes[o.id].respawnDay > s.time.day) ? s.nodes[o.id] : { hits: 0 };
+    n.hits = (n.hits || 0) + 1;
+    s.nodes[o.id] = n;
+    if (n.hits < specs.hits) return;
+    // خلص المورد
+    n.hits = 0;
+    n.respawnDay = s.time.day + specs.respawn;
+    this.boxVersion = (this.boxVersion || 0) + 1;
+    const loot = {};
+    if (o.kind === 'palm') { loot.wood = 2; loot.frond = randInt(this.rng, 1, 3); if (this.rng() < 0.45) loot.dates = randInt(this.rng, 1, 2); }
+    if (o.kind === 'rock') { loot.stone = randInt(this.rng, 2, 3); if (this.rng() < 0.08) loot.oldcoin = 1; }
+    if (o.kind === 'clay') loot.clay = randInt(this.rng, 1, 2);
+    if (o.kind === 'herb') { loot.herb = randInt(this.rng, 1, 2); if (this.rng() < 0.25) loot[pick(this.rng, ['seed_tomato', 'seed_wheat'])] = 1; }
+    addStat(s, specs.stat, 1);
+    for (const [k, v] of Object.entries(specs.kp)) s.kp[k] = (s.kp[k] || 0) + v;
+    this.gainItems(loot, o.x, o.y - 14);
+    this.gainXp(specs.xp, o.x, o.y - 24);
+    if (this.rng() < GATHER_CHEST_CHANCE || (!s.flags.firstChest && (s.stats.palms || 0) + (s.stats.rocks || 0) >= 4)) {
+      s.flags.firstChest = true;
+      this.dropChest(o.x + 10, o.y + 4, rollChestRarity(this.rng));
+    }
+  }
+
+  gainItems(loot, x, y) {
+    let i = 0;
+    for (const [id, n] of Object.entries(loot)) {
+      add(this.state, id, n);
+      this.fx.float(x, y - i * 9, `${ITEMS[id].icon} +${n}`, '#fff3c4', 13);
+      i++;
+    }
+    this.ui.refresh();
+  }
+
+  gainXp(n, x, y) {
+    const res = applyReward(this.state, { xp: n }, this.rng);
+    this.fx.float(x, y, `+${n} ✨`, '#b9f0ff', 11);
+    this.handleLevelUps(res);
+  }
+
+  handleLevelUps(res) {
+    if (!res.levelUps.length) return;
+    const p = this.state.player;
+    this.audio.play('level');
+    this.fx.confetti(p.x, p.y - 20);
+    this.shake = 4;
+    this.ui.levelUp(res.levelUps[res.levelUps.length - 1], res.levelGains || [], res.chests);
+  }
+
+  drawWater(o) {
+    if (!this.spendEnergy(1)) return;
+    this.audio.play('water');
+    this.hitFx(o, ['#57a9cf', '#a6def0'], 5);
+    addStat(this.state, 'water', 1);
+    this.gainItems({ water: 1 }, o.x, o.y - 26);
+    if (this.rng() < 0.5) this.gainXp(1, o.x, o.y - 34);
+  }
+
+  plotAction(o) {
+    const s = this.state;
+    const p = s.plots[o.id];
+    if (!p) {
+      const seed = farming.firstSeed(s);
+      if (!seed) { this.say('ما عندك بذور! اشترِ من أبو فهد أو أم ريم، أو دوّرها بالأعشاب.'); this.input.action = false; return; }
+      if (!this.spendEnergy(1)) return;
+      farming.plant(s, o.id, seed);
+      this.audio.play('plant');
+      this.hitFx(o, ['#7a4f2e', '#6cc24a'], 5);
+      this.fx.float(o.x, o.y - 16, `🌱 ${SEEDS[seed].name}`, '#d8ffb0', 12);
+      this.gainXp(2, o.x, o.y - 26);
+      return;
+    }
+    if (farming.isReady(p)) {
+      if (!this.spendEnergy(1)) return;
+      const h = farming.harvest(s, o.id, this.rng);
+      this.audio.play('pick');
+      this.hitFx(o, ['#e6c050', '#d9401a', '#6cc24a'], 10);
+      this.fx.float(o.x, o.y - 16, `${ITEMS[h.crop].icon} +${h.n}`, '#fff3c4', 13);
+      s.kp.n = (s.kp.n || 0) + 1;
+      this.gainXp(6, o.x, o.y - 28);
+      this.ui.refresh();
+      return;
+    }
+    if (!p.watered) {
+      if (count(s, 'water') < 1) { this.say('تحتاج ماء! اسحب من البير اللي بنص الخان.'); this.input.action = false; return; }
+      if (!this.spendEnergy(1)) return;
+      farming.water(s, o.id);
+      this.audio.play('water');
+      this.fx.burst(o.x, o.y - 6, ['#57a9cf', '#a6def0'], 10, 40, 0.5);
+      this.gainXp(1, o.x, o.y - 20);
+      this.ui.refresh();
+      return;
+    }
+    this.input.action = false;
+    this.fx.float(o.x, o.y - 16, 'انسقى اليوم ✔', '#b9f0ff', 11);
+  }
+
+  say(text, who = 'lamp') {
+    this.ui.toast(`${who === 'lamp' ? '🪔 زعبول: ' : ''}${text}`);
+  }
+
+  dropChest(x, y, rarity) {
+    const s = this.state;
+    s.groundChests = s.groundChests || [];
+    s.groundChests.push({ x, y, rarity, t: this.t });
+    this.audio.play('chest');
+    this.fx.burst(x, y - 6, ['#ffd24a', '#fff6c0'], 16, 70, 0.8);
+    this.fx.float(x, y - 22, 'صندوق كنز! 📦', '#ffd24a', 14);
+  }
+
+  async openGroundChest(c) {
+    const s = this.state;
+    s.groundChests = s.groundChests.filter(x => x !== c);
+    await this.openChestFlow(c.rarity);
+  }
+
+  async openChestFlow(rarity) {
+    const contents = rollChest(this.state, rarity, this.rng);
+    this.audio.play('chest');
+    const choice = await this.ui.chest(rarity, contents);
+    const final = choice === 'x2' ? doubleReward(contents) : contents;
+    addStat(this.state, 'chests', 1);
+    this.claimReward(final, null, true);
+  }
+
+  // يطبق مكافأة ويعرضها
+  claimReward(reward, title, quiet = false) {
+    const res = applyReward(this.state, reward, this.rng);
+    const p = this.state.player;
+    if (reward.coins) this.audio.play('coin');
+    this.fx.burst(p.x, p.y - 16, ['#ffd24a', '#fff6c0'], 14, 70, 0.7);
+    if (!quiet || res.chests.length) this.ui.gains(title, res);
+    else this.ui.gainToast(res.gains);
+    this.handleLevelUps(res);
+    this.ui.refresh();
+    this.save();
+    return res;
+  }
+
+  // ---------- الشخصيات ----------
+  async talkLamp() {
+    const s = this.state;
+    const q = currentQuest(s);
+    this.audio.play('magic');
+    if (!s.flags.talked_lamp) {
+      s.flags.talked_lamp = true;
+      this.checkProgress();
+      return;
+    }
+    const lines = [];
+    if (q) lines.push(['lamp', `المهمة الحين: "${q.title}" — ${q.desc}`]);
+    lines.push(['lamp', pick(this.rng, LAMP_IDLE)]);
+    await this.ui.dialogue(lines);
+    if (s.flags.lampGiftDay !== s.time.day) {
+      s.flags.lampGiftDay = s.time.day;
+      this.claimReward({ kp: { s: 1 } }, null, true);
+      this.say('خذ نقطة أسرار... ولا تقول لأحد 🤫');
+    }
+  }
+
+  talkNpc(id) {
+    this.audio.play('talk');
+    this.ui.openShop(id);
+  }
+
+  serveGuest(g) {
+    const s = this.state;
+    if (g.served) { this.ui.toast(`${g.name}: ${pick(this.rng, GUEST_LINES.thanks)}`); return; }
+    if (count(s, g.want) < 1) {
+      this.audio.play('deny');
+      this.ui.toast(`${g.name}: ${pick(this.rng, GUEST_LINES.noItem)} (يبي ${ITEMS[g.want].icon} ${ITEMS[g.want].name})`);
+      return;
+    }
+    add(s, g.want, -1);
+    g.served = true;
+    const pay = Math.round(ITEMS[g.want].price * 2.4 * coinMultiplier(s) * (g.golden ? 3 : 1)) + stars(s) * 2;
+    addStat(s, 'guests', 1);
+    this.audio.play('coin');
+    this.fx.burst(g.x, g.y - 20, ['#ff6a8a', '#ffd24a'], 12, 60, 0.7);
+    this.fx.float(g.x, g.y - 30, '❤️', '#ff6a8a', 16);
+    const res = applyReward(s, { coins: pay, xp: 5 }, this.rng);
+    this.fx.float(g.x, g.y - 42, `🪙 +${pay}`, '#ffd24a', 15);
+    if (this.rng() < 0.3) s.kp.c = (s.kp.c || 0) + 1;
+    this.ui.toast(`${g.name}: ${pick(this.rng, GUEST_LINES.thanks)}`);
+    this.handleLevelUps(res);
+    setTimeout(() => { g.leaving = true; }, 2500);
+    this.ui.refresh();
+  }
+
+  // ---------- القوافل ----------
+  guestWantPool() {
+    const s = this.state;
+    return GUEST_WANTS.filter(w => {
+      if (w === 'bread') return !!s.tech.t_bread;
+      if (w === 'melon') return !!s.tech.t_melon;
+      if (w === 'coffee2') return !!s.tech.t_coffee2;
+      if (w === 'pressed') return !!s.tech.t_pressed;
+      if (w === 'tomato') return (s.stats.planted || 0) > 0;
+      return true;
+    });
+  }
+
+  spawnCaravan() {
+    const s = this.state;
+    s.guests.day = s.time.day;
+    const st = stars(s);
+    const golden = s.quest.index > 5 && this.rng() < 0.12;
+    const n = Math.min(this.world.guestSpots.length, 2 + st + (s.built.stable ? 1 : 0));
+    const spots = [...this.world.guestSpots].sort(() => this.rng() - 0.5).slice(0, n);
+    const pool = this.guestWantPool();
+    this.guestRt = spots.map((spot, i) => ({
+      id: 'g' + s.time.day + '_' + i,
+      name: golden && i === 0 ? '✨ تاجر القافلة الذهبية' : pick(this.rng, GUEST_NAMES),
+      look: Math.floor(this.rng() * GUEST_LOOKS.length),
+      want: pick(this.rng, pool),
+      served: false, golden: golden && i === 0,
+      x: this.world.caravanEntry.x + (i % 3) * 8, y: this.world.caravanEntry.y + Math.floor(i / 3) * 8,
+      spot, dir: 'up',
+    }));
+    if (s.quest.index >= 4) this.ui.toast(golden ? '🐪✨ قافلة ذهبية وصلت! تاجرها يدفع ثلاث أضعاف!' : `🐪 قافلة وصلت فيها ${n} ضيوف!`);
+  }
+
+  restoreGuests() {
+    const s = this.state;
+    this.guestRt = (s.guests.list || []).filter(g => !g.gone).map(g => ({ ...g, x: g.spot.x, y: g.spot.y, leaving: g.leaving }));
+  }
+
+  // ---------- النوم والأيام ----------
+  async trySleep() {
+    const s = this.state;
+    const h = time.hour(s);
+    const tired = s.player.energy < maxEnergy(s) * 0.4;
+    if (!(h >= 17 || h < 5 || tired)) {
+      this.ui.toast('🪔 زعبول: النوم الحين؟ الشمس فوق راسك! نام بعد العصر أو إذا تعبت.');
+      return;
+    }
+    await this.ui.fadeSleep();
+    const nd = time.sleepUntilMorning(s);
+    if (nd) this.onNewDay(nd);
+    s.player.energy = maxEnergy(s);
+    s.player.hp = maxHp(s);
+    this.fx.float(s.player.x, s.player.y - 24, '⚡ طاقة كاملة', '#ffe07a', 14);
+    this.save();
+  }
+
+  onNewDay(n) {
+    const s = this.state;
+    farming.growPlots(s, n);
+    addStat(s, 'days', n);
+    this.guestRt.forEach(g => { g.gone = true; });
+    this.guestRt = [];
+    s.guests.list = [];
+    const rooms = roomsBuilt(s);
+    if (rooms) {
+      const coins = Math.round(rooms * (14 + stars(s) * 5) * coinMultiplier(s) * n);
+      const res = applyReward(s, { coins }, this.rng);
+      this.ui.toast(`🛏️ ضيوف الغرف باتوا عندك ودفعوا ${coins} درهم`);
+      this.handleLevelUps(res);
+    }
+    retention.ensureDailyQuests(s, this.now());
+    this.ui.toast(`🌅 صباح الخير! اليوم ${WEEKDAYS[time.weekday(s)]}`);
+    this.ui.refresh();
+  }
+
+  // ---------- المهام والإنجازات ----------
+  async checkProgress() {
+    if (this.checking) return;
+    const s = this.state;
+    const q = checkQuest(s);
+    if (q) {
+      this.checking = true;
+      this.audio.play('magic');
+      await this.ui.dialogue(q.end);
+      this.claimReward(q.reward, `✅ ${q.title}`);
+      this.checking = false;
+      const nxt = currentQuest(s);
+      if (nxt) this.ui.toast(`📜 مهمة جديدة: ${nxt.title}`);
+      this.ui.refresh();
+    }
+    for (const c of retention.claimableAchievements(s)) {
+      const k = c.ach.stat + c.tier;
+      if (!this.notifiedAch.has(k)) {
+        this.notifiedAch.add(k);
+        this.ui.achievementToast(c.ach, c.tier);
+      }
+    }
+  }
+
+  // ---------- الطاقة والإعلانات ----------
+  async watchAd(placement) {
+    const s = this.state;
+    if (!retention.consumeAd(s, this.now())) { this.ui.toast('خلصت إعلانات اليوم، ارجع بكرة 🌙'); return false; }
+    this.audio.suspend();
+    const ok = await showRewardedAd(placement);
+    this.audio.resume();
+    if (!ok) { s.daily.adsCount = Math.max(0, s.daily.adsCount - 1); this.ui.toast('الإعلان ما كمل، ما صارت المكافأة'); }
+    this.save();
+    return ok;
+  }
+
+  eat(id) {
+    const s = this.state;
+    const it = ITEMS[id];
+    if (!it || !it.food || count(s, id) < 1) return false;
+    add(s, id, -1);
+    s.player.energy = Math.min(maxEnergy(s), s.player.energy + it.food);
+    this.audio.play('eat');
+    this.fx.float(s.player.x, s.player.y - 24, `⚡ +${it.food}`, '#ffe07a', 14);
+    this.ui.refresh();
+    return true;
+  }
+
+  // ---------- البناء ----------
+  doBuild(spotId) {
+    const s = this.state;
+    if (!this.spendEnergy(5)) return false;
+    const b = build(s, spotId);
+    if (!b) { s.player.energy += 5; return false; }
+    const o = this.worldObjById['spot:' + spotId];
+    this.audio.play('build');
+    this.shake = 5;
+    this.fx.burst(o.x, o.y - 8, ['#d4a46b', '#b07e4c', '#fff3c4'], 30, 90, 0.9);
+    this.fx.float(o.x, o.y - 30, b.rating ? `⭐ سمعة +${b.rating}` : '🔨 تم البناء', '#ffd24a', 15);
+    this.tileDirty = true;
+    this.boxVersion = (this.boxVersion || 0) + 1;
+    this.gainXp(10 + b.rating, o.x, o.y - 42);
+    this.ui.refresh();
+    this.save();
+    this.checkProgress();
+    return true;
+  }
+
+  // ---------- السرداب ----------
+  maxFloorAllowed() {
+    const s = this.state;
+    if (s.flags.boss2 && s.tech.t_crypt3) return 3;
+    if (s.flags.boss1 && s.tech.t_crypt2) return 2;
+    return 1;
+  }
+
+  async enterCrypt() {
+    const max = this.maxFloorAllowed();
+    let floor = 1;
+    if (max > 1) floor = await this.ui.chooseFloor(max);
+    if (!floor) return;
+    this.enterFloor(floor);
+  }
+
+  enterFloor(floor) {
+    const s = this.state;
+    if (floor > this.maxFloorAllowed()) {
+      const need = floor === 2 ? 'طلاسم الطابق الثاني' : 'طلاسم الطابق الثالث';
+      this.ui.toast(`🔒 تحتاج تتعلم "${need}" من المعرفة`);
+      return;
+    }
+    const bossDead = !!s.flags['boss' + floor];
+    const seed = (s.seed + floor * 7919 + (s.stats.dives || 0) * 104729) >>> 0;
+    const fl = generateFloor(floor, seed, bossDead);
+    addStat(s, 'dives', 1);
+    this.dungeon = {
+      floor, ...fl, bossDead,
+      enemies: fl.enemies.map(e => {
+        const def = ENEMIES[e.type];
+        return { ...e, def, hp: def.hp + (floor - 1) * (def.boss ? 0 : 2), maxHp: def.hp + (floor - 1) * (def.boss ? 0 : 2), cd: 0, hurt: 0, vx: 0, vy: 0, wander: 0 };
+      }),
+      chests: fl.chests.map(c => ({ ...c, opened: false })),
+    };
+    this.mode = 'dungeon';
+    s.location = 'dungeon';
+    this.placeAt(fl.start);
+    s.player.hp = Math.max(s.player.hp, Math.ceil(maxHp(s) / 2));
+    this.audio.play('magic');
+    this.ui.toast(`🕯️ السرداب — الطابق ${['', 'الأول', 'الثاني', 'الثالث'][floor]}`);
+    this.ui.refresh();
+  }
+
+  exitDungeon() {
+    const s = this.state;
+    this.mode = 'world';
+    s.location = 'world';
+    this.dungeon = null;
+    this.placeAt(this.world.cryptExit);
+    s.player.dir = 'down';
+    this.ui.refresh();
+    this.save();
+  }
+
+  attack(t) {
+    const s = this.state;
+    this.swing = 0.22;
+    this.audio.play('swing');
+    const p = s.player;
+    let e = t && t.kind === 'enemy' ? t.ref : null;
+    if (!e) {
+      let bd = 26;
+      for (const en of this.dungeon.enemies) {
+        const d = Math.hypot(en.x - p.x, en.y - p.y);
+        if (en.hp > 0 && d < bd + en.def.r) { bd = d; e = en; }
+      }
+    }
+    if (!e) return;
+    const dmg = attackPower(s);
+    e.hp -= dmg;
+    e.hurt = 0.15;
+    const d = Math.hypot(e.x - p.x, e.y - p.y) || 1;
+    const kb = e.def.boss ? 4 : 8;
+    this.tryMoveEnemy(e, ((e.x - p.x) / d) * kb, ((e.y - p.y) / d) * kb);
+    this.audio.play('hit');
+    this.shake = 2;
+    this.fx.burst(e.x, e.y - 8, ['#ffffff', '#ffd24a'], 6, 60, 0.4);
+    this.fx.float(e.x, e.y - 22, `-${dmg}`, '#ff8080', 13);
+    if (e.hp <= 0) this.killEnemy(e);
+  }
+
+  killEnemy(e) {
+    const s = this.state;
+    addStat(s, 'kills', 1);
+    this.fx.burst(e.x, e.y - 8, ['#5a2a1a', '#8f8a70', '#fff6c0'], 18, 80, 0.8);
+    this.gainXp(e.def.xp, e.x, e.y - 30);
+    const loot = {};
+    if (e.def.drop && !e.def.boss && this.rng() < 0.5) loot[e.def.drop] = 1;
+    if (this.rng() < 0.3) loot.oldcoin = 1;
+    if (Object.keys(loot).length) this.gainItems(loot, e.x, e.y - 16);
+    if (this.rng() < 0.45) s.kp.s = (s.kp.s || 0) + 1;
+    if (!e.def.boss && this.rng() < 0.06) {
+      const missing = Object.keys(RELICS).filter(id => !s.relics[id] && RELICS[id].set !== 'salem');
+      if (missing.length) this.claimReward({ relic: pick(this.rng, missing) }, '🏺 لقيت تحفة!');
+    }
+    if (e.def.boss) {
+      s.flags['boss' + e.def.boss] = true;
+      this.dungeon.bossDead = true;
+      this.shake = 8;
+      this.fx.confetti(e.x, e.y - 10);
+      this.dungeon.chests.push({ x: e.x, y: e.y, rarity: 'rare', opened: false });
+      this.claimReward({ relic: e.def.drop, coins: 60 * e.def.boss }, `🏆 هزمت ${e.def.name}!`);
+      this.checkProgress();
+    }
+  }
+
+  async openDungeonChest(c) {
+    c.opened = true;
+    await this.openChestFlow(c.rarity);
+  }
+
+  tryMoveEnemy(e, vx, vy) {
+    const r = 4;
+    const free = (x, y) => [[x - r, y - r], [x + r, y - r], [x - r, y], [x + r, y]].every(([px, py]) => dTile(this.dungeon.tiles, Math.floor(px / TILE), Math.floor(py / TILE)) === D.FLOOR);
+    if (free(e.x + vx, e.y)) e.x += vx;
+    if (free(e.x, e.y + vy)) e.y += vy;
+  }
+
+  updateDungeon(dt) {
+    const s = this.state;
+    const p = s.player;
+    for (const e of this.dungeon.enemies) {
+      if (e.hp <= 0) continue;
+      e.hurt = Math.max(0, e.hurt - dt);
+      e.cd = Math.max(0, e.cd - dt);
+      const dx = p.x - e.x, dy = p.y - e.y;
+      const d = Math.hypot(dx, dy);
+      if (d < 120) {
+        const sp = e.def.speed * dt * (e.hurt > 0 ? 0.2 : 1);
+        this.tryMoveEnemy(e, (dx / d) * sp, (dy / d) * sp);
+        e.face = dx > 0 ? 1 : -1;
+      } else {
+        e.wander -= dt;
+        if (e.wander <= 0) { e.wander = 1 + this.rng() * 2; const a = this.rng() * Math.PI * 2; e.vx = Math.cos(a) * 12; e.vy = Math.sin(a) * 12; }
+        this.tryMoveEnemy(e, e.vx * dt, e.vy * dt);
+      }
+      if (d < e.def.r + 6 && e.cd <= 0 && this.hurtT <= 0) {
+        e.cd = 0.9;
+        this.hurtT = 0.7;
+        p.hp -= e.def.dmg;
+        this.audio.play('hurt');
+        this.shake = 5;
+        this.ui.vibrate(60);
+        this.fx.float(p.x, p.y - 26, `-${e.def.dmg} ❤️`, '#ff5050', 14);
+        const k = 18 / (d || 1);
+        const ox = p.x, oy = p.y;
+        if (!this.blocked(p.x + dx * k, p.y)) p.x += dx * k;
+        if (!this.blocked(p.x, p.y + dy * k)) p.y += dy * k;
+        if (Number.isNaN(p.x) || Number.isNaN(p.y)) { p.x = ox; p.y = oy; }
+        if (p.hp <= 0) this.playerDown();
+      }
+    }
+  }
+
+  async playerDown() {
+    const s = this.state;
+    s.player.hp = 0;
+    const choice = await this.ui.downPrompt();
+    if (choice === 'revive') {
+      s.player.hp = maxHp(s);
+      this.hurtT = 2;
+      this.fx.burst(s.player.x, s.player.y - 10, ['#7fb2ff', '#fff'], 30, 80, 1);
+      this.ui.refresh();
+      return;
+    }
+    this.exitDungeon();
+    this.placeAt({ x: this.worldObjById['spot:my_bed'].x, y: this.worldObjById['spot:my_bed'].y + 10 });
+    const nd = time.sleepUntilMorning(s);
+    if (nd) this.onNewDay(nd);
+    s.player.hp = maxHp(s);
+    s.player.energy = Math.round(maxEnergy(s) * 0.5);
+    this.ui.dialogue([['lamp', 'لقيتك طايح بالسرداب وسحبتك لفراشك. لا تشكرني... بس لا تعيدها.']]);
+  }
+}
+
+export { MAIN_QUESTS, MAP_W, MAP_H, DW, DH, TILE };

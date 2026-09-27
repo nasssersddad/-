@@ -1,0 +1,44 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.almuzare.game'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.almuzare.game'
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+
+        // ===== معرّفات AdMob =====
+        // هذي معرّفات تجريبية رسمية من Google. بدّلها بمعرّفاتك من حساب AdMob قبل النشر.
+        manifestPlaceholders = [admobAppId: 'ca-app-pub-3940256099942544~3347511713']
+        resValue 'string', 'admob_rewarded_id', 'ca-app-pub-3940256099942544/5224354917'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // ملفات اللعبة (مجلد web) تنحط داخل الـ APK
+    sourceSets {
+        main {
+            assets.srcDirs += ["$rootDir/../web"]
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.12.1'
+    implementation 'com.google.android.gms:play-services-ads:23.6.0'
+}

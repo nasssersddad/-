@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#2a1a10">
+  <title>المزارع</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="game">
+    <canvas id="world"></canvas>
+    <canvas id="fx"></canvas>
+    <div id="touch"></div>
+    <div id="stick"><div id="knob"></div></div>
+
+    <div id="hud">
+      <div class="hud-right">
+        <div class="avatar"><span id="lvl">1</span></div>
+        <div class="bars">
+          <div class="bar xp"><i id="xpFill"></i><b id="xpText"></b></div>
+          <div class="bar energy"><i id="enFill"></i><b id="enText"></b></div>
+          <div class="bar hp" id="hpBar"><i id="hpFill"></i><b id="hpText"></b></div>
+        </div>
+        <div class="coins">🪙 <span id="coins">0</span></div>
+      </div>
+      <div class="hud-center">
+        <div class="clock"><span id="dayName"></span> <span id="clock"></span></div>
+        <div class="stars" id="stars"></div>
+      </div>
+      <div class="hud-left">
+        <button class="hbtn" data-open="rewards">🎁<span class="badge" id="badgeRewards"></span><small>المكافآت</small></button>
+        <button class="hbtn" data-open="inventory">🎒<small>الحقيبة</small></button>
+        <button class="hbtn" data-open="tech">🔮<span class="badge dot" id="badgeTech"></span><small>المعرفة</small></button>
+        <button class="hbtn" data-open="relics">🏺<small>التحف</small></button>
+        <button class="hbtn small" data-open="settings">⚙️</button>
+      </div>
+    </div>
+
+    <div id="quest" data-open="quest">
+      <div class="qtitle" id="qTitle"></div>
+      <div class="qdesc" id="qDesc"></div>
+    </div>
+    <div id="dqMini" data-open="rewards-dq"></div>
+
+    <button id="actionBtn"><span id="actIcon">✋</span><small id="actLabel"></small></button>
+    <button id="eatBtn" title="كل">🍽️</button>
+
+    <div id="toasts"></div>
+    <div id="dialog" class="hidden">
+      <canvas id="portrait" width="64" height="64"></canvas>
+      <div class="dbody">
+        <div class="dname" id="dName"></div>
+        <div class="dtext" id="dText"></div>
+      </div>
+      <div class="dnext">▼</div>
+    </div>
+    <div id="modals"></div>
+    <div id="fade"></div>
+    <div id="boot">
+      <div class="logo">المزارع</div>
+      <div class="sub">حكاية خان على طريق البخور</div>
+      <button id="startBtn">ابدأ اللعب</button>
+      <div class="hint">حرّك بإصبعك يسار الشاشة • زر الفعل يمين</div>
+    </div>
+    <div id="rotate">🔄 لف جوالك بالعرض</div>
+  </div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

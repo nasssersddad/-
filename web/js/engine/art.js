@@ -82,7 +82,10 @@ export function drawTile(ctx, t, tx, ty, x, y, getT) {
     case T.SAND:
     case T.SAND2: {
       R(ctx, x, y, 16, 16, t === T.SAND ? PAL.sand : PAL.sand2);
-      for (let i = 0; i < 4; i++) P(ctx, x + Math.floor(h(i) * 16), y + Math.floor(h(i + 9) * 16), PAL.sandDot);
+      // حبيبات رمل بثلاث درجات (dithering)
+      for (let i = 0; i < 7; i++) P(ctx, x + Math.floor(h(i) * 16), y + Math.floor(h(i + 9) * 16), PAL.sandDot);
+      for (let i = 0; i < 5; i++) P(ctx, x + Math.floor(h(i + 30) * 16), y + Math.floor(h(i + 40) * 16), PAL.sandLight);
+      if (h(50) < 0.35) { const rx = x + Math.floor(h(51) * 12), ry = y + Math.floor(h(52) * 12); P(ctx, rx, ry, '#b88a52'); P(ctx, rx + 1, ry, '#f4d69a'); }
       if (h(20) < 0.3) { const lx = x + Math.floor(h(21) * 10), ly = y + Math.floor(h(22) * 14); R(ctx, lx, ly, 5, 1, PAL.sandLight); R(ctx, lx + 1, ly + 1, 4, 1, PAL.sandDot); }
       break;
     }
@@ -94,6 +97,8 @@ export function drawTile(ctx, t, tx, ty, x, y, getT) {
     case T.GRASS: {
       R(ctx, x, y, 16, 16, h(1) < 0.5 ? PAL.grass : PAL.grass2);
       for (let i = 0; i < 6; i++) { const gx = x + Math.floor(h(i + 2) * 15), gy = y + Math.floor(h(i + 12) * 14); R(ctx, gx, gy, 1, 2, PAL.grassDot); }
+      // خصلات عشب بظل وإضاءة
+      for (let i = 0; i < 3; i++) { const gx = x + 1 + Math.floor(h(i + 60) * 13), gy = y + 2 + Math.floor(h(i + 70) * 12); P(ctx, gx, gy + 2, '#557a26'); P(ctx, gx + 1, gy + 1, PAL.grassDot); P(ctx, gx + 2, gy, '#b8d86a'); P(ctx, gx + 3, gy + 2, '#557a26'); }
       // حافة رمل
       if (getT(tx, ty - 1) === T.SAND || getT(tx, ty - 1) === T.SAND2) R(ctx, x, y, 16, 2, PAL.sand2);
       break;
@@ -839,52 +844,6 @@ export function fencePost() {
   });
 }
 
-// ---------- إيزومتريك ----------
-// مكعب بارتفاع h: سطح معيّن 32×16 وجانبين
-export function isoBlock(kind, h, variant = 0) {
-  return cached(`iso:${kind}:${h}:${variant}`, 32, 16 + h + 1, (ctx) => {
-    const cols = {
-      wall: ['#d4a46b', '#b07e4c', '#8a5a33', '#946438'],
-      rubble: ['#c9975e', '#a0703f', '#7d5431', '#7d5431'],
-      dune: ['#e8c07c', '#d09a55', '#b98543', '#c99a55'],
-      dwall: ['#6e5844', '#5a4636', '#3e2e22', '#2e2218'],
-    }[kind];
-    const [top, left, right, lineC] = cols;
-    const poly = (pts, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (const p of pts.slice(1)) ctx.lineTo(p[0], p[1]); ctx.closePath(); ctx.fill(); };
-    // الجانب اليسار (الجنوب الغربي) واليمين (الجنوب الشرقي)
-    poly([[0, 8], [16, 16], [16, 16 + h], [0, 8 + h]], left);
-    poly([[16, 16], [32, 8], [32, 8 + h], [16, 16 + h]], right);
-    poly([[16, 0], [32, 8], [16, 16], [0, 8]], top);
-    if (kind === 'wall' || kind === 'dwall') {
-      // خطوط الطوب
-      ctx.fillStyle = lineC;
-      for (let yy = 5; yy < h; yy += 5) {
-        for (let x = 0; x < 16; x++) ctx.fillRect(x, 8 + yy + Math.floor(x / 2), 1, 1);
-        for (let x = 16; x < 32; x++) ctx.fillRect(x, 16 + yy - Math.floor((x - 16) / 2), 1, 1);
-      }
-      for (let yy = 0; yy < h; yy += 10) {
-        ctx.fillRect(6 + (variant % 2) * 4, 8 + yy + 3 + Math.floor((6 + (variant % 2) * 4) / 2), 1, 5);
-        ctx.fillRect(22 - (variant % 2) * 4, 16 + yy + 3 - Math.floor((6 - (variant % 2) * 4) / 2), 1, 5);
-      }
-      // حافة فاتحة فوق
-      ctx.fillStyle = shade(top, 0.2);
-      for (let x = 0; x < 16; x++) ctx.fillRect(x, 8 + Math.floor(x / 2), 1, 1);
-      for (let x = 16; x < 32; x++) ctx.fillRect(x, 16 - Math.floor((x - 16) / 2), 1, 1);
-    }
-    if (kind === 'rubble') {
-      ctx.fillStyle = '#e0b27a';
-      ctx.fillRect(10, 4, 5, 3); ctx.fillRect(18, 7, 4, 2);
-    }
-  });
-}
-
-// شرفات عربية فوق جدار الخان
-export function merlon() {
-  return cached('merlon', 8, 8, (ctx) => {
-    R(ctx, 1, 2, 6, 6, PAL.wallTop); R(ctx, 2, 0, 4, 2, PAL.wallTop); R(ctx, 1, 6, 6, 2, PAL.wall);
-  });
-}
-
 export function sheepSprite(body, head, frame) {
   return cached(`sheepS:${body}:${head}:${frame}`, 16, 13, (ctx) => {
     ellipse(ctx, 8, 12, 6, 1, 'rgba(0,0,0,0.2)');
@@ -942,4 +901,41 @@ export function scaffold(p) {
     const h = Math.round(p * 18);
     R(ctx, 6, 28 - h, 18, h, '#c79a66');
   });
+}
+
+// ---------- تحسين البكسل: حدود داكنة + إضاءة حافة ----------
+const outlineCache = new WeakMap();
+const OUTLINE = [40, 22, 10];
+// يرجع نسخة من الرسمة أكبر ببكسل من كل جهة، فيها حد داكن حولها وإضاءة خفيفة على الحافة العلوية
+export function outlined(img) {
+  let c = outlineCache.get(img);
+  if (c) return c;
+  const w = img.width, h = img.height;
+  c = canvas(w + 2, h + 2);
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 1, 1);
+  const data = ctx.getImageData(0, 0, w + 2, h + 2);
+  const d = data.data;
+  const W = w + 2, H = h + 2;
+  const solid = (x, y) => x >= 0 && y >= 0 && x < W && y < H && d[(y * W + x) * 4 + 3] > 140;
+  const out = new Uint8ClampedArray(d);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
+      if (solid(x, y)) {
+        // إضاءة الحافة العلوية
+        if (!solid(x, y - 1)) { out[i] = Math.min(255, d[i] * 1.18 + 14); out[i + 1] = Math.min(255, d[i + 1] * 1.15 + 12); out[i + 2] = Math.min(255, d[i + 2] * 1.08 + 8); }
+        // ظل الحافة السفلية
+        else if (!solid(x, y + 1)) { out[i] = d[i] * 0.8; out[i + 1] = d[i + 1] * 0.78; out[i + 2] = d[i + 2] * 0.78; }
+        continue;
+      }
+      if (solid(x - 1, y) || solid(x + 1, y) || solid(x, y - 1) || solid(x, y + 1)) {
+        out[i] = OUTLINE[0]; out[i + 1] = OUTLINE[1]; out[i + 2] = OUTLINE[2]; out[i + 3] = 215;
+      }
+    }
+  }
+  data.data.set(out);
+  ctx.putImageData(data, 0, 0);
+  outlineCache.set(img, c);
+  return c;
 }

@@ -127,6 +127,8 @@ export function buildWorld() {
   add({ id: 'stall', kind: 'stall', tx: 10, ty: 21, solid: true });
   add({ id: 'sign_farm', kind: 'sign', tx: 41, ty: 31, text: 'مزرعة العم سالم' });
   add({ id: 'sign_khan', kind: 'sign', tx: 30, ty: 28, text: 'خان الغروب' });
+  add({ id: 'exit_world', kind: 'worldexit', tx: 3, ty: 29 });
+  add({ id: 'sign_world', kind: 'sign', tx: 4, ty: 27, text: '🗺️ طريق القرية' });
 
   for (let i = 0; i < 4; i++) add({ id: 'plot' + i, kind: 'plot', tx: 43 + i * 2, ty: 31, group: 1 });
   for (let i = 0; i < 4; i++) add({ id: 'plot' + (i + 4), kind: 'plot', tx: 43 + i * 2, ty: 33, group: 2 });

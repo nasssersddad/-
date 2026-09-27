@@ -21,17 +21,18 @@ import * as camels from './systems/camels.js';
 import * as market from './systems/market.js';
 import { PEN } from './data/map.js';
 import { camelBreedName } from './data/camels.js';
-import { screenToWorldDir } from './engine/iso.js';
 import * as workers from './systems/workers.js';
 import * as shop from './systems/shop.js';
 import * as sheepSys from './systems/sheep.js';
 import { FOLD } from './data/map.js';
 import { WORKER_TYPES } from './data/workers.js';
+import { buildOpenWorld, owTile, FARMS } from './data/openworld.js';
+import * as farmsSys from './systems/farms.js';
+import * as events from './systems/events.js';
 
-// اتجاه حركة بالعالم ← وجه الشخصية على الشاشة
+// اتجاه الحركة ← وجه الشخصية
 export function screenDir(dx, dy) {
-  const sx = dx - dy, sy = (dx + dy) / 2;
-  return Math.abs(sx) > Math.abs(sy) * 2 ? (sx > 0 ? 'right' : 'left') : (sy > 0 ? 'down' : 'up');
+  return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
 }
 
 const SPEED = 64;
@@ -48,6 +49,7 @@ export class Game {
     this.clock = () => Date.now();
     this.world = buildWorld();
     this.worldObjById = Object.fromEntries(this.world.objects.map(o => [o.id, o]));
+    this.open = buildOpenWorld();
     this.t = 0;
     this.actionCd = 0;
     this.swing = 0;
@@ -89,7 +91,8 @@ export class Game {
     }
     s.player.energy = Math.min(s.player.energy, maxEnergy(s));
     s.player.hp = maxHp(s);
-    if (s.location !== 'world') { s.location = 'world'; this.placeAt(this.world.cryptExit); }
+    if (s.location === 'open') { s.location = 'world'; const ex = this.worldObjById.exit_world; this.placeAt({ x: ex.x + 18, y: ex.y }); }
+    else if (s.location !== 'world') { s.location = 'world'; this.placeAt(this.world.cryptExit); }
     this.audio.music = s.settings.music;
     this.audio.sfx = s.settings.sfx;
     retention.ensureDailyQuests(s, this.now());
@@ -156,6 +159,7 @@ export class Game {
     this.swing = Math.max(0, this.swing - dt);
 
     if (this.mode === 'world') this.updateWorld(dt);
+    else if (this.mode === 'open') { this.updateWorld(dt); this.updateOpen(dt); }
     else this.updateDungeon(dt);
 
     this.target = this.findTarget();
@@ -218,7 +222,9 @@ export class Game {
     // البسطة كل 10 دقايق لعبة
     s.stallMin = s.stallMin || nowMin;
     if (nowMin - s.stallMin >= 10) {
-      const sold = shop.stallTick(s, nowMin - s.stallMin, this.rng);
+      const fast = this.eventMod('stallFast');
+      const sold = shop.stallTick(s, (nowMin - s.stallMin) * (fast ? 2.5 : 1), this.rng);
+      if (fast && sold.length) events.addTokens(s, sold.length * 2);
       s.stallMin = nowMin;
       for (const x of sold) {
         this.audio.play('coin');
@@ -227,6 +233,58 @@ export class Game {
       if (sold.length) this.ui.refresh();
     }
     if (s.built.orders_board) shop.ensureOrders(s, this.rng, nowMin);
+  }
+
+  // ---------- العالم المفتوح ----------
+  async travel(to) {
+    const s = this.state;
+    const tips = ['نصيحة: ساوم زين، كل صاحب مزرعة له طبعه.', 'نصيحة: تقدر تشتري مزرعة جارك وتصير تنتج لك كل يوم.', 'نصيحة: العمّال يكملون شغلهم وأنت برا مزرعتك.', 'نصيحة: النياق النادرة تنباع بمئات الألوف!'];
+    await this.ui.loading(to === 'open' ? '🐪 طالع للقرية...' : '🏠 راجع لمزرعتك...', pick(this.rng, tips));
+    if (to === 'open') {
+      this.mode = 'open';
+      s.location = 'open';
+      for (const id of Object.keys(FARMS)) farmsSys.refreshFarm(s, id, s.time.day);
+      this.placeAt(this.open.spawn);
+      addStat(s, 'trips', 1);
+    } else {
+      this.mode = 'world';
+      s.location = 'world';
+      const ex = this.worldObjById.exit_world;
+      this.placeAt({ x: ex.x + 18, y: ex.y });
+    }
+    s.player.dir = to === 'open' ? 'up' : 'right';
+    this.ui.refresh();
+    this.save();
+  }
+
+  updateOpen(dt) {
+    const s = this.state;
+    this.openRt = this.openRt || {};
+    for (const [id, def] of Object.entries(FARMS)) {
+      const f = farmsSys.refreshFarm(s, id, s.time.day);
+      const r = def.rect;
+      const box = { x0: (r.x0 + 2) * TILE, x1: (r.x1 - 1) * TILE, y0: (r.y0 + 5) * TILE, y1: (r.y1 - 3) * TILE };
+      const herd = f.owned ? [] : f.animals.filter(a => !a.closed);
+      for (const a of herd) {
+        let rt = this.openRt[a.id];
+        if (!rt) { rt = this.openRt[a.id] = { x: box.x0 + this.rng() * (box.x1 - box.x0), y: box.y0 + this.rng() * (box.y1 - box.y0), wait: this.rng() * 3, dir: 1 }; rt.tx = rt.x; rt.ty = rt.y; }
+        const dx = rt.tx - rt.x, dy = rt.ty - rt.y, d = Math.hypot(dx, dy);
+        rt.moving = d > 1;
+        if (rt.moving) { const sp = 12 * dt; rt.x += (dx / d) * Math.min(sp, d); rt.y += (dy / d) * Math.min(sp, d); if (Math.abs(dx) > 0.5) rt.dir = dx > 0 ? 1 : -1; }
+        else if ((rt.wait -= dt) <= 0) { rt.wait = 2 + this.rng() * 5; rt.tx = box.x0 + this.rng() * (box.x1 - box.x0); rt.ty = box.y0 + this.rng() * (box.y1 - box.y0); }
+      }
+    }
+  }
+
+  collectFarm(id) {
+    const got = farmsSys.collectStorage(this.state, id);
+    const list = Object.entries(got).filter(([, v]) => v > 0);
+    if (!list.length) { this.ui.toast('المخزن فاضي، ارجع بكرة 📦'); return; }
+    this.audio.play('coin');
+    this.ui.gainToast(list.map(([k, v]) => ({ icon: k === 'coins' ? '🪙' : ITEMS[k].icon, text: `+${v}` })));
+    this.fx.confetti(...this.fx.at(this.state.player.x, this.state.player.y, 20));
+    this.ui.refresh();
+    this.save();
   }
 
   // ---------- العمّال ----------
@@ -456,7 +514,7 @@ export class Game {
       if (!rt) { rt = this.sheepRt[sh.id] = { x: r.x0 + this.rng() * (r.x1 - r.x0), y: r.y0 + this.rng() * (r.y1 - r.y0), wait: this.rng() * 3, dir: 1 }; rt.tx = rt.x; rt.ty = rt.y; }
       const dx = rt.tx - rt.x, dy = rt.ty - rt.y, d = Math.hypot(dx, dy);
       rt.moving = d > 1;
-      if (rt.moving) { const sp = 14 * dt; rt.x += (dx / d) * Math.min(sp, d); rt.y += (dy / d) * Math.min(sp, d); if (Math.abs(dx - dy) > 0.5) rt.dir = dx - dy > 0 ? 1 : -1; }
+      if (rt.moving) { const sp = 14 * dt; rt.x += (dx / d) * Math.min(sp, d); rt.y += (dy / d) * Math.min(sp, d); if (Math.abs(dx) > 0.5) rt.dir = dx > 0 ? 1 : -1; }
       else if ((rt.wait -= dt) <= 0) { rt.wait = 2 + this.rng() * 4; rt.tx = r.x0 + this.rng() * (r.x1 - r.x0); rt.ty = r.y0 + this.rng() * (r.y1 - r.y0); }
     }
   }
@@ -495,8 +553,7 @@ export class Game {
   // الفعل ياخذ وقته: يبدأ، وعند hitAt يصير التأثير، وينتهي عند dur
   startAnim(type, target, dur, hitAt, onHit) {
     const p = this.state.player;
-    const sdx = target ? (target.x - p.x) - (target.y - p.y) : 0;
-    if (target && Math.abs(sdx) > 3) p.dir = sdx > 0 ? 'right' : 'left';
+    if (target && Math.abs(target.x - p.x) > 3) p.dir = target.x > p.x ? 'right' : 'left';
     this.anim = { type, target, dur, hitAt, onHit, t: 0, hit: false };
     this.swing = 0;
   }
@@ -553,7 +610,7 @@ export class Game {
         const sp = (camels.isAdult(c) ? 10 : 16) * dt;
         rt.x += (dx / d) * Math.min(sp, d);
         rt.y += (dy / d) * Math.min(sp, d);
-        if (Math.abs(dx - dy) > 0.5) rt.dir = dx - dy > 0 ? 1 : -1;
+        if (Math.abs(dx) > 0.5) rt.dir = dx > 0 ? 1 : -1;
       } else {
         rt.wait -= dt;
         if (rt.wait <= 0) {
@@ -633,8 +690,62 @@ export class Game {
   }
 
   // ---------- السوق ----------
+  // ---------- الفعاليات ----------
+  eventMod(name) {
+    return events.mod(this.state, this.now(), name);
+  }
+
+  // كنوز العاصفة ولمعات القمر: تنولد كل يوم لعبة بأماكن رمل حول المزرعة
+  eventSpots() {
+    const s = this.state;
+    if (!s.event) return [];
+    const buried = this.eventMod('buried');
+    const moon = this.eventMod('moonSparkles');
+    if (!buried && !(moon && time.isNight(s))) return [];
+    const ev = s.event;
+    if (ev.day !== s.time.day) {
+      ev.day = s.time.day;
+      const rng = mulberry32((s.seed ^ (s.time.day * 7919)) >>> 0);
+      const list = [];
+      for (let tries = 0; tries < 400 && list.length < (buried || moon); tries++) {
+        const tx = 3 + Math.floor(rng() * (MAP_W - 6)), ty = 3 + Math.floor(rng() * (MAP_H - 6));
+        const t = tileAt(this.world.tiles, tx, ty);
+        if (t !== T.SAND && t !== T.SAND2) continue;
+        list.push({ x: tx * TILE + 8, y: ty * TILE + 12, got: false });
+      }
+      ev.spots = { list };
+    }
+    return (ev.spots.list || []).filter(x => !x.got);
+  }
+
+  digTreasure(spot) {
+    if (!this.spendEnergy(3)) return;
+    this.startAnim('dig', spot, 0.9, 0.6, () => {
+      spot.got = true;
+      this.audio.play('chest');
+      const n = events.addTokens(this.state, 1 + (this.rng() < 0.35 ? 1 : 0));
+      this.fx.burst(...this.fx.at(spot.x, spot.y, 4), ['#e4bb76', '#ffd24a'], 16, 60, 0.7);
+      this.fx.float(...this.fx.at(spot.x, spot.y, 24), `💰 +${n}`, '#ffd24a', 14);
+      const loot = this.rng() < 0.3 ? { oldcoin: 1 } : { [pick(this.rng, ['stone', 'clay', 'dates', 'beans'])]: 2 };
+      this.gainItems(loot, spot.x, spot.y, 36);
+      this.ui.refresh();
+    });
+  }
+
+  collectSparkle(spot) {
+    spot.got = true;
+    this.audio.play('magic');
+    const n = events.addTokens(this.state, 1);
+    this.fx.burst(...this.fx.at(spot.x, spot.y, 8), ['#fff6c0', '#b9d8ff'], 18, 50, 0.8);
+    this.fx.float(...this.fx.at(spot.x, spot.y, 24), `⭐ +${n}`, '#fff6c0', 14);
+    this.ui.refresh();
+  }
+
   marketTick() {
     const s = this.state;
+    const prevKey = s.event && s.event.key;
+    const ev = events.ensureEvent(s, this.now());
+    if (prevKey && prevKey !== ev.key) this.ui.toast(`🎪 فعالية جديدة: ${ev.def.icon} ${ev.def.name}!`, 'ach', 5);
     market.refreshDaily(s, s.time.day);
     const fresh = market.tick(s, this.now(), this.rng);
     for (const o of fresh) {
@@ -653,11 +764,8 @@ export class Game {
     if (!this.moving) return;
     const tired = p.energy <= 0 && this.mode === 'world';
     const sp = SPEED * (tired ? 0.6 : 1) * Math.min(1, Math.hypot(m.x, m.y) * 1.3);
-    // العصا باتجاه الشاشة ← اتجاه بالعالم الإيزومتريك
-    const wv = screenToWorldDir(m.x, m.y);
-    const len = Math.hypot(wv.x, wv.y) || 1;
-    const vx = (wv.x / len) * sp * dt, vy = (wv.y / len) * sp * dt;
-    p.fx = wv.x / len; p.fy = wv.y / len;
+    const len = Math.hypot(m.x, m.y) || 1;
+    const vx = (m.x / len) * sp * dt, vy = (m.y / len) * sp * dt;
     if (Math.abs(m.x) > Math.abs(m.y)) p.dir = m.x > 0 ? 'right' : 'left';
     else p.dir = m.y > 0 ? 'down' : 'up';
     if (!this.blocked(p.x + vx, p.y)) p.x += vx;
@@ -668,6 +776,15 @@ export class Game {
     const pts = [[x - 4, y - 3], [x + 4, y - 3], [x - 4, y + 1], [x + 4, y + 1]];
     if (this.mode === 'dungeon') {
       return pts.some(([px, py]) => dTile(this.dungeon.tiles, Math.floor(px / TILE), Math.floor(py / TILE)) !== D.FLOOR);
+    }
+    if (this.mode === 'open') {
+      if (pts.some(([px, py]) => SOLID_TILES.has(owTile(this.open.tiles, Math.floor(px / TILE), Math.floor(py / TILE))))) return true;
+      for (const o of this.open.objects) {
+        if (!o.solid) continue;
+        const w = o.kind === 'farmhouse' ? 40 : 8, h = o.kind === 'farmhouse' ? 12 : 6;
+        if (x + 4 > o.x - w / 2 && x - 4 < o.x + w / 2 && y + 1 > o.y - h + 4 && y - 3 < o.y + 4) return true;
+      }
+      return false;
     }
     for (const [px, py] of pts) {
       if (SOLID_TILES.has(this.tileAtWorld(Math.floor(px / TILE), Math.floor(py / TILE)))) return true;
@@ -741,8 +858,16 @@ export class Game {
       if (dg.bossDead && dg.floor < 3) list.push({ kind: 'stairsDown', x: dg.down.x, y: dg.down.y + 6 });
       return list;
     }
+    if (this.mode === 'open') {
+      for (const o of this.open.objects) {
+        if (o.kind === 'owner' || o.kind === 'gohome') list.push({ kind: o.kind, ref: o, x: o.x, y: o.y, r: 22 });
+        if (o.kind === 'farmhouse' && farmsSys.farmState(s, o.farm).owned) list.push({ kind: 'farmstore', ref: o, x: o.x, y: o.y + 6, r: 26 });
+      }
+      return list;
+    }
     for (const o of this.world.objects) {
       switch (o.kind) {
+        case 'worldexit': list.push({ kind: 'worldexit', ref: o, x: o.x, y: o.y, r: 22 }); break;
         case 'palm': case 'rock': case 'clay': case 'herb':
           if (!this.depleted(o)) list.push({ kind: o.kind, ref: o, x: o.x, y: o.y });
           break;
@@ -768,6 +893,7 @@ export class Game {
       }
     }
     for (const c of s.groundChests || []) list.push({ kind: 'gchest', ref: c, x: c.x, y: c.y + 2 });
+    for (const sp of this.eventSpots()) list.push({ kind: this.eventMod('buried') ? 'buried' : 'sparkle', ref: sp, x: sp.x, y: sp.y, r: 20 });
     if (s.built.trough) { const o = this.worldObjById['spot:trough']; list.push({ kind: 'trough', ref: o, x: o.x, y: o.y }); }
     for (const [spot, kind] of [['stall_shop', 'shop'], ['orders_board', 'orders'], ['workers_house', 'whouse']]) {
       if (s.built[spot]) { const o = this.worldObjById['spot:' + spot]; list.push({ kind, ref: o, x: o.x, y: o.y }); }
@@ -788,8 +914,8 @@ export class Game {
   findTarget() {
     const p = this.state.player;
     const dirs = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
-    const [dx, dy] = p.fx !== undefined ? [p.fx, p.fy] : dirs[p.dir];
-    const probe = { x: p.x + dx * 10, y: p.y + dy * 10 };
+    const [dx, dy] = dirs[p.dir];
+    const probe = { x: p.x + dx * 10, y: p.y - 3 + dy * 10 };
     let best = null, bd = 1e9;
     for (const it of this.interactables()) {
       const d = Math.hypot(it.x - probe.x, it.y - 4 - probe.y);
@@ -827,6 +953,12 @@ export class Game {
       case 'gchest': case 'dchest': return { icon: '📦', label: 'افتح' };
       case 'enemy': return { icon: '⚔️', label: 'اضرب' };
       case 'shop': return { icon: '🏪', label: 'البسطة' };
+      case 'worldexit': return { icon: '🗺️', label: 'اطلع للقرية' };
+      case 'buried': return { icon: '⛏️', label: 'احفر الكنز' };
+      case 'sparkle': return { icon: '✨', label: 'اجمع' };
+      case 'gohome': return { icon: '🏠', label: 'ارجع مزرعتي' };
+      case 'owner': return { icon: '🤝', label: farmsSys.farmState(s, t.ref.farm).owned ? 'مزرعتك' : 'تفاوض' };
+      case 'farmstore': return { icon: '📦', label: 'المخزن' };
       case 'orders': return { icon: '📋', label: 'الطلبات' };
       case 'whouse': return { icon: '👷', label: 'العمّال' };
       case 'sheep': {
@@ -894,6 +1026,12 @@ export class Game {
       case 'plot': this.plotAction(t.ref); break;
       case 'trough': this.troughAction(t.ref); break;
       case 'sheep': this.sheepAction(t.ref, t.rt); break;
+      case 'worldexit': this.input.action = false; this.travel('open'); break;
+      case 'buried': this.input.action = false; this.digTreasure(t.ref); break;
+      case 'sparkle': this.input.action = false; this.collectSparkle(t.ref); break;
+      case 'gohome': this.input.action = false; this.travel('world'); break;
+      case 'owner': this.input.action = false; this.audio.play('talk'); this.ui.openFarm(t.ref.farm); break;
+      case 'farmstore': this.input.action = false; this.collectFarm(t.ref.farm); break;
       case 'shop': this.input.action = false; this.ui.openTrade('stall'); break;
       case 'orders': this.input.action = false; this.ui.openTrade('orders'); break;
       case 'whouse': this.input.action = false; this.ui.openWorkers(); break;
@@ -914,10 +1052,10 @@ export class Game {
     const s = this.state;
     const tools = s.tech.t_tools ? 1 : 0;
     const specs = {
-      palm: { hits: 3 - tools, cost: 3, sound: 'chop', color: ['#8a5a33', '#4f8a2f'], respawn: 2, stat: 'palms', kp: { n: 1 }, xp: 4 },
-      rock: { hits: 3 - tools, cost: 3, sound: 'mine', color: ['#9c948a', '#c4bcb0'], respawn: 2, stat: 'rocks', kp: { c: 1 }, xp: 4 },
-      clay: { hits: 1, cost: 3, sound: 'dig', color: ['#9a5a35', '#5a3620'], respawn: 1, stat: 'clay', kp: {}, xp: 3 },
-      herb: { hits: 1, cost: 1, sound: 'pick', color: ['#4f8a2f', '#e8e0f0'], respawn: 1, stat: 'herbs', kp: { n: 1 }, xp: 2 },
+      palm: { hits: 3 - tools, cost: 3, sound: 'chop', color: ['#8a5a33', '#4f8a2f'], respawn: 2, stat: 'palms', kp: { n: 1 }, xp: 2 },
+      rock: { hits: 3 - tools, cost: 3, sound: 'mine', color: ['#9c948a', '#c4bcb0'], respawn: 2, stat: 'rocks', kp: { c: 1 }, xp: 2 },
+      clay: { hits: 1, cost: 3, sound: 'dig', color: ['#9a5a35', '#5a3620'], respawn: 1, stat: 'clay', kp: {}, xp: 2 },
+      herb: { hits: 1, cost: 1, sound: 'pick', color: ['#4f8a2f', '#e8e0f0'], respawn: 1, stat: 'herbs', kp: { n: 1 }, xp: 1 },
     }[o.kind];
     if (!this.spendEnergy(specs.cost)) return;
     const type = { palm: 'chop', rock: 'mine', clay: 'dig', herb: 'pick' }[o.kind];
@@ -937,7 +1075,7 @@ export class Game {
     n.respawnDay = s.time.day + specs.respawn;
     this.boxVersion = (this.boxVersion || 0) + 1;
     const loot = {};
-    if (o.kind === 'palm') { loot.wood = 2; loot.frond = randInt(this.rng, 1, 3); if (this.rng() < 0.45) loot.dates = randInt(this.rng, 1, 2); }
+    if (o.kind === 'palm') { loot.wood = 2; loot.frond = randInt(this.rng, 1, 3); if (this.eventMod('datesBoost')) loot.dates = randInt(this.rng, 3, 5); else if (this.rng() < 0.45) loot.dates = randInt(this.rng, 1, 2); }
     if (o.kind === 'rock') { loot.stone = randInt(this.rng, 2, 3); if (this.rng() < 0.08) loot.oldcoin = 1; }
     if (o.kind === 'clay') loot.clay = randInt(this.rng, 1, 2);
     if (o.kind === 'herb') { loot.herb = randInt(this.rng, 1, 2); if (this.rng() < 0.25) loot[pick(this.rng, ['seed_tomato', 'seed_wheat'])] = 1; }
@@ -1119,7 +1257,7 @@ export class Game {
     this.audio.play('coin');
     this.fx.burst(...this.fx.at(g.x, g.y, 20), ['#ff6a8a', '#ffd24a'], 12, 60, 0.7);
     this.fx.float(...this.fx.at(g.x, g.y, 30), '❤️', '#ff6a8a', 16);
-    const res = applyReward(s, { coins: pay, xp: 5 }, this.rng);
+    const res = applyReward(s, { coins: pay, xp: 3 }, this.rng);
     this.fx.float(...this.fx.at(g.x, g.y, 42), `🪙 +${pay}`, '#ffd24a', 15);
     if (this.rng() < 0.3) s.kp.c = (s.kp.c || 0) + 1;
     this.ui.toast(`${g.name}: ${pick(this.rng, GUEST_LINES.thanks)}`);
@@ -1191,6 +1329,7 @@ export class Game {
     const births = [];
     for (let d = s.time.day - n + 1; d <= s.time.day; d++) births.push(...camels.dailyUpdate(s, d, this.rng));
     for (let d = s.time.day - n + 1; d <= s.time.day; d++) sheepSys.sheepDaily(s, d);
+    if (farmsSys.farmDaily(s, s.time.day).length) this.ui.toast('🏡 مزارعك أنتجت! روح لمخازنها بالقرية واستلم', 'gain', 4);
     for (const calf of births) {
       if (calf.rare) {
         this.audio.play('rare');
@@ -1378,6 +1517,7 @@ export class Game {
     if (this.rng() < 0.3) loot.oldcoin = 1;
     if (Object.keys(loot).length) this.gainItems(loot, e.x, e.y, 16);
     if (this.rng() < 0.45) s.kp.s = (s.kp.s || 0) + 1;
+    if (this.eventMod('dungeonTokens')) { events.addTokens(s, e.def.boss ? 5 : 1); this.fx.float(...this.fx.at(e.x, e.y, 40), '⭐ +1', '#fff6c0', 12); }
     if (!e.def.boss && this.rng() < 0.06) {
       const missing = Object.keys(RELICS).filter(id => !s.relics[id] && RELICS[id].set !== 'salem');
       if (missing.length) this.claimReward({ relic: pick(this.rng, missing) }, '🏺 لقيت تحفة!');
@@ -1417,7 +1557,7 @@ export class Game {
       if (d < 120) {
         const sp = e.def.speed * dt * (e.hurt > 0 ? 0.2 : 1);
         this.tryMoveEnemy(e, (dx / d) * sp, (dy / d) * sp);
-        e.face = dx - dy > 0 ? 1 : -1;
+        e.face = dx > 0 ? 1 : -1;
       } else {
         e.wander -= dt;
         if (e.wander <= 0) { e.wander = 1 + this.rng() * 2; const a = this.rng() * Math.PI * 2; e.vx = Math.cos(a) * 12; e.vy = Math.sin(a) * 12; }

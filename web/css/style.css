@@ -27,6 +27,7 @@ button { font-family: inherit; cursor: pointer; }
 #game { position: fixed; inset: 0; overflow: hidden; }
 canvas#world { position: absolute; left: 0; top: 0; image-rendering: pixelated; image-rendering: crisp-edges; }
 canvas#fx { position: absolute; left: 0; top: 0; pointer-events: none; }
+canvas#post { position: absolute; left: 0; top: 0; pointer-events: none; display: none; }
 #touch { position: absolute; inset: 0; }
 
 /* عصا التحكم */
@@ -268,3 +269,35 @@ canvas#fx { position: absolute; left: 0; top: 0; pointer-events: none; }
 .sslot b { position: static; font-size: 13px; color: #1a6a10; }
 .sslot.empty { font-size: 30px; color: var(--wood); border-style: dashed; }
 .sslot.sold { background: linear-gradient(#fff3b0, #f0c040); border-color: var(--gold); animation: bounce 1.2s infinite; }
+.adbar { width: min(320px, 70vw); height: 8px; background: #333; border-radius: 4px; overflow: hidden; }
+.adbar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #f5c451, #e0702a); transition: width .3s linear; }
+.adclose { position: absolute; top: 12px; left: 12px; width: 34px; height: 34px; border-radius: 50%; border: 1px solid #555; background: #222; color: #aaa; font-size: 15px; }
+
+/* شاشة التحميل */
+.loading { position: absolute; inset: 0; z-index: 75; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: radial-gradient(ellipse at 50% 120%, #e0903a 0%, #8a3a24 35%, #2a1420 70%, #120a12 100%); color: #fff3d6; transition: opacity .35s; }
+.loading.out { opacity: 0; }
+.loading .ltitle { font: 700 30px Kufi, Cairo; color: var(--gold2); text-shadow: 0 3px 0 #6b2a10; }
+.loading .lbar { width: min(360px, 70vw); height: 12px; border-radius: 6px; background: rgba(0,0,0,.45); border: 2px solid var(--gold); overflow: hidden; }
+.loading .lbar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #ffe07a, #e8903a); }
+.loading .ltip { font-size: 14px; opacity: .85; max-width: 80vw; text-align: center; }
+.loading .lcamel { font-size: 40px; animation: walk 1.2s linear infinite; }
+@keyframes walk { 0% { transform: translateX(-120px); } 100% { transform: translateX(120px); } }
+
+/* الفعاليات */
+.evhead { display: flex; gap: 12px; align-items: center; background: linear-gradient(100deg, rgba(255,230,140,.55), rgba(255,250,220,.5)); border: 2px solid var(--gold); border-radius: 12px; padding: 8px 10px; }
+.evhead h3 { margin: 0; font: 700 18px Kufi, Cairo; color: var(--red); }
+.evhead p { margin: 2px 0; font-size: 12.5px; }
+.evicon { font-size: 44px; }
+.evtok { display: flex; flex-direction: column; align-items: center; font-size: 26px; min-width: 64px; }
+.evtok b { font: 700 20px Cairo; }
+.evtok small { font-size: 11px; }
+.track { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; }
+.tstep { background: rgba(255,255,255,.5); border: 2px solid rgba(107,63,31,.35); border-radius: 8px; text-align: center; padding: 3px 1px; font-size: 16px; }
+.tstep small { display: block; font-size: 10px; font-weight: 700; }
+.tstep.got { background: rgba(79,154,47,.3); border-color: var(--green); }
+.tstep.next { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(232,181,58,.6); animation: bounce 1.2s infinite; }
+canvas.mg { width: 100%; max-width: 640px; display: block; margin: 0 auto 6px; border-radius: 10px; border: 2px solid var(--wood); image-rendering: pixelated; touch-action: none; }
+.tbar { position: relative; height: 16px; max-width: 480px; margin: 4px auto 8px; background: #6b3f1f; border-radius: 8px; overflow: hidden; }
+.tbar .zone { position: absolute; left: 40%; width: 20%; top: 0; bottom: 0; background: #6cc24a; }
+.tbar .mark { position: absolute; top: -2px; bottom: -2px; width: 6px; background: #fff; border-radius: 3px; box-shadow: 0 0 6px #fff; }
+.fstat { font: 700 15px Cairo; min-width: 120px; }

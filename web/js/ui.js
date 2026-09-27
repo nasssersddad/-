@@ -4,7 +4,7 @@ import { RECIPES, STATIONS, BUILD_SPOTS } from './data/recipes.js';
 import { TECH, TECH_BY_ID, KP_TYPES } from './data/tech.js';
 import { NPCS, WEEKDAYS, WEEKDAY_ICONS } from './data/npcs.js';
 import { MAIN_QUESTS } from './data/quests.js';
-import { DAILY_CALENDAR, WHEEL, CHESTS, ACHIEVEMENTS, ACH_TIER_NAMES, ACH_TIER_REWARDS, DAILY_QUEST_BONUS, AD_PLACEMENTS } from './data/rewards.js';
+import { DAILY_CALENDAR, WHEEL, CHESTS, ACHIEVEMENTS, ACH_TIER_NAMES, ACH_TIER_REWARDS, DAILY_QUEST_BONUS, AD_PLACEMENTS, AD_SECONDS } from './data/rewards.js';
 import { count, has, add, addStat } from './systems/inventory.js';
 import { recipesFor, craft, spotStatus, techStatus, learnTech } from './systems/crafting.js';
 import { xpForLevel, maxEnergy, maxHp, stars, rating, nextStarAt, completedSets, offlineMultiplier } from './systems/progression.js';
@@ -20,7 +20,13 @@ import * as shop from './systems/shop.js';
 import * as sheepSys from './systems/sheep.js';
 import { WORKER_TYPES, WORKER_LOOKS, STRIKE_AFTER } from './data/workers.js';
 import { SHEEP_BREEDS, SHEEP_CAP } from './data/sheep.js';
+import { FARMS } from './data/openworld.js';
+import * as farmsSys from './systems/farms.js';
+import { PERSONAS } from './systems/market.js';
+import * as events from './systems/events.js';
+import { EVENTS, TRACK_REWARDS, TRACK_COSTS } from './data/events.js';
 import { camelSprite } from './engine/art.js';
+import * as art from './engine/art.js';
 import * as camels from './systems/camels.js';
 import * as market from './systems/market.js';
 import { BREEDS, RARES, camelColors, camelBreedName, GESTATION_DAYS, TROUGH_CAP } from './data/camels.js';
@@ -62,6 +68,7 @@ export class UI {
         else if (k === 'camels') this.openCamels();
         else if (k === 'workers') this.openWorkers();
         else if (k === 'trade') this.openTrade();
+        else if (k === 'events') this.openEvents();
       });
       el.addEventListener('pointerdown', e => e.stopPropagation());
     });
@@ -151,6 +158,10 @@ export class UI {
       const tradeReady = s.stall.slots.filter(x => x && x.sold).length + (s.built.orders_board ? s.orders.filter(o => shop.canFulfill(s, o, nowMin)).length : 0);
       $('badgeTrade').textContent = tradeReady;
       $('badgeTrade').classList.toggle('on', tradeReady > 0);
+      events.ensureEvent(s, g.now());
+      const evReady = events.canClaimTier(s) || (EVENTS.find(e => e.id === s.event.id).game && events.playsLeft(s, g.now()) > 0);
+      $('badgeEvents').textContent = evReady ? '!' : '';
+      $('badgeEvents').classList.toggle('on', !!evReady);
       const offers = market.openOffersCount(s);
       $('badgeCamels').textContent = offers;
       $('badgeCamels').classList.toggle('on', offers > 0);
@@ -550,9 +561,11 @@ export class UI {
       render: (m) => {
         m.body.innerHTML = `<div class="row" style="margin-bottom:8px"><button class="btn" data-a="music">${s.settings.music ? '🎵 الموسيقى: شغالة' : '🔇 الموسيقى: طافية'}</button>
           <button class="btn" data-a="sfx">${s.settings.sfx ? '🔊 المؤثرات: شغالة' : '🔈 المؤثرات: طافية'}</button></div>
+          <div class="row" style="margin-bottom:8px"><button class="btn" data-a="hq">${s.settings.hq !== false ? '✨ جودة الرسم: عالية (شيدرز)' : '⚡ جودة الرسم: عادية (أخف)'}</button></div>
           <p class="muted">المزارع — نسخة 1.0<br>إعلانات اليوم الباقية: ${retention.adsLeft(s, g.now())}</p>
           <div class="row"><button class="btn" data-a="reset" style="background:#e8b0a0">🗑️ ابدأ من جديد</button></div>`;
         m.handlers.music = () => { s.settings.music = !s.settings.music; this.audio.setMusic(s.settings.music); g.save(); m.rerender(); };
+        m.handlers.hq = () => { s.settings.hq = s.settings.hq === false; g.save(); m.rerender(); };
         m.handlers.sfx = () => { s.settings.sfx = !s.settings.sfx; this.audio.sfx = s.settings.sfx; g.save(); m.rerender(); };
         m.handlers.reset = async () => {
           const ok = await this.confirm('متأكد؟ كل تقدمك بينمسح ومايرجع!');
@@ -720,6 +733,332 @@ export class UI {
       g.claimReward(r.reward, `🏅 ${a.name} — ${ACH_TIER_NAMES[r.tier]}`);
       m.rerender();
     };
+  }
+
+  // ---------- الفعاليات ----------
+  openEvents() {
+    const g = this.g;
+    const s = g.state;
+    this.modal({
+      title: '🎪 الفعاليات',
+      render: (m) => {
+        const now = g.now();
+        const cur = events.ensureEvent(s, now);
+        const def = cur.def;
+        const ev = s.event;
+        const tier = events.nextTier(s);
+        const lb = events.leaderboard(s, now);
+        const myRank = lb.findIndex(r => r.me) + 1;
+        const cost = tier < TRACK_COSTS.length ? events.tierCost(s, tier) : 0;
+        let action = '';
+        if (def.game) {
+          const left = events.playsLeft(s, now), adLeft = events.adPlaysLeft(s, now);
+          action = `<div class="row center"><button class="btn green big" data-a="play" ${left ? '' : 'disabled'}>${def.game === 'race' ? '🏁 ابدأ السباق' : '🦅 ابدأ الصيد'} (${left} محاولات)</button>${!left && adLeft ? `<button class="btn ad" data-a="playad">محاولة زيادة (${adLeft})</button>` : ''}</div>`;
+        } else if (def.deliver) {
+          const have = count(s, def.deliver.item);
+          action = `<div class="row center"><span>عندك ${ITEMS[def.deliver.item].icon} ${have}</span><button class="btn green big" data-a="deliver" ${have >= def.deliver.per ? '' : 'disabled'}>سلّم التمر (${def.deliver.per} = ${def.tokenIcon})</button></div>`;
+        }
+        m.body.innerHTML = `<div class="evhead"><div class="evicon">${def.icon}</div><div><h3>${def.name}</h3><p>${esc(def.desc)}</p><p class="muted">⏳ باقي ${events.timeLeftText(now)} • ${esc(def.how)}</p></div>
+            <div class="evtok">${def.tokenIcon}<b>${ev.tokens}</b><small>${def.token}</small></div></div>
+          ${action}
+          <h3 style="margin:10px 0 4px">🎁 مسار الجوايز</h3>
+          <div class="track">${TRACK_REWARDS.map((r, i) => `<div class="tstep ${i < tier ? 'got' : i === tier ? 'next' : ''}"><small>${events.tierCost(s, i)}${def.tokenIcon}</small><div>${describeReward(r).map(x => x.icon).join('')}</div></div>`).join('')}</div>
+          <div class="row center" style="margin-top:6px">${tier < TRACK_COSTS.length ? `<button class="btn green" data-a="claim" ${events.canClaimTier(s) ? '' : 'disabled'}>استلم الدرجة ${tier + 1} (${cost}${def.tokenIcon})</button>` : '<b>👑 خلّصت المسار كامل!</b>'}</div>
+          <h3 style="margin:10px 0 4px">🏆 الترتيب — مركزك ${myRank}</h3>
+          <ol class="board">${lb.slice(0, 6).map(r => `<li class="${r.me ? 'me' : ''}">${esc(r.name)} — ${r.score}</li>`).join('')}${myRank > 6 ? `<li class="me" value="${myRank}">أنت — ${ev.earned}</li>` : ''}</ol>
+          <p class="muted">الفعاليات الجاية: ${EVENTS.filter(e => e.id !== def.id).map(e => e.icon + ' ' + e.name).join(' • ')}</p>`;
+        m.handlers.claim = () => {
+          const r = events.claimTier(s);
+          if (!r) return;
+          g.claimReward(r.reward, `🎁 ${def.name} — الدرجة ${r.tier + 1}`);
+          m.rerender();
+        };
+        m.handlers.deliver = () => { const n = events.deliver(s, now); if (n) { this.audio.play('deal'); this.toast(`${def.tokenIcon} +${n}`, 'gain'); g.save(); } m.rerender(); };
+        const start = (viaAd) => {
+          if (!events.usePlay(s, now, viaAd)) return;
+          m.close();
+          if (def.game === 'race') this.playRace(); else this.playFalcon();
+        };
+        m.handlers.play = () => start(false);
+        m.handlers.playad = async () => { if (await g.watchAd('energy')) start(true); };
+      },
+    });
+  }
+
+  // لعبة سباق الهجن
+  playRace() {
+    const g = this.g;
+    const s = g.state;
+    const best = [...s.camels].filter(c => camels.isAdult(c)).sort((a, b) => (b.beauty + (b.rare ? 40 : 0)) - (a.beauty + (a.rare ? 40 : 0)))[0];
+    const myBeauty = best ? best.beauty + (best.rare ? 40 : 0) + (camels.isFed(best, s.time.day) ? 8 : 0) : 25;
+    const rivals = events.raceRivals((s.seed + s.time.day * 31 + (s.event.earned || 0)) >>> 0);
+    const lanes = [{ name: best ? best.name : 'ناقة مستأجرة', me: true, x: 0, speed: events.raceBaseSpeed(myBeauty), boost: 0, col: best ? camelColors(best) : BREEDS.shual }]
+      .concat(rivals.map((r, i) => ({ name: r.name, x: 0, speed: r.speed, jitter: r.jitter, col: Object.values(BREEDS)[i % 6] })));
+    let t = 0, marker = 0, dir = 1, cd = 0, done = false, raf;
+    const finish = {};
+    this.modal({
+      title: '🏁 سباق الهجن', closable: false,
+      render: (m) => {
+        m.body.innerHTML = `<canvas class="mg" width="640" height="240"></canvas>
+          <div class="tbar"><i class="zone"></i><i class="mark"></i></div>
+          <div class="row center"><button class="btn green big" data-a="tap">🐪 اضغط بالتوقيت!</button></div><p class="muted center">اضغط لما يكون المؤشر بالمنطقة الخضرا عشان ناقتك تسرّع. الغلط يبطّئها!</p>`;
+        const cv = m.body.querySelector('canvas');
+        const ctx = cv.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        const markEl = m.body.querySelector('.mark');
+        const tap = () => {
+          if (done || cd > 0) return;
+          cd = 0.35;
+          const q = 1 - Math.min(1, Math.abs(marker - 0.5) * 2);
+          const b = events.boostFor(q);
+          lanes[0].boost = b;
+          lanes[0].boostT = 0.9;
+          this.audio.play(b > 0 ? 'coin' : 'deny');
+          g.fx.float(0, 0, '', '#fff');
+        };
+        m.handlers.tap = tap;
+        cv.addEventListener('pointerdown', tap);
+        let last = performance.now();
+        const loop = (now) => {
+          const dt = Math.min(0.05, (now - last) / 1000) * (window.__fastAds ? 8 : 1);
+          last = now;
+          t += dt;
+          cd = Math.max(0, cd - dt);
+          marker += dir * dt * 1.25;
+          if (marker > 1) { marker = 1; dir = -1; }
+          if (marker < 0) { marker = 0; dir = 1; }
+          markEl.style.left = `calc(${marker * 100}% - 3px)`;
+          for (const [i, l] of lanes.entries()) {
+            if (finish[i] !== undefined) continue;
+            let v = l.speed;
+            if (l.me) { if (l.boostT > 0) { v += l.boost; l.boostT -= dt; } }
+            else v += Math.sin(t * 1.7 + i) * l.jitter;
+            l.x += Math.max(8, v) * dt;
+            if (l.x >= events.RACE_LEN) finish[i] = t;
+          }
+          // الرسم
+          ctx.fillStyle = '#e4bb76'; ctx.fillRect(0, 0, 640, 240);
+          for (let i = 0; i < 5; i++) { ctx.fillStyle = i % 2 ? '#dcae66' : '#e8c07c'; ctx.fillRect(0, 20 + i * 42, 640, 42); }
+          ctx.fillStyle = '#fff'; for (let y = 20; y < 230; y += 12) ctx.fillRect(600, y, 6, 6);
+          for (const [i, l] of lanes.entries()) {
+            const img = art.camelSprite(l.col, Math.floor(t * 8) % 2 + 1, 'race' + i);
+            const x = 10 + (Math.min(l.x, events.RACE_LEN) / events.RACE_LEN) * 570;
+            ctx.drawImage(img, Math.round(x), 22 + i * 42, 45, 39);
+            ctx.font = '700 12px Cairo'; ctx.fillStyle = l.me ? '#b8292a' : '#3a2418';
+            ctx.fillText(l.me ? `⭐ ${l.name}` : l.name, 4, 34 + i * 42);
+          }
+          if (finish[0] !== undefined && !done) {
+            done = true;
+            // نكمل وقت الباقين حسابياً
+            const times = lanes.slice(1).map((l, i) => finish[i + 1] !== undefined ? finish[i + 1] : t + (events.RACE_LEN - l.x) / l.speed);
+            const place = events.racePlace(finish[0], times);
+            const tokens = events.addTokens(s, events.raceTokens(place));
+            addStat(s, 'races', 1);
+            if (place === 1) addStat(s, 'raceWins', 1);
+            this.audio.play(place === 1 ? 'rare' : 'deal');
+            m.body.innerHTML = `<div class="reveal shine"><div class="big-ic">${place === 1 ? '🥇' : place === 2 ? '🥈' : place === 3 ? '🥉' : '🏁'}</div><h2>المركز ${place}</h2><p>كسبت ${tokens} 🚩</p></div><div class="row center"><button class="btn green big" data-a="close">تمام</button></div>`;
+            m.closable = true;
+            g.save();
+            return;
+          }
+          if (!m.closed) raf = requestAnimationFrame(loop);
+        };
+        if (!done) raf = requestAnimationFrame(loop);
+      },
+    });
+  }
+
+  // لعبة صيد الصقور
+  playFalcon() {
+    const g = this.g;
+    const s = g.state;
+    let round = 0, hits = 0, t = 0, raf;
+    let prey = null, falcon = null, perchX = 320, perchDir = 1;
+    const TOTAL = 10;
+    this.modal({
+      title: '🦅 صيد الصقور', closable: false,
+      render: (m) => {
+        m.body.innerHTML = `<canvas class="mg" width="640" height="260"></canvas><div class="row center"><b class="fstat">0/${TOTAL}</b><button class="btn green big" data-a="tap">🦅 أطلق الصقر!</button></div><p class="muted center">الصقر يتحرك تحت، والحبارى تطير فوق. أطلقه بحيث يوصلها بالوقت الصح.</p>`;
+        const cv = m.body.querySelector('canvas');
+        const ctx = cv.getContext('2d');
+        const stat = m.body.querySelector('.fstat');
+        const spawn = () => { round += 1; const fromLeft = Math.random() < 0.5; prey = { x: fromLeft ? -20 : 660, y: 40 + Math.random() * 50, vx: (fromLeft ? 1 : -1) * (120 + round * 12 + Math.random() * 60) }; };
+        const tap = () => {
+          if (falcon || !prey) return;
+          falcon = { x: perchX, y: 230, vy: -420 };
+          this.audio.play('swing');
+        };
+        m.handlers.tap = tap;
+        cv.addEventListener('pointerdown', tap);
+        spawn();
+        let last = performance.now();
+        const loop = (now) => {
+          if (m.closed) return;
+          const dt = Math.min(0.05, (now - last) / 1000) * (window.__fastAds ? 8 : 1);
+          last = now;
+          t += dt;
+          perchX += perchDir * dt * 220;
+          if (perchX > 600) { perchX = 600; perchDir = -1; }
+          if (perchX < 40) { perchX = 40; perchDir = 1; }
+          if (prey) prey.x += prey.vx * dt;
+          if (falcon) {
+            falcon.y += falcon.vy * dt;
+            if (prey && falcon.y <= prey.y + 8) {
+              if (events.falconHit(falcon.x, prey.x)) { hits++; this.audio.play('coin'); prey = null; }
+              else this.audio.play('deny');
+              falcon = null;
+            } else if (falcon.y < 0) falcon = null;
+          }
+          if (prey && (prey.x < -40 || prey.x > 680)) prey = null;
+          if (!prey && !falcon) {
+            if (round >= TOTAL) {
+              const tokens = events.addTokens(s, hits);
+              addStat(s, 'falconHunts', 1);
+              this.audio.play(hits >= 7 ? 'rare' : 'deal');
+              m.body.innerHTML = `<div class="reveal shine"><div class="big-ic">🦅</div><h2>صدت ${hits} من ${TOTAL}</h2><p>كسبت ${tokens} 🪶</p></div><div class="row center"><button class="btn green big" data-a="close">تمام</button></div>`;
+              m.closable = true;
+              g.save();
+              return;
+            }
+            spawn();
+          }
+          stat.textContent = `${hits} صيد • ${round}/${TOTAL}`;
+          const sky = ctx.createLinearGradient(0, 0, 0, 260);
+          sky.addColorStop(0, '#f4a860'); sky.addColorStop(0.7, '#f8d9a0'); sky.addColorStop(1, '#e4bb76');
+          ctx.fillStyle = sky; ctx.fillRect(0, 0, 640, 260);
+          ctx.fillStyle = '#d09a55'; ctx.fillRect(0, 236, 640, 24);
+          ctx.font = '30px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          if (prey) { ctx.save(); ctx.translate(prey.x, prey.y); if (prey.vx < 0) ctx.scale(-1, 1); ctx.fillText('🐦', 0, 0); ctx.restore(); }
+          ctx.fillText('🧤', perchX, 238);
+          if (falcon) ctx.fillText('🦅', falcon.x, falcon.y);
+          else ctx.fillText('🦅', perchX, 214);
+          raf = requestAnimationFrame(loop);
+        };
+        raf = requestAnimationFrame(loop);
+      },
+    });
+  }
+
+  // ---------- شاشة التحميل ----------
+  loading(title, tip) {
+    return new Promise((resolve) => {
+      this.fading = true;
+      const el = document.createElement('div');
+      el.className = 'loading';
+      el.innerHTML = `<div class="ltitle">${esc(title)}</div><div class="lbar"><i></i></div><div class="ltip">${esc(tip || '')}</div><div class="lcamel">🐪</div>`;
+      document.getElementById('game').appendChild(el);
+      const bar = el.querySelector('.lbar i');
+      let k = 0;
+      const dur = window.__fastAds ? 60 : 1600;
+      const t0 = performance.now();
+      const step = () => {
+        k = Math.min(1, (performance.now() - t0) / dur);
+        bar.style.width = Math.round(k * 100) + '%';
+        if (k < 1) { requestAnimationFrame(step); return; }
+        resolve();
+        el.classList.add('out');
+        setTimeout(() => { el.remove(); this.fading = false; }, 350);
+      };
+      requestAnimationFrame(step);
+    });
+  }
+
+  // ---------- مزارع الجيران ----------
+  openFarm(farmId, tab = 'animals') {
+    const g = this.g;
+    const s = g.state;
+    const def = FARMS[farmId];
+    const f = farmsSys.refreshFarm(s, farmId, s.time.day);
+    this.modal({
+      title: `🏡 ${def.name}`,
+      render: (m) => {
+        if (f.owned) {
+          m.tabsEl.hidden = true;
+          const st = Object.entries(f.storage).filter(([, v]) => v > 0);
+          m.body.innerHTML = `<p>✔ هذي المزرعة <b>لك</b>. كل يوم تنتج: ${Object.entries(def.produce).map(([k, v]) => `${ITEMS[k].icon}×${v}`).join(' ')} + 🪙${def.income}.</p>
+            <p>📦 بالمخزن: ${st.length ? st.map(([k, v]) => `${k === 'coins' ? '🪙' : ITEMS[k].icon}×${v}`).join(' ') : 'فاضي'}</p>
+            <div class="row center"><button class="btn green big" data-a="collect" ${st.length ? '' : 'disabled'}>استلم المخزن</button></div>`;
+          m.handlers.collect = () => { g.collectFarm(farmId); m.rerender(); };
+          return;
+        }
+        this.tabs(m, [
+          { id: 'animals', label: '🐪 حلاله' },
+          { id: 'goods', label: '🧺 بضاعته' },
+          { id: 'sell', label: '💰 بيعه حلالك' },
+          { id: 'farm', label: '🏡 اشترِ المزرعة' },
+        ], tab, (v) => { tab = v; m.rerender(); });
+        const head = `<p>💬 <b>${esc(def.owner)}</b>: ${esc(def.greet)} <span class="ctag">طبعه: ${PERSONAS[def.persona].name}</span> <span class="ctag">اختصاصه: ${esc(def.specialty)}</span></p>`;
+        if (tab === 'goods') {
+          m.body.innerHTML = head + `<div class="shop-list">${f.stock.filter(d => !d.closed).map(d => `<div class="shop-row"><span class="ic">${ITEMS[d.item].icon}</span><span class="nm">${ITEMS[d.item].name} ×${d.qty}<br><small class="muted">🪙${d.ask} للحبة${d.angry ? ' • 😤 زعلان' : ''}</small></span>
+            <button class="btn" data-a="buyg" data-v="${d.id}" ${s.player.coins >= d.ask ? '' : 'disabled'}>اشترِ</button>${d.angry ? '' : `<button class="btn blue" data-a="hagg" data-v="${d.id}">ساوم 💬</button>`}</div>`).join('') || '<p class="muted">خلصت بضاعته اليوم.</p>'}</div>`;
+        } else if (tab === 'animals') {
+          const list = f.animals.filter(a => !a.closed);
+          m.body.innerHTML = head + `<div class="camels">${list.map(a => {
+            const name = a.kind === 'camel' ? `${esc(a.camel.name)} — ${camelBreedName(a.camel)}` : `🐑 ${SHEEP_BREEDS[a.sheep.breed].name}`;
+            const pic = a.kind === 'camel' ? this.camelImg(a.camel) : '<span style="font-size:36px">🐑</span>';
+            const tags = a.kind === 'camel' ? this.camelTag(a.camel) : `<span class="ctag">${a.sheep.ageDays >= 2 ? 'بالغ' : 'طلي'}</span>`;
+            return `<div class="ccard"><div class="cpic">${pic}</div><div class="cinfo"><h3>${name}</h3><div class="ctags">${tags}</div>
+              <div class="row"><b class="price">🪙 ${market.fmt(a.ask)}</b>${a.angry ? '<span class="muted">😤 زعلان منك</span>' : `<button class="btn green" data-a="buya" data-v="${a.id}" ${s.player.coins >= a.ask ? '' : 'disabled'}>اشترِ</button><button class="btn blue" data-a="haga" data-v="${a.id}">ساوم 💬</button>`}</div></div></div>`;
+          }).join('') || '<p class="muted">ما عنده حلال للبيع اليوم.</p>'}</div>`;
+        } else if (tab === 'sell') {
+          const mine = [...s.camels.map(c => ({ kind: 'camel', a: c })), ...s.sheep.map(x => ({ kind: 'sheep', a: x }))];
+          m.body.innerHTML = head + `<p class="muted">${esc(def.owner)} يشتري حلالك. يعطيك عرض، وتقدر تساوم عليه.</p><div class="shop-list">${mine.map(({ kind, a }) => `<div class="shop-row"><span class="ic">${kind === 'camel' ? '🐪' : '🐑'}</span><span class="nm">${kind === 'camel' ? esc(a.name) + ' — ' + camelBreedName(a) : SHEEP_BREEDS[a.breed].name}</span><button class="btn" data-a="sell" data-v="${kind}:${a.id}">اعرضه عليه</button></div>`).join('') || '<p class="muted">ما عندك حلال.</p>'}</div>`;
+        } else {
+          const d = f.sale;
+          m.body.innerHTML = head + `<div class="card ready"><h3>🏡 ${esc(def.name)}</h3><p>إذا اشتريتها تصير لك، وتنتج كل يوم: ${Object.entries(def.produce).map(([k, v]) => `${ITEMS[k].icon}×${v}`).join(' ')} + 🪙${def.income}، وتستلمها من مخزنها.</p>
+            <div class="row"><b class="price">🪙 ${market.fmt(d.ask)}</b>${d.angry ? '<span class="muted">😤 رفض يكمل معك اليوم</span>' : `<button class="btn green big" data-a="buyf" ${s.player.coins >= d.ask ? '' : 'disabled'}>اشترها</button><button class="btn blue" data-a="hagf">ساوم 💬</button>`}</div>
+            <p class="muted">دراهمك: 🪙${market.fmt(s.player.coins)}</p></div>`;
+        }
+        const after = (res, what) => {
+          const msgs = { poor: 'الدراهم ما تكفي 💸', full: 'ما عندك مكان، وسّع المراح أو الحظيرة', nostable: 'ابنِ المراح أول 🐪', nofold: 'ابنِ حظيرة الغنم أول 🐑', gone: 'الصفقة خلصت' };
+          if (res.result === 'bought') {
+            this.audio.play('deal');
+            g.fx.confetti(...g.fx.at(s.player.x, s.player.y, 20));
+            this.toast(`🤝 ${what} بـ ${market.fmt(res.price)}`, 'gain', 3);
+            g.save();
+          } else if (msgs[res.result]) this.toast(msgs[res.result]);
+          m.rerender();
+          this.refresh();
+        };
+        const chat = (d, label, buy, what) => this.haggleChat({
+          title: `💬 ${def.owner}`, sub: label,
+          log: () => d.log, current: () => d.ask, start: Math.round(d.ask * 0.7), acceptLabel: () => `اشترِ بـ ${market.fmt(d.ask)}`,
+          send: (n) => farmsSys.haggle(d, n, g.rng),
+          accept: () => buy(),
+          onResult: (res) => {
+            if (!res) return true;
+            if (res.result === 'accept') { after(buy(), what); return true; }
+            if (res.result === 'bought' || ['poor', 'full', 'nostable', 'nofold', 'gone'].includes(res.result)) { after(res, what); return true; }
+            return res.result === 'leave';
+          },
+          done: () => m.rerender(),
+        });
+        m.handlers.buyg = (id) => after(farmsSys.buyGoods(s, farmId, id, 1), 'اشتريت');
+        m.handlers.hagg = (id) => { const d = f.stock.find(x => x.id === id); chat(d, `${ITEMS[d.item].name} (سعر الحبة)`, () => farmsSys.buyGoods(s, farmId, id, 1), 'اشتريت'); };
+        m.handlers.buya = (id) => after(farmsSys.buyAnimal(s, farmId, id), 'اشتريت الحلال');
+        m.handlers.haga = (id) => { const d = f.animals.find(x => x.id === id); chat(d, d.kind === 'camel' ? d.camel.name : 'غنمة', () => farmsSys.buyAnimal(s, farmId, id), 'اشتريت الحلال'); };
+        m.handlers.buyf = () => { const r = farmsSys.buyFarm(s, farmId); after(r, `🏡 صارت ${def.name} لك`); if (r.result === 'bought') { this.audio.play('rare'); g.fx.goldRain(s.player.x, s.player.y - 60, 220); g.checkProgress(); } };
+        m.handlers.hagf = () => chat(f.sale, def.name, () => { const r = farmsSys.buyFarm(s, farmId); if (r.result === 'bought') { this.audio.play('rare'); g.fx.goldRain(s.player.x, s.player.y - 60, 220); } return r; }, `🏡 صارت ${def.name} لك`);
+        m.handlers.sell = (v) => {
+          const [kind, id] = v.split(':');
+          const o = farmsSys.sellOffer(s, farmId, kind, id, g.rng);
+          if (!o) return;
+          this.haggleChat({
+            title: `💬 ${def.owner}`, sub: 'يبي يشتري حلالك',
+            log: () => o.log, current: () => o.amount, start: Math.round(o.value * 1.2), acceptLabel: () => `بيع بـ ${market.fmt(o.amount)}`, sendLabel: 'اطلب',
+            send: (n) => farmsSys.counterSell(o, n, g.rng),
+            accept: () => farmsSys.completeSell(s, o),
+            onResult: (res) => {
+              if (!res) return true;
+              if (res.price !== undefined) { this.audio.play('deal'); this.toast(`🤝 بعت على ${def.owner} بـ ${market.fmt(res.price)}`, 'gain', 3); g.save(); return true; }
+              if (res.result === 'accept') { const r2 = farmsSys.completeSell(s, o); if (r2) { this.audio.play('deal'); this.toast(`🤝 بعت بـ ${market.fmt(r2.price)}`, 'gain', 3); g.save(); } return true; }
+              return res.result === 'leave';
+            },
+            done: () => { m.rerender(); this.refresh(); },
+          });
+        };
+      },
+    });
   }
 
   // ---------- العمّال ----------
@@ -900,6 +1239,8 @@ export class UI {
     m.handlers.done = (id) => {
       const r = shop.fulfill(s, id, g.rng, g.absMinutes());
       if (!r) return;
+      const bonus = events.mod(s, g.now(), 'ordersBonus');
+      if (bonus) { r.coins = Math.round(r.coins * (1 + bonus)); events.addTokens(s, 3); }
       this.audio.play('deal');
       g.claimReward(r, null, true);
       m.rerender();
@@ -1453,15 +1794,27 @@ export class UI {
     return new Promise((resolve) => {
       const el = document.createElement('div');
       el.className = 'adsim';
-      el.innerHTML = `<div>📺 إعلان تجريبي</div><div class="muted" style="color:#aaa">${esc(AD_PLACEMENTS[placement] || '')}</div><div class="count">5</div><div style="color:#aaa;font-size:12px">(بالجوال بيطلع إعلان AdMob حقيقي هنا)</div>`;
+      const total = AD_SECONDS;
+      el.innerHTML = `<button class="adclose" data-x>✕</button><div>📺 إعلان تجريبي</div><div class="muted" style="color:#aaa">${esc(AD_PLACEMENTS[placement] || '')}</div>
+        <div class="count">${total}</div><div class="adbar"><i></i></div>
+        <div style="color:#aaa;font-size:12px">كمّل الإعلان لآخره عشان تاخذ المكافأة • (بالجوال يطلع إعلان AdMob حقيقي)</div>`;
       document.getElementById('game').appendChild(el);
       el.addEventListener('pointerdown', e => e.stopPropagation());
-      let n = 5;
+      let n = total;
+      const bar = el.querySelector('.adbar i');
       const iv = setInterval(() => {
         n--;
         el.querySelector('.count').textContent = n;
+        bar.style.width = ((total - n) / total) * 100 + '%';
         if (n <= 0) { clearInterval(iv); el.remove(); resolve(true); }
       }, window.__fastAds ? 20 : 1000);
+      el.querySelector('[data-x]').addEventListener('click', () => {
+        if (n <= 0) return;
+        clearInterval(iv);
+        el.remove();
+        this.toast('سكّرت الإعلان قبل لا يخلص، ما في مكافأة');
+        resolve(false);
+      });
     });
   }
 }

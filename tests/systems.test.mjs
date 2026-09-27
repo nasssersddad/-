@@ -95,7 +95,7 @@ test('wheel: one free spin per day, 3 ad spins, weights valid', () => {
   const rng = mulberry32(5);
   assert.ok(spinWheel(s, T0, rng, 'free'));
   assert.equal(spinWheel(s, T0, rng, 'free'), null);
-  for (let i = 0; i < 3; i++) assert.ok(spinWheel(s, T0, rng, 'ad'));
+  for (let i = 0; i < 2; i++) assert.ok(spinWheel(s, T0, rng, 'ad'));
   assert.equal(spinWheel(s, T0, rng, 'ad'), null);
   assert.equal(wheelStatus(s, T0 + DAY).free, true);
   assert.ok(WHEEL.every(w => w.w > 0 && w.reward));
@@ -240,7 +240,7 @@ test('main quest chain advances', () => {
 
 test('achievements claim tiers in order', () => {
   const s = newState(T0);
-  s.stats.palms = 70;
+  s.stats.palms = 125;
   const c = claimableAchievements(s).find(x => x.ach.stat === 'palms');
   assert.equal(c.tier, 0);
   assert.equal(claimAchievement(s, 'palms').tier, 0);
@@ -282,4 +282,23 @@ test('dungeon floors are connected from start to stairs', () => {
       assert.ok(fl.enemies.some(e => e.type === 'boss' + f));
     }
   }
+});
+
+test('difficulty rises with each stage: xp curve, daily quest targets, legendary only on the 4th week', async () => {
+  const { stage, difficulty, rewardScale } = await import('../web/js/systems/progression.js');
+  for (let l = 1; l < 40; l++) assert.ok(xpForLevel(l + 1) > xpForLevel(l));
+  assert.ok(xpForLevel(20) / xpForLevel(10) > 3, 'grows steeply');
+  assert.ok(difficulty(3) > difficulty(1));
+  assert.ok(difficulty(4) - 1 > rewardScale(4) - 1, 'rewards grow slower than difficulty');
+  const lo = newState(T0), hi = newState(T0);
+  hi.player.level = 20; hi.built.wall_n = true; hi.built.wall_s = true; hi.built.gate = true;
+  assert.ok(stage(hi) > stage(lo));
+  ensureDailyQuests(lo, T0); ensureDailyQuests(hi, T0);
+  const sumLo = lo.daily.dq.reduce((a, q) => a + q.target, 0), sumHi = hi.daily.dq.reduce((a, q) => a + q.target, 0);
+  assert.ok(sumHi > sumLo, `harder targets ${sumHi} > ${sumLo}`);
+  const s = newState(T0);
+  let legendary = 0;
+  for (let i = 0; i < 28; i++) { const r = claimDaily(s, T0 + i * DAY); if (r.reward.chest === 'legendary') legendary++; }
+  assert.equal(legendary, 1);
+  assert.equal(s.daily.streak, 28);
 });

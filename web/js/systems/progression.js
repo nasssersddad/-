@@ -2,14 +2,29 @@
 import { BUILD_SPOTS, STAR_THRESHOLDS } from '../data/recipes.js';
 import { RELICS, RELIC_SETS } from '../data/items.js';
 
+// ---------- الصعوبة ----------
+// المرحلة ترتفع كل 5 مستويات ومع كل نجمة للخان، وكل شي يصعب معها
+export function stage(state) {
+  return Math.floor((state.player.level || 1) / 5) + stars(state);
+}
+
+export function difficulty(st) {
+  return 1 + 0.25 * st;
+}
+
+// المكافآت تزيد مع المرحلة بس أبطأ من الصعوبة
+export function rewardScale(st) {
+  return 1 + 0.12 * st;
+}
+
 export function xpForLevel(level) {
-  return Math.round(25 + (level - 1) * 22 + Math.pow(level - 1, 1.6) * 6);
+  return Math.round(30 * Math.pow(1.18, level - 1) + level * 10);
 }
 
 export function levelReward(level) {
-  const r = { coins: 20 * level, energy: 'full' };
-  if (level % 5 === 0) r.chest = level % 10 === 0 ? 'legendary' : 'rare';
-  else if (level % 2 === 0) r.kp = { c: 1, n: 1, s: 1 };
+  const r = { coins: 10 * level, energy: 'full' };
+  if (level % 10 === 0) r.chest = level % 20 === 0 ? 'legendary' : 'rare';
+  else if (level % 3 === 0) r.kp = { c: 1, n: 1, s: 1 };
   return r;
 }
 

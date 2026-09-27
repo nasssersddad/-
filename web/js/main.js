@@ -24,7 +24,7 @@ const ui = new UI(audio);
 const input = new Input($('touch'), $('stick'), $('knob'));
 input.bindActionButton($('actionBtn'));
 const particles = new Particles();
-const renderer = new Renderer($('world'), $('fx'));
+const renderer = new Renderer($('world'), $('fx'), $('post'));
 const game = new Game({ ui, audio, input, particles, storage: safeStorage() });
 window.__game = game;
 

@@ -1,7 +1,8 @@
 // أنظمة الرجوع للعبة: المكافأة اليومية، المهام اليومية، العجلة، أرباح الغياب، سقف الإعلانات، الإنجازات
 import { DAILY_CALENDAR, DAILY_QUEST_POOL, WHEEL, AD_DAILY_CAP, ACHIEVEMENTS, ACH_TIER_REWARDS } from '../data/rewards.js';
 import { dateKey, dayDiff, mulberry32, hashString, randInt, weightedIndex } from './util.js';
-import { stars, roomsBuilt, offlineMultiplier } from './progression.js';
+import { stars, roomsBuilt, offlineMultiplier, stage, difficulty, rewardScale } from './progression.js';
+import { STREAK_LEGENDARY_EVERY } from '../data/rewards.js';
 
 // ---------- المكافأة اليومية ----------
 // ترجع { available, dayIndex (0..6), streak, broken }
@@ -22,7 +23,8 @@ export function claimDaily(state, now) {
   if (!st.available) return null;
   state.daily.lastClaim = dateKey(now);
   state.daily.streak = st.streak;
-  return { reward: DAILY_CALENDAR[st.dayIndex], dayIndex: st.dayIndex, streak: st.streak };
+  const reward = st.streak % STREAK_LEGENDARY_EVERY === 0 ? { chest: 'legendary', label: 'صندوق أسطوري' } : DAILY_CALENDAR[st.dayIndex];
+  return { reward, dayIndex: st.dayIndex, streak: st.streak };
 }
 
 // ---------- المهام اليومية ----------
@@ -36,13 +38,15 @@ export function ensureDailyQuests(state, now) {
     const i = Math.floor(rng() * pool.length);
     chosen.push(pool.splice(i, 1)[0]);
   }
-  const lvlMul = 1 + Math.min(2, (state.player.level - 1) * 0.08);
+  const st = stage(state);
+  const lvlMul = difficulty(st);
+  const payMul = rewardScale(st);
   state.daily.dq = chosen.map(q => {
-    const n = Math.round(randInt(rng, q.range[0], q.range[1]) * (q.id === 'coins' ? lvlMul : 1));
+    const n = Math.max(1, Math.round(randInt(rng, q.range[0], q.range[1]) * lvlMul));
     return {
       id: q.id, stat: q.stat, name: q.name.replace('{n}', n), target: n,
       base: state.stats[q.stat] || 0, claimed: false,
-      reward: { coins: Math.round(q.coins * lvlMul), xp: 15 },
+      reward: { coins: Math.round(q.coins * payMul), xp: Math.round(8 * payMul) },
     };
   });
   state.daily.dqDate = today;
@@ -73,7 +77,7 @@ export function wheelStatus(state, now) {
     state.daily.freeSpin = true;
     state.daily.adSpins = 0;
   }
-  return { free: state.daily.freeSpin, adSpinsLeft: Math.max(0, 3 - state.daily.adSpins) };
+  return { free: state.daily.freeSpin, adSpinsLeft: Math.max(0, 2 - state.daily.adSpins) };
 }
 
 // kind: 'free' | 'ad'. يرجع رقم الخانة
@@ -91,9 +95,9 @@ export function spinWheel(state, now, rng, kind = 'free') {
 }
 
 // ---------- أرباح الغياب ----------
-export const OFFLINE_CAP_HOURS = 8;
+export const OFFLINE_CAP_HOURS = 6;
 export function offlineRatePerHour(state) {
-  return Math.round((8 + stars(state) * 14 + roomsBuilt(state) * 10) * offlineMultiplier(state));
+  return Math.round((6 + stars(state) * 10 + roomsBuilt(state) * 7) * offlineMultiplier(state));
 }
 
 export function offlineEarnings(state, now) {

@@ -3,7 +3,7 @@ import { CHESTS, CHEST_ITEMS, CHEST_RARITY } from '../data/rewards.js';
 import { ITEMS, RELICS, itemIcon, itemName } from '../data/items.js';
 import { KP_TYPES } from '../data/tech.js';
 import { add, addStat } from './inventory.js';
-import { addXp, maxEnergy, levelReward } from './progression.js';
+import { addXp, maxEnergy, levelReward, stage, rewardScale } from './progression.js';
 import { randInt, pick, weightedIndex } from './util.js';
 
 export function rollChestRarity(rng) {
@@ -13,7 +13,8 @@ export function rollChestRarity(rng) {
 // يولّد محتوى صندوق بدون ما يطبقه
 export function rollChest(state, rarity, rng) {
   const def = CHESTS[rarity];
-  const out = { coins: randInt(rng, def.coins[0], def.coins[1]), items: {}, kp: {} };
+  const scale = rewardScale(stage(state));
+  const out = { coins: Math.round(randInt(rng, def.coins[0], def.coins[1]) * scale), items: {}, kp: {} };
   for (let i = 0; i < def.items; i++) {
     const id = pick(rng, CHEST_ITEMS);
     const cheap = ITEMS[id].price <= 4;

@@ -18,7 +18,7 @@ await new Promise(r => server.listen(0, r));
 const url = `http://localhost:${server.address().port}/index.html`;
 
 const exe = process.env.CHROME || (fs.existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined);
-const browser = await chromium.launch({ executablePath: exe });
+const browser = await chromium.launch({ executablePath: exe, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
 const page = await ctx.newPage();
 const errors = [];
@@ -33,6 +33,8 @@ const skip = () => ev(async () => {
 });
 const closeModals = () => ev(() => { const ui = window.__game.ui; for (const m of [...ui.modals]) { m.closable = true; m.close(); } });
 const tick = (ms = 300) => page.waitForTimeout(ms);
+// يخلّص كل الحوارات والنوافذ المعلقة لين تهدأ اللعبة
+const settle = async () => { for (let i = 0; i < 25; i++) { await skip(); await closeModals(); await page.waitForTimeout(250); const busy = await ev(() => window.__game.ui.blocking() || window.__game.checking); if (!busy) { await page.waitForTimeout(300); await page.waitForTimeout(700); if (!(await ev(() => window.__game.ui.blocking()))) return; } } };
 
 await page.goto(url);
 await page.evaluate(() => { window.__fastAds = true; localStorage.clear(); });
@@ -55,6 +57,7 @@ await skip();
 await closeModals();
 
 // 2) اقطع نخل
+await settle();
 const cutPalms = await ev(async () => {
   const g = window.__game;
   const palms = g.world.objects.filter(o => o.kind === 'palm').slice(0, 3);
@@ -75,6 +78,7 @@ await shot('03-palms');
 await skip(); await closeModals(); await skip();
 
 // 3) المنجرة
+await settle();
 await ev(() => { const g = window.__game; const w = g.worldObjById.workbench; g.state.player.x = w.x; g.state.player.y = w.y + 14; g.state.player.dir = 'up'; });
 await tick(200);
 await ev(() => window.__game.doAction(window.__game.findTarget(), true));
@@ -90,6 +94,7 @@ await tick(700);
 await skip(); await closeModals(); await skip();
 
 // 4) الفراش
+await settle();
 await ev(() => { const g = window.__game; const b = g.worldObjById['spot:my_bed']; g.state.player.x = b.x; g.state.player.y = b.y + 12; g.state.player.dir = 'up'; });
 await tick(200);
 await ev(() => window.__game.doAction(window.__game.findTarget(), true));
@@ -100,18 +105,19 @@ await tick(900);
 await skip(); await closeModals(); await skip(); await closeModals();
 
 // 5) الزراعة
+await settle();
 await ev(async () => {
   const g = window.__game;
-  g.state.inv.water = 5;
+  g.state.inv.water = 5; g.state.inv.seed_wheat = (g.state.inv.seed_wheat || 0) + 4;
   for (const id of ['plot0', 'plot1']) {
     const o = g.worldObjById[id];
     g.state.player.x = o.x; g.state.player.y = o.y + 12; g.state.player.dir = 'up';
     const t = g.findTarget(); g.doAction(t, true);
     await new Promise(r => setTimeout(r, 380));
-    window.__plantShot = window.__plantShot || true;
-    await new Promise(r => setTimeout(r, 500));
+    const clr = () => { for (const m of [...g.ui.modals]) m.close(); g.ui.dq = []; if (g.ui.dialogOpen) { g.ui.advance(); g.ui.advance(); } };
+    for (let k = 0; k < 10; k++) { clr(); await new Promise(r => setTimeout(r, 100)); }
     g.doAction(g.findTarget(), true);
-    await new Promise(r => setTimeout(r, 950));
+    for (let k = 0; k < 12; k++) { clr(); await new Promise(r => setTimeout(r, 100)); }
   }
 });
 await tick(300);
@@ -227,10 +233,11 @@ await tick(500);
 await skip(); await closeModals();
 await ev(() => { const g = window.__game; g.doBuild('trough'); });
 await tick(300);
-await closeModals();
+await skip(); await closeModals(); await tick(700); await skip(); await closeModals();
 const camelsCount = await ev(() => window.__game.state.camels.length);
 console.log('starter camels:', camelsCount);
 // كب ماء بالحوض
+await settle();
 await ev(() => { const g = window.__game; const o = g.worldObjById['spot:trough']; g.state.player.x = o.x - 14; g.state.player.y = o.y + 2; g.state.player.dir = 'right'; });
 await tick(200);
 await ev(() => window.__game.doAction(window.__game.findTarget(), true));
@@ -240,6 +247,7 @@ await tick(700);
 const trough = await ev(() => window.__game.state.trough.water);
 console.log('trough water:', trough);
 // اسقِ وأطعم كل النياق
+await skip(); await closeModals();
 await ev(async () => {
   const g = window.__game;
   for (const c of g.state.camels) {
@@ -380,10 +388,73 @@ await closeModals();
 await shot('35-night-iso');
 await ev(() => { const g = window.__game; g.state.time.minute = 10 * 60; });
 
+// 15) العالم المفتوح: طلعة للقرية، مساومة، شراء مزرعة
+await ev(() => { const g = window.__game; const e = g.worldObjById.exit_world; g.state.player.x = e.x + 14; g.state.player.y = e.y; g.state.player.dir = 'left'; });
+await tick(200);
+await ev(() => window.__game.doAction(window.__game.findTarget(), true));
+await tick(250);
+await shot('36-loading');
+await tick(800);
+const ow = await ev(() => window.__game.mode);
+console.log('mode after exit:', ow);
+await ev(() => { const g = window.__game; const o = g.open.farmObjs.abu_rashid.owner; g.state.player.x = o.x; g.state.player.y = o.y + 14; g.state.player.dir = 'up'; });
+await tick(300);
+await shot('37-open-world');
+await ev(() => window.__game.doAction(window.__game.findTarget(), true));
+await tick(400);
+await shot('38-farm-panel');
+const farm = await ev(async () => {
+  const g = window.__game; const s = g.state;
+  const F = await import('./js/systems/farms.js');
+  const f = F.farmState(s, 'harbi');
+  F.refreshFarm(s, 'harbi', s.time.day);
+  const r1 = F.haggle(f.sale, Math.round(f.sale.min * 0.8), g.rng);
+  s.player.coins += f.sale.ask;
+  const r = F.buyFarm(s, 'harbi');
+  return { haggle: r1.result, bought: r.result, owned: f.owned };
+});
+console.log('farm:', farm);
+await closeModals();
+await ev(() => { const g = window.__game; const o = g.open.farmObjs.harbi.sign; g.state.player.x = o.x; g.state.player.y = o.y + 20; });
+await tick(400);
+await shot('39-owned-farm');
+await ev(() => window.__game.travel('world'));
+await tick(900);
+const back = await ev(() => window.__game.mode);
+console.log('mode after return:', back);
+
+// 16) الفعاليات والألعاب الصغيرة
+const evr = await ev(async () => {
+  const g = window.__game; const s = g.state;
+  const E = await import('./js/systems/events.js');
+  E.ensureEvent(s, g.now());
+  E.addTokens(s, 20);
+  const c = E.claimTier(s);
+  return { id: s.event.id, claimed: !!c };
+});
+console.log('event:', evr);
+await ev(() => window.__game.ui.openEvents());
+await tick(400);
+await shot('40-events');
+await closeModals();
+await ev(() => window.__game.ui.playRace());
+await tick(500);
+await shot('41-race');
+await ev(async () => { for (let i = 0; i < 30; i++) { const b = document.querySelector('[data-a="tap"]'); if (b) b.click(); await new Promise(r => setTimeout(r, 60)); } });
+await tick(1500);
+await shot('42-race-result');
+await closeModals();
+await ev(() => window.__game.ui.playFalcon());
+await tick(700);
+await shot('43-falcon');
+await closeModals();
+
 // حفظ وتحميل
+await settle();
 const saved = await ev(() => { window.__game.save(); return JSON.parse(localStorage.getItem('almuzare_save')).player.coins; });
 console.log('saved coins:', saved);
 const questIdx = await ev(() => window.__game.state.quest.index);
+console.log('qstats', await ev(() => { const s = window.__game.state; return { planted: s.stats.planted, watered: s.stats.watered, palms: s.stats.palms, plots: s.plots, seeds: s.inv.seed_wheat, water: s.inv.water, bed: s.built.my_bed }; }));
 console.log('quest index:', questIdx);
 await page.reload();
 await page.click('#startBtn');
@@ -399,6 +470,10 @@ server.close();
 const fatal = errors.filter(e => !/favicon/.test(e));
 if (fatal.length) {
   console.error('❌ أخطاء بالمتصفح:\n' + fatal.join('\n'));
+  process.exit(1);
+}
+if (ow !== 'open' || back !== 'world' || farm.bought !== 'bought' || !evr.claimed) {
+  console.error('❌ العالم المفتوح/الفعاليات', { ow, back, farm, evr });
   process.exit(1);
 }
 if (wk.strikers < 1 || !wk.back || !built || !trade.got || trade.sheep < 2) {

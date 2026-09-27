@@ -52,6 +52,7 @@ export const BUILD_SPOTS = {
   orders_board: { name: 'لوحة قافلة الطلبات', desc: 'طلبات من القوافل: جهّز الأغراض واستلم دراهم وخبرة.', cost: { plank: 3, rope: 2 }, rating: 2 },
   pen3:       { name: 'مراح كبير', desc: 'المراح يشيل 12 ناقة.', cost: { plank: 8, rope: 6, brick: 6 }, rating: 5, after: 'pen2' },
   farm2:      { name: 'توسعة المزرعة', desc: 'أربع أحواض زراعة زيادة.', cost: { wood: 6, stone: 4, water: 4 }, rating: 2, tech: 't_farm2' },
+  barn:       { name: 'المخزن', desc: 'مخزن كبير برا يشيل مواد البناء: خشب وحجر وطين وألواح وحبال وطوب... اللي تجمعه وحقيبتك مليانة يروح له أول.', cost: { wood: 10, plank: 8, stone: 6 }, rating: 3 },
   crypt_door: { name: 'باب السرداب', desc: 'باب قديم مقفول بطلاسم... زعبول يعرف سالفته.', cost: { lantern: 1, rope: 2 }, rating: 0, flag: 'q_crypt' },
 };
 

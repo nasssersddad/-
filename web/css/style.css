@@ -403,7 +403,12 @@ canvas.bigmap { width: 100%; display: block; border: 3px solid var(--wood); bord
 
 /* وضع البناء */
 #placeBar { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(8px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 12px; background: linear-gradient(rgba(43,26,14,.85), rgba(43,26,14,.95)); border: 2px solid var(--gold); border-radius: 16px; color: #fff3d6; min-width: min(460px, 92vw); z-index: 20; }
-#placeBar.hidden { display: none; }
+#placeBar.hidden, #arrangeBar.hidden { display: none; }
+#arrangeBar { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(8px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 12px; background: linear-gradient(rgba(30,50,20,.85), rgba(30,50,20,.95)); border: 2px solid #8fdc5a; border-radius: 16px; color: #eaffd8; min-width: min(460px, 92vw); z-index: 20; }
+#arrangeBar .pbinfo { font: 700 15px Cairo; }
+#arrangeBar .pbhint { font-size: 12px; opacity: .9; }
+#game.placing #arrangeBar { display: none; }
+#game.arranging #dock, #game.arranging #actionBtn, #game.arranging #seedChip, #game.arranging #bldChip, #game.arranging #eatBtn, #game.arranging #sidebar, #game.arranging #quest, #game.arranging #dqMini { display: none !important; }
 #placeBar .pbinfo { display: flex; gap: 10px; align-items: center; font: 700 14px Cairo; }
 #placeBar .pbinfo span { font-size: 12.5px; padding: 1px 8px; border-radius: 8px; }
 #placeBar .pbinfo span.ok { background: rgba(80,200,80,.3); color: #c8ffb0; }

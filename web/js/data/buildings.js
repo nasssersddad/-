@@ -19,8 +19,13 @@ export const PLACEABLES = {
   stable: { spot: 'stable', icon: '🐪', w: 7, h: 7, zone: 'out', cat: 'building', area: true,
     levels: [null, { spot: 'pen2' }, { spot: 'pen3' }], perk: 'نياق أكثر' },
   trough: { spot: 'trough', icon: '🏺', w: 2, h: 1, zone: 'out', cat: 'building', solid: true, inside: 'stable' },
+  barn: { spot: 'barn', icon: '🏚️', w: 3, h: 3, zone: 'out', cat: 'building', solid: true, storage: 'mats',
+    levels: [null, { cost: { plank: 10, stone: 10 }, coins: 300 }, { cost: { plank: 16, brick: 10 }, coins: 800 }], perk: 'يشيل مواد أكثر' },
   sheepfold: { spot: 'sheepfold', icon: '🐑', w: 6, h: 5, zone: 'out', cat: 'building', area: true,
     levels: [null, { cost: { wood: 8, rope: 4 }, coins: 200 }, { cost: { wood: 12, plank: 6 }, coins: 500 }], perk: 'غنم أكثر (+3)' },
+
+  // ---------- حقول زراعة (برا، تنحط على الرمل أو التربة) ----------
+  field: { name: 'حقل زراعة', icon: '🌱', w: 1, h: 1, zone: 'out', cat: 'field', repeat: true, soil: true },
 
   // ---------- ديكور وطرق (برا) ----------
   path: { name: 'ممر حجر', icon: '🪨', w: 1, h: 1, zone: 'out', cat: 'deco', cost: { stone: 1 }, beauty: 1, repeat: true, flat: true },
@@ -52,6 +57,11 @@ export const LEGACY_POS = {
 export const WORKSHOP_YARD = { x: 16, y: 32 };
 
 export const CHEST_CAP = [80, 140, 220];
+export const BARN_CAP = [200, 350, 500];
+// مواد البناء: هذي بس اللي تنحط بالمخزن الكبير
+export const MATS = new Set(['wood', 'frond', 'stone', 'clay', 'plank', 'rope', 'brick', 'herb', 'oldcoin', 'bone', 'stinger', 'wool', 'water', 'beans', 'alfalfa', 'flour', 'jar', 'lantern']);
+// الحقول: السعر يزيد مع كل حقل، والحد يكبر مع المستوى
+export const FIELD_BASE = 20, FIELD_STEP = 15, FIELD_MAX = 24;
 export const BAG_CAPS = [150, 200, 250, 300, 400];
 export const BAG_UPGRADE_COINS = [300, 800, 1600, 3000];
 export const COMFORT_MAX = 30;

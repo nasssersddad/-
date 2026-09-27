@@ -88,6 +88,8 @@ export class UI {
     pb('pbFlip', () => { this.audio.play('ui'); this.g.flipPlacing(); });
     pb('pbCancel', () => { this.audio.play('ui'); this.g.stopPlacing(); });
     $('placeBar').addEventListener('pointerdown', e => e.stopPropagation());
+    pb('arDone', () => { this.audio.play('ui'); this.g.stopArrange(); this.toast('✅ رتّبت مزرعتك', 'gain', 2); });
+    $('arrangeBar').addEventListener('pointerdown', e => e.stopPropagation());
     $('seedChip').addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       const id = farming.cycleSeed(this.g.state);
@@ -375,6 +377,12 @@ export class UI {
     m.tabsEl.hidden = false;
     m.tabsEl.innerHTML = list.map(t => `<button class="tab ${t.id === active ? 'on' : ''}" data-a="tab" data-v="${t.id}">${t.label}${t.badge ? `<span class="badge on">${t.badge}</span>` : ''}</button>`).join('');
     m.handlers.tab = (v) => { this.audio.play('ui'); onPick(v); };
+  }
+
+  arrangeUI(on) {
+    document.getElementById('game').classList.toggle('arranging', !!on);
+    $('arrangeBar').classList.toggle('hidden', !on);
+    this.refresh();
   }
 
   placingUI(on) {

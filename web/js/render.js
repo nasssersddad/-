@@ -96,7 +96,7 @@ export class Renderer {
   }
 
   camera(game) {
-    const p = game.placing ? placement.anchor(game.placing) : game.state.player;
+    const p = game.placing ? placement.anchor(game.placing) : game.arranging ? { x: game.arranging.cx, y: game.arranging.cy + 10 } : game.state.player;
     const mw = (game.mode === 'dungeon' ? DW : game.mode === 'open' ? OW_W : MAP_W) * TILE;
     const mh = (game.mode === 'dungeon' ? DH : game.mode === 'open' ? OW_H : MAP_H) * TILE;
     let cx = Math.round(p.x - this.bw / 2);
@@ -437,6 +437,7 @@ export class Renderer {
         case 'workers_house': this.sprite(list, art.mudHouse(s.built.workers_house2 ? 2 : 1), o.x, o.y + 6, o.y, { flip: o.flip }); break;
         case 'stall_shop': this.sprite(list, art.shopStall(), o.x, o.y + 6, o.y, { flip: o.flip }); break;
         case 'orders_board': this.sprite(list, art.ordersBoard(), o.x, o.y + 4, o.y, { flip: o.flip }); break;
+        case 'barn': this.sprite(list, art.barn(placement.levelOf(s, placement.placedById(s, o.pid))), o.x, o.y + 4, o.y, { flip: o.flip }); break;
         default: break;
       }
       return;
@@ -470,6 +471,8 @@ export class Renderer {
       case 'kiln': case 'mill': case 'loom': return art.station(type, t);
       case 'stall_shop': return art.shopStall();
       case 'orders_board': return art.ordersBoard();
+      case 'barn': return art.barn(level);
+      case 'field': return art.soilPlot(false);
       case 'workers_house': return art.mudHouse(level);
       case 'trough': return art.trough(5);
       case 'fence': return art.fencePost();
@@ -518,6 +521,22 @@ export class Renderer {
 
   // شبح المبنى وقت الوضع: مربعات خضرا أو حمرا تحته
   collectGhost(game, list) {
+    // وضع الترتيب: إطار يلمع حول كل شي تقدر تنقله
+    if (game.arranging && !game.placing) {
+      const t = game.t;
+      const a = 0.65 + Math.sin(t * 5) * 0.3;
+      const boxes = (game.state.placed || []).map(p => placement.footprint(p));
+      list.push({ y: 1e9, draw: (ctx, cam) => {
+        ctx.strokeStyle = `rgba(255,220,80,${a})`;
+        ctx.fillStyle = `rgba(255,220,80,${a * 0.28})`;
+        ctx.lineWidth = 2;
+        for (const f of boxes) {
+          const x = f.x0 * TILE - cam.x, y = f.y0 * TILE - cam.y, w = (f.x1 - f.x0 + 1) * TILE, h = (f.y1 - f.y0 + 1) * TILE;
+          ctx.fillRect(x, y, w, h);
+          ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+        }
+      } });
+    }
     const pl = game.placing;
     if (!pl) return;
     const t = game.t;
@@ -1013,7 +1032,8 @@ export class Renderer {
     // سهم المهمة
     // لو المكان بالعالم الثاني، السهم يدلّك على الطريق له
     let guide = null;
-    if (game.guide && game.mode !== 'dungeon') {
+    const busy = game.placing || game.arranging;
+    if (game.guide && game.mode !== 'dungeon' && !busy) {
       if (game.guide.mode === game.mode) guide = game.guide;
       else if (game.mode === 'world') guide = game.worldObjById.exit_world;
       else guide = game.open.objects.find(o => o.kind === 'gohome');
@@ -1021,7 +1041,7 @@ export class Renderer {
     if (guide) {
       const via = guide !== game.guide;
       this.pointArrow(game, guide, toScreen, { label: via ? (game.mode === 'world' ? 'طريق القرية' : 'طريق مزرعتك') : (game.guide.label || 'هنا') });
-    } else if (game.mode === 'world') {
+    } else if (game.mode === 'world' && !busy) {
       const fresh = this.freshAnimal(game);
       if (fresh) this.pointArrow(game, fresh, toScreen, { label: 'حلالك الجديد', offOnly: true });
       else if (s.settings.arrow !== false) this.questArrow(game, cam, toScreen);

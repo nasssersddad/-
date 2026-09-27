@@ -163,6 +163,7 @@ export class Game {
     // مبنى صار مبني بدون مكان (حفظ قديم): نحطه
     if (this.mode === 'world' && placement.needsMigrate(s)) { placement.migrate(s, this.world); this.syncPlaced(); }
     if (this.placing) this.updatePlacing(dt);
+    else if (this.arranging) this.updateArrange(dt);
     else if (this.anim) this.updateAnim(dt);
     else this.movePlayer(dt);
     this.actionCd = Math.max(0, this.actionCd - dt);
@@ -173,8 +174,8 @@ export class Game {
     else this.updateDungeon(dt);
 
     this.updateGuide();
-    this.target = this.placing ? null : this.findTarget();
-    if (!this.placing && (this.input.actionPressed || this.input.action) && this.actionCd <= 0 && !this.anim) {
+    this.target = this.placing || this.arranging ? null : this.findTarget();
+    if (!this.placing && !this.arranging && (this.input.actionPressed || this.input.action) && this.actionCd <= 0 && !this.anim) {
       this.actionCd = ACTION_REPEAT;
       this.doAction(this.target, this.input.actionPressed);
       if (this.anim) this.actionCd = Math.max(ACTION_REPEAT, this.anim.dur);
@@ -703,6 +704,7 @@ export class Game {
       for (let y = f.y0; y <= f.y1; y++) for (let x = f.x0; x <= f.x1; x++) hide.add(x + ',' + y);
       const common = { dynamic: true, pid: p.id, tx: Math.floor(a.x / TILE), ty: f.y1, x: a.x, y: a.y, fp: f, flip: p.flip };
       if (d.cat === 'building') this.world.objects.push({ ...common, id: 'spot:' + p.type, kind: 'spot', spot: d.spot });
+      else if (d.cat === 'field') this.world.objects.push({ ...common, id: placement.fieldId(p), kind: 'plot', group: 1 });
       else this.world.objects.push({ ...common, id: 'pl:' + p.id, kind: 'placed', ptype: p.type });
     }
     for (const o of this.world.objects) if (o.kind === 'deco') o.hidden = hide.has(o.tx + ',' + o.ty);
@@ -714,7 +716,7 @@ export class Game {
   }
 
   // وضع الوضع (زي Hay Day): شبح المبنى تحركه بالعصا أو بالضغط على الخريطة
-  startPlacing(type, pid = null) {
+  startPlacing(type, pid = null, opts = {}) {
     const s = this.state;
     const d = PLACEABLES[type];
     if (this.mode !== 'world') { this.ui.toast('ارجع لمزرعتك عشان تبني 🏠'); return; }
@@ -729,7 +731,7 @@ export class Game {
       const f = (d.inside && placement.placedOf(s, d.inside)[0]) ? { tx: placement.placedOf(s, d.inside)[0].tx + 1, ty: placement.placedOf(s, d.inside)[0].ty + 2 } : placement.findFreeSpot(s, this.world, type, near, false, { x: ptx, y: pty });
       ({ tx, ty } = f || { tx: near.x, ty: near.y });
     }
-    this.placing = { type, pid, tx, ty, flip, ax: 0, ay: 0 };
+    this.placing = { type, pid, tx, ty, flip, ax: 0, ay: 0, back: opts.back || (this.arranging ? 'arrange' : null) };
     this.validatePlacing();
     this.ui.placingUI(true);
   }
@@ -776,8 +778,44 @@ export class Game {
   }
 
   stopPlacing() {
+    const back = this.placing && this.placing.back;
     this.placing = null;
     this.ui.placingUI(false);
+    if (back === 'arrange' && this.arranging) this.ui.arrangeUI(true);
+  }
+
+  // ---------- وضع ترتيب المزرعة ----------
+  // تحرّك الكاميرا بالعصا وتضغط على أي شي منحط عشان تنقله
+  startArrange() {
+    if (this.mode !== 'world') { this.ui.toast('ارجع لمزرعتك عشان ترتّبها 🏠'); return; }
+    const p = this.state.player;
+    this.arranging = { cx: p.x, cy: p.y };
+    this.ui.arrangeUI(true);
+  }
+
+  stopArrange() {
+    if (this.placing) this.stopPlacing();
+    this.arranging = null;
+    this.ui.arrangeUI(false);
+    this.save();
+  }
+
+  updateArrange(dt) {
+    const a = this.arranging;
+    const m = this.input.move();
+    if (Math.hypot(m.x, m.y) < 0.15) return;
+    a.cx = Math.max(0, Math.min(MAP_W * TILE, a.cx + m.x * 260 * dt));
+    a.cy = Math.max(0, Math.min(MAP_H * TILE, a.cy + m.y * 260 * dt));
+  }
+
+  // الضغط وقت الترتيب: يمسك الشي اللي تحت الإصبع
+  pickAt(wx, wy) {
+    const p = placement.pickAt(this.state, wx, wy);
+    if (p) { this.audio.play('ui'); this.startPlacing(p.type, p.id, { back: 'arrange' }); return true; }
+    const tx = Math.floor(wx / TILE), ty = Math.floor(wy / TILE);
+    const fixed = this.world.objects.find(o => !o.dynamic && (o.kind === 'spot' || o.kind === 'plot' || o.kind === 'station' || o.kind === 'well') && Math.abs(o.tx - tx) <= 1 && Math.abs(o.ty - ty) <= 1);
+    if (fixed) this.ui.toast('هذا ثابت بمكانه، ما ينقل 🔒', '', 2);
+    return false;
   }
 
   confirmPlacing() {
@@ -814,7 +852,9 @@ export class Game {
     }
     // ديكور وأثاث وصناديق: تدفع وينحط على طول
     const item = placement.furnitureItem(pl.type);
-    if (item ? count(s, item) < 1 : (!has(s, inf.cost) || s.player.coins < inf.coins)) {
+    const coins = pl.type === 'field' ? placement.fieldPrice(s) : inf.coins;
+    if (!placement.canAddMore(s, pl.type)) { this.audio.play('deny'); this.ui.toast(pl.type === 'field' ? `وصلت حد الحقول (${placement.maxFields(s)}). يزيد كل ما كبر مستواك` : 'وصلت الحد'); this.stopPlacing(); return; }
+    if (item ? count(s, item) < 1 : (!has(s, inf.cost) || s.player.coins < coins)) {
       this.audio.play('deny');
       this.ui.toast(item ? `تحتاج ${ITEMS[item].icon} ${ITEMS[item].name} بحقيبتك` : 'المواد أو الدراهم ما تكفي 💸');
       return;
@@ -822,7 +862,8 @@ export class Game {
     const r = placement.place(s, this.world, pl.type, pl.tx, pl.ty, pl.flip);
     if (!r.ok) { this.ui.toast('❌ ' + r.reason); return; }
     if (item) add(s, item, -1);
-    else { remove(s, inf.cost); s.player.coins -= inf.coins; }
+    else { remove(s, inf.cost); s.player.coins -= coins; }
+    if (pl.type === 'field') this.fx.float(...this.fx.at(placement.anchor(r.p).x, placement.anchor(r.p).y, 20), `🌱 حقل جديد (−🪙${coins})`, '#d8ffb0', 11);
     addStat(s, 'placedDeco', 1);
     this.syncPlaced();
     this.audio.play('build');
@@ -832,7 +873,7 @@ export class Game {
     if (d.comfort) this.fx.float(...this.fx.at(a.x, a.y, 20), `🛋️ راحة +${d.comfort}`, '#ffe0a0', 11);
     this.gainXp(1, a.x, a.y, 30);
     this.save();
-    const more = d.repeat && (item ? count(s, item) > 0 : has(s, inf.cost) && s.player.coins >= inf.coins);
+    const more = d.repeat && placement.canAddMore(s, pl.type) && (item ? count(s, item) > 0 : has(s, inf.cost) && s.player.coins >= (pl.type === 'field' ? placement.fieldPrice(s) : inf.coins));
     if (more) { const { w } = placement.dims(pl.type, pl.flip); pl.tx += w; this.validatePlacing(); }
     else this.stopPlacing();
   }
@@ -1264,6 +1305,7 @@ export class Game {
           const built = s.built[o.spot];
           if (built && o.spot === 'my_bed') list.push({ kind: 'bed', ref: o, x: o.x, y: o.y });
           else if (built && o.spot === 'crypt_door') list.push({ kind: 'crypt', ref: o, x: o.x, y: o.y });
+          else if (built && o.spot === 'barn' && o.pid) list.push({ kind: 'chest', ref: o, x: o.x, y: o.y });
           else if (built && BUILD_SPOTS[o.spot].station) list.push({ kind: 'station', ref: { ...o, station: BUILD_SPOTS[o.spot].station }, x: o.x, y: o.y });
           else if (!built) {
             const st = this.spotStatusFor(o.spot);
@@ -1336,7 +1378,7 @@ export class Game {
       case 'crypt': return { icon: '⬇️', label: 'انزل' };
       case 'npc': return { icon: '🛒', label: 'بيع وشراء' };
       case 'wildcamel': return { icon: '🐪', label: 'ناقة الجيران' };
-      case 'chest': return { icon: '📦', label: 'الصندوق' };
+      case 'chest': return t.ref.spot === 'barn' ? { icon: '🏚️', label: 'المخزن' } : { icon: '📦', label: 'الصندوق' };
       case 'placed': return { icon: PLACEABLES[t.ref.ptype].icon, label: placement.info(t.ref.ptype).name };
       case 'guest': return { icon: t.ref.served ? '💬' : '☕', label: 'قدّم' };
       case 'gchest': case 'dchest': return { icon: '📦', label: 'افتح' };
@@ -1450,7 +1492,7 @@ export class Game {
       clay: { hits: 1, cost: 3, sound: 'dig', color: ['#9a5a35', '#5a3620'], respawn: 1, stat: 'clay', kp: {}, xp: 2 },
       herb: { hits: 1, cost: 1, sound: 'pick', color: ['#4f8a2f', '#e8e0f0'], respawn: 1, stat: 'herbs', kp: { n: 1 }, xp: 1 },
     }[o.kind];
-    if (!this.hasRoom(2)) return;
+    if (!this.hasRoom(2, { palm: 'wood', sidr: 'wood', rock: 'stone', clay: 'clay', herb: 'herb' }[o.kind])) return;
     if (!this.spendEnergy(specs.cost)) return;
     const type = { palm: 'chop', sidr: 'chop', rock: 'mine', clay: 'dig', herb: 'pick' }[o.kind];
     this.startAnim(type, o, 0.32, 0.16, () => this.gatherHit(o, specs));
@@ -1520,8 +1562,8 @@ export class Game {
   }
 
   // قبل الجمع: فيه مكان؟
-  hasRoom(n = 1) {
-    if (placement.roomFor(this.state, n)) return true;
+  hasRoom(n = 1, id = null) {
+    if (placement.roomFor(this.state, n, id)) return true;
     this.bagFullWarn();
     this.input.action = false;
     return false;
@@ -1543,7 +1585,7 @@ export class Game {
   }
 
   drawWater(o) {
-    if (!this.hasRoom(1)) return;
+    if (!this.hasRoom(1, 'water')) return;
     if (!this.spendEnergy(1)) return;
     this.startAnim('draw', o, 0.7, 0.55, () => {
       this.audio.play('water');
@@ -1574,7 +1616,7 @@ export class Game {
       return;
     }
     if (farming.isReady(p)) {
-      if (!this.hasRoom(2)) return;
+      if (!this.hasRoom(2, SEEDS[p.seed].crop)) return;
       if (!this.spendEnergy(1)) return;
       this.startAnim('harvest', o, 0.55, 0.35, () => {
         const h = farming.harvest(s, o.id, this.rng);

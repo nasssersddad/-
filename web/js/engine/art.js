@@ -1069,3 +1069,27 @@ export function pathTile(kind = 'stone', v = 0) {
     }
   });
 }
+
+// المخزن الكبير: بيت خشب بباب عريض وسقف، ويكبر شكله مع المستوى
+export function barn(level = 1) {
+  return cached('barn:' + level, 50, 44, (ctx) => {
+    ellipse(ctx, 25, 41, 22, 3, 'rgba(0,0,0,0.25)');
+    const wall = level >= 3 ? '#9a4a2a' : '#8a5a33', dark = level >= 3 ? '#6e3018' : PAL.woodDark;
+    // الجدران
+    R(ctx, 5, 18, 40, 22, wall);
+    for (let x = 7; x < 45; x += 5) R(ctx, x, 18, 1, 22, dark);
+    // السقف
+    for (let i = 0; i < 12; i++) R(ctx, 3 + i, 17 - i, 44 - i * 2, 1, i % 3 === 0 ? '#5e3a1f' : '#b07a48');
+    R(ctx, 2, 17, 46, 2, '#5e3a1f');
+    // الباب العريض بخشب مصلّب
+    R(ctx, 17, 24, 16, 16, '#4a2e18');
+    line(ctx, 17, 24, 32, 39, '#b07a48'); line(ctx, 32, 24, 17, 39, '#b07a48');
+    R(ctx, 17, 24, 16, 1, '#b07a48'); R(ctx, 24, 24, 1, 16, '#b07a48');
+    // شباك علوي
+    R(ctx, 22, 9, 6, 5, '#2a1a0a'); R(ctx, 22, 11, 6, 1, '#b07a48');
+    // أكياس وخشب جنبه
+    R(ctx, 6, 33, 8, 6, '#d8c090'); R(ctx, 7, 31, 6, 3, '#e8d0a0');
+    R(ctx, 36, 34, 9, 2, '#8a5a33'); R(ctx, 37, 32, 7, 2, '#a06a3a'); R(ctx, 38, 30, 5, 2, '#8a5a33');
+    if (level >= 2) { R(ctx, 4, 16, 42, 1, '#e8b53a'); P(ctx, 25, 5, '#e8b53a'); }
+  });
+}

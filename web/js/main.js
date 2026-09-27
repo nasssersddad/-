@@ -38,13 +38,14 @@ window.__saveNow = () => game.save();
 window.addEventListener('resize', () => renderer.resize());
 // وضع البناء: الضغط (بدون سحب) على الخريطة يودّي الشبح لمكان الإصبع
 let tapStart = null;
-$('touch').addEventListener('pointerdown', (e) => { if (game.placing) tapStart = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+$('touch').addEventListener('pointerdown', (e) => { if (game.placing || game.arranging) tapStart = { x: e.clientX, y: e.clientY, t: performance.now() }; });
 $('touch').addEventListener('pointerup', (e) => {
-  if (!game.placing || !tapStart) return;
+  if (!(game.placing || game.arranging) || !tapStart) return;
   const moved = Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y);
   if (moved < 12 && performance.now() - tapStart.t < 400) {
     const [wx, wy] = renderer.screenToWorld(e.clientX, e.clientY);
-    game.placeGhostAt(wx, wy);
+    if (game.placing) game.placeGhostAt(wx, wy);
+    else game.pickAt(wx, wy);
   }
   tapStart = null;
 });

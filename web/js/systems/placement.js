@@ -1,5 +1,5 @@
 // وضع المباني والديكور والأثاث باختيارك: التحقق من المكان، الوضع، النقل، الترقية، وتحويل الحفظ القديم
-import { PLACEABLES, LEGACY_POS, WORKSHOP_YARD, CHEST_CAP, COMFORT_MAX, BEAUTY_STEP } from '../data/buildings.js';
+import { PLACEABLES, LEGACY_POS, WORKSHOP_YARD, CHEST_CAP, BARN_CAP, MATS, FIELD_BASE, FIELD_STEP, FIELD_MAX, COMFORT_MAX, BEAUTY_STEP } from '../data/buildings.js';
 import { BUILD_SPOTS } from '../data/recipes.js';
 import { ITEMS } from '../data/items.js';
 import { T, TILE, KHAN, MAP_W, MAP_H, tileAt } from '../data/map.js';
@@ -118,8 +118,8 @@ export function canPlace(state, world, type, tx, ty, flip = false, ignoreId = nu
         if (nearKhan(x, y)) return { ok: false, reason: 'البناء برا البيت بس' };
         if (t === T.WATER) return { ok: false, reason: 'ما يصير على الماي' };
         if (t === T.ROAD) return { ok: false, reason: 'لا تسد الطريق' };
-        if (t === T.SOIL) return { ok: false, reason: 'هذي أرض الزراعة' };
-        if (!OUT_TILES.has(t)) return { ok: false, reason: 'الأرض ما تصلح' };
+        if (t === T.SOIL && !d.soil) return { ok: false, reason: 'هذي أرض الزراعة' };
+        if (!OUT_TILES.has(t) && !(d.soil && t === T.SOIL)) return { ok: false, reason: 'الأرض ما تصلح' };
       }
       if (worldBlockers(world).has(x + ',' + y)) return { ok: false, reason: 'فيه شي بالمكان' };
     }
@@ -141,9 +141,20 @@ export function canPlace(state, world, type, tx, ty, flip = false, ignoreId = nu
   return { ok: true };
 }
 
+// ---------- الحقول ----------
+export function maxFields(state) {
+  return Math.min(FIELD_MAX, 4 + Math.floor((state.player.level || 1) / 2));
+}
+export function fieldPrice(state) {
+  return FIELD_BASE + FIELD_STEP * placedOf(state, 'field').length;
+}
+export function fieldId(p) {
+  return 'field:' + p.id;
+}
+
 export function canAddMore(state, type) {
   const d = PLACEABLES[type];
-  const max = d.max || (d.cat === 'building' ? 1 : 999);
+  const max = type === 'field' ? maxFields(state) : d.max || (d.cat === 'building' ? 1 : 999);
   return placedOf(state, type).length < max;
 }
 
@@ -160,7 +171,7 @@ export function place(state, world, type, tx, ty, flip = false) {
   if (!v.ok) return v;
   const p = { id: newId(state), type, tx, ty, flip: !!flip, level: 1 };
   state.placed.push(p);
-  if (type === 'chest') { state.chests = state.chests || {}; state.chests[p.id] = { items: {} }; }
+  if (type === 'chest' || PLACEABLES[type].storage) { state.chests = state.chests || {}; state.chests[p.id] = { items: {}, ...(PLACEABLES[type].storage ? { only: PLACEABLES[type].storage } : {}) }; }
   return { ok: true, p };
 }
 
@@ -189,6 +200,7 @@ export function removePlaced(state, id) {
   if (isBuilding(p.type) && isBuilt(state, p)) return { ok: false, reason: 'المباني تنقل بس' };
   if (state.workers && state.workers.some(w => w.job && w.job.spot === PLACEABLES[p.type].spot)) return { ok: false, reason: 'البنّاء شغال عليه' };
   if (p.type === 'chest' && chestUsed(state, id) > 0) return { ok: false, reason: 'فضّ الصندوق أول' };
+  if (p.type === 'field' && state.plots && state.plots[fieldId(p)]) return { ok: false, reason: 'فيه زرع، احصده أول' };
   state.placed = state.placed.filter(q => q.id !== id);
   if (p.type === 'chest' && state.chests) delete state.chests[id];
   return { ok: true, p };
@@ -245,7 +257,17 @@ export function sheepCapBonus(state) {
 // ---------- الصناديق ----------
 export function chestCap(state, id) {
   const p = placedById(state, id);
-  return CHEST_CAP[Math.min(CHEST_CAP.length, levelOf(state, p) || 1) - 1];
+  const caps = p && p.type === 'barn' ? BARN_CAP : CHEST_CAP;
+  return caps[Math.min(caps.length, levelOf(state, p) || 1) - 1];
+}
+
+// هذا الغرض يصير ينحط بهالمخزن؟ (المخزن الكبير للمواد بس، والمخزن اللي ما انبنى ما يخزّن)
+export function accepts(state, chestId, id) {
+  const c = state.chests && state.chests[chestId];
+  if (!c) return false;
+  const p = placedById(state, chestId);
+  if (p && !isBuilt(state, p)) return false;
+  return c.only === 'mats' ? MATS.has(id) : true;
 }
 export function chestUsed(state, id) {
   const c = state.chests && state.chests[id];
@@ -289,7 +311,7 @@ export function migrate(state, world) {
   state.placed = state.placed || [];
   state.chests = state.chests || {};
   const moved = [];
-  const order = ['stable', 'trough', 'sheepfold', 'stall_shop', 'orders_board', 'workers_house', 'kiln', 'mill', 'loom'];
+  const order = ['stable', 'trough', 'sheepfold', 'stall_shop', 'orders_board', 'workers_house', 'kiln', 'mill', 'loom', 'barn'];
   for (const type of order) {
     const d = PLACEABLES[type];
     if (!state.built[d.spot] || placedOf(state, type).length) continue;
@@ -311,12 +333,15 @@ export function furnitureItem(type) {
 }
 
 // ---------- التخزين: الحقيبة ثم الصناديق ----------
-function chestsWithSpace(state) {
-  return placedOf(state, 'chest').map(p => ({ id: p.id, free: chestCap(state, p.id) - chestUsed(state, p.id) })).filter(c => c.free > 0);
+// المخازن اللي فيها مكان لهالغرض: المخزن الكبير أول للمواد، وبعدين الصناديق
+function chestsWithSpace(state, id = null) {
+  const list = (state.placed || []).filter(p => state.chests && state.chests[p.id] && (id ? accepts(state, p.id, id) : isBuilt(state, p)));
+  list.sort((a, b) => (b.type === 'barn') - (a.type === 'barn'));
+  return list.map(p => ({ id: p.id, free: chestCap(state, p.id) - chestUsed(state, p.id) })).filter(c => c.free > 0);
 }
 
-export function chestFree(state) {
-  return chestsWithSpace(state).reduce((a, c) => a + c.free, 0);
+export function chestFree(state, id = null) {
+  return chestsWithSpace(state, id).reduce((a, c) => a + c.free, 0);
 }
 
 // يحط الغنايم: الحقيبة لين تمتلي، والباقي للصناديق، واللي ما له مكان يضيع. يرجع التفاصيل
@@ -327,7 +352,7 @@ export function stow(state, loot) {
     if (!counts(id)) { add(state, id, n); out.bag[id] = n; continue; }
     const k = Math.min(n, bagFree(state));
     if (k > 0) { add(state, id, k); out.bag[id] = k; n -= k; }
-    for (const c of chestsWithSpace(state)) {
+    for (const c of chestsWithSpace(state, id)) {
       if (n <= 0) break;
       const m = Math.min(n, c.free);
       const items = state.chests[c.id].items;
@@ -341,13 +366,13 @@ export function stow(state, loot) {
 }
 
 // هل فيه مكان لـ n أغراض (الحقيبة أو الصناديق)؟
-export function roomFor(state, n = 1) {
-  return bagFree(state) + chestFree(state) >= n;
+export function roomFor(state, n = 1, id = null) {
+  return bagFree(state) + chestFree(state, id) >= n;
 }
 
 export function deposit(state, chestId, id, n) {
   const c = state.chests && state.chests[chestId];
-  if (!c) return 0;
+  if (!c || !accepts(state, chestId, id)) return 0;
   const k = Math.min(n, count(state, id), chestCap(state, chestId) - chestUsed(state, chestId));
   if (k <= 0) return 0;
   add(state, id, -k);
@@ -369,4 +394,13 @@ export function withdraw(state, chestId, id, n) {
 // كم الحقيبة متعدّية سعتها
 export function bagOver(state) {
   return Math.max(0, bagUsed(state) - bagCap(state));
+}
+
+// وش المنحط اللي تحت هالنقطة (بالبكسل)؟ للمسك بوضع الترتيب
+export function pickAt(state, wx, wy) {
+  const tx = Math.floor(wx / TILE), ty = Math.floor(wy / TILE);
+  const hits = (state.placed || []).filter(p => { const f = footprint(p); return tx >= f.x0 && tx <= f.x1 && ty >= f.y0 && ty <= f.y1; });
+  // الأصغر أول (الحوض داخل المراح مثلاً)
+  hits.sort((a, b) => { const fa = footprint(a), fb = footprint(b); return (fa.x1 - fa.x0 + 1) * (fa.y1 - fa.y0 + 1) - (fb.x1 - fb.x0 + 1) * (fb.y1 - fb.y0 + 1); });
+  return hits[0] || null;
 }

@@ -61,3 +61,23 @@ test('deposit and withdraw respect the chest and bag limits; rewards are never b
   applyReward(s, { items: { wood: 5 } }, Math.random);
   assert.equal(count(s, 'wood'), 5);
 });
+
+test('the barn takes building materials only, first, and only once built', () => {
+  const s = newState(0);
+  s.inv = {};
+  const f = P.findFreeSpot(s, world, 'barn', { x: 14, y: 36 });
+  const barn = P.place(s, world, 'barn', f.tx, f.ty).p;
+  const c = chest(s);
+  s.inv.stone = 150;
+  let r = P.stow(s, { wood: 10 });
+  assert.equal(r.chest.wood, 10, 'unbuilt barn: goes to the chest');
+  assert.equal(P.chestUsed(s, barn.id), 0);
+  s.built.barn = true;
+  r = P.stow(s, { wood: 10, tomato: 5 });
+  assert.equal(s.chests[barn.id].items.wood, 10, 'materials go to the barn first');
+  assert.equal(s.chests[c.id].items.tomato, 5, 'crops go to chests');
+  assert.equal(P.chestCap(s, barn.id), 200);
+  s.inv.tomato = 3;
+  assert.equal(P.deposit(s, barn.id, 'tomato', 3), 0, 'barn refuses crops');
+  assert.ok(has(s, { wood: 20 }), 'building can use barn + chest wood');
+});

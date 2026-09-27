@@ -82,3 +82,22 @@ test('upgrades, comfort and beauty', () => {
   assert.ok(P.beauty(s) >= 60);
   assert.equal(P.beautyBonus(s), 0.06);
 });
+
+test('fields: placed on sand or farm soil, price rises, limit grows with level; planted fields move with their crop', () => {
+  const s = newState(0);
+  s.player.level = 2;
+  assert.equal(P.maxFields(s), 5);
+  assert.equal(P.fieldPrice(s), 20);
+  assert.ok(P.canPlace(s, world, 'field', 44, 32).ok, 'on farm soil next to the fixed plots');
+  const a = P.place(s, world, 'field', 44, 32).p;
+  assert.equal(P.fieldPrice(s), 35);
+  s.plots[P.fieldId(a)] = { seed: 'seed_tomato', stage: 1, watered: true };
+  assert.match(P.removePlaced(s, a.id).reason, /احصده/);
+  const dest = P.findFreeSpot(s, world, 'field', { x: 14, y: 36 });
+  assert.ok(P.move(s, world, a.id, dest.tx, dest.ty).ok);
+  assert.equal(s.plots[P.fieldId(a)].stage, 1, 'crop kept after moving');
+  for (let i = 0; i < 10; i++) { const f = P.findFreeSpot(s, world, 'field', { x: 14, y: 38 }); P.place(s, world, 'field', f.tx, f.ty); }
+  assert.equal(P.placedOf(s, 'field').length, 5, 'capped by level');
+  const hit = P.pickAt(s, (a.tx + 0.5) * 16, (a.ty + 0.5) * 16);
+  assert.equal(hit.id, a.id);
+});

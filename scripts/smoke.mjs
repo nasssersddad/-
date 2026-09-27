@@ -243,10 +243,19 @@ console.log('starter camels:', camelsCount);
 await settle();
 await ev(() => { const g = window.__game; const o = g.worldObjById['spot:trough']; g.state.player.x = o.x - 14; g.state.player.y = o.y + 2; g.state.player.dir = 'right'; });
 await tick(200);
-await ev(() => window.__game.doAction(window.__game.findTarget(), true));
+// نستهدف الحوض نفسه (النياق تجي تشرب جنبه وممكن تاخذ الهدف)
+await ev(() => { const g = window.__game; g.state.inv.water = (g.state.inv.water || 0) + 3; g.state.player.energy = Math.max(g.state.player.energy, 20); const o = g.worldObjById['spot:trough']; g.doAction({ kind: 'trough', ref: o, x: o.x, y: o.y }, true); });
 await page.waitForTimeout(450);
 await page.screenshot({ path: path.join(outDir, '21-pour-trough.png') });
-await tick(700);
+await ev(async () => {
+  const g = window.__game;
+  for (let k = 0; k < 120 && (g.anim || g.ui.blocking()); k++) {
+    for (const x of [...g.ui.modals]) { x.closable = true; x.close(); }
+    if (g.ui.dialogOpen) g.ui.advance();
+    await new Promise(r => setTimeout(r, 50));
+  }
+});
+await tick(300);
 const trough = await ev(() => window.__game.state.trough.water);
 console.log('trough water:', trough);
 // اسقِ وأطعم كل النياق
@@ -507,7 +516,12 @@ const wx = await ev(async () => {
   s.rainDay = null;
   await new Promise(r => setTimeout(r, 1500));
   const watered = free ? s.plots[free.id].watered : true;
-  const moved = g.wildRt.herd.some((r, i) => Math.hypot(r.x - herd0[i][0], r.y - herd0[i][1]) > 2);
+  // النياق ترعى: ممكن تكون تاكل، ننتظر لين وحدة منها تتحرك
+  let moved = false;
+  for (let k = 0; k < 30 && !moved; k++) {
+    moved = g.wildRt.herd.some((r, i) => Math.hypot(r.x - herd0[i][0], r.y - herd0[i][1]) > 2);
+    if (!moved) await new Promise(r => setTimeout(r, 200));
+  }
   return { watered, moved, rain: g.rainLevel() > 0, trees: g.world.objects.filter(o => o.kind === 'sidr').length };
 });
 console.log('weather:', wx);
@@ -586,6 +600,56 @@ await tick(300);
 await shot('54-store-inside');
 await closeModals();
 
+// 20) حقول تشتريها، المخزن الكبير، ووضع الترتيب
+await settle();
+const extra = await ev(async () => {
+  const g = window.__game, s = g.state;
+  const P = await import('./js/systems/placement.js');
+  s.player.coins += 20000; s.player.level = Math.max(6, s.player.level); s.player.energy = 200;
+  g.placeAt({ x: 46 * 16, y: 37 * 16 });
+  g.startPlacing('field');
+  for (let i = 0; i < 3; i++) g.confirmPlacing();
+  g.stopPlacing();
+  const fields = P.placedOf(s, 'field');
+  // ازرع حقل
+  s.inv.seed_tomato = (s.inv.seed_tomato || 0) + 3; s.selectedSeed = 'seed_tomato';
+  const fo = g.worldObjById[P.fieldId(fields[0])];
+  g.placeAt({ x: fo.x, y: fo.y + 14 }); s.player.dir = 'up';
+  await new Promise(r => setTimeout(r, 150));
+  g.doAction(g.findTarget(), true);
+  for (let k = 0; k < 80 && g.anim; k++) await new Promise(r => setTimeout(r, 50));
+  const planted = !!s.plots[P.fieldId(fields[0])];
+  // المخزن
+  Object.assign(s.inv, { wood: 20, plank: 20, stone: 20 });
+  g.placeAt({ x: 14 * 16, y: 36 * 16 });
+  g.startPlacing('barn'); g.confirmPlacing();
+  for (const x of [...g.ui.modals]) { if (x.handlers.build) x.handlers.build(); x.closable = true; x.close(); }
+  const barn = P.placedOf(s, 'barn')[0];
+  s.inv.clay = 400;
+  const r = g.gainItems({ stone: 4 }, s.player.x, s.player.y);
+  const inBarn = barn && s.chests[barn.id] ? (s.chests[barn.id].items.stone || 0) : 0;
+  // وضع الترتيب: امسك المخزن وانقله
+  g.startArrange();
+  let movedOk = false;
+  if (barn) {
+    const before = barn.tx;
+    g.pickAt((barn.tx + 1) * 16, (barn.ty + 1) * 16);
+    const dest = P.findFreeSpot(s, g.world, 'barn', { x: barn.tx + 6, y: barn.ty });
+    if (g.placing && dest) { g.placing.tx = dest.tx; g.placing.ty = dest.ty; g.validatePlacing(); g.confirmPlacing(); }
+    movedOk = barn.tx !== before && !!g.arranging && !g.placing;
+  }
+  s.inv.clay = 10;
+  return { fields: fields.length, planted, barnBuilt: !!s.built.barn, inBarn, movedOk };
+});
+console.log('extra:', extra);
+await tick(400);
+await shot('55-arrange');
+await ev(() => window.__game.stopArrange());
+await ev(() => window.__game.ui.openStore('build:field'));
+await tick(300);
+await shot('56-fields-store');
+await closeModals();
+
 // حفظ وتحميل
 await settle();
 const saved = await ev(() => { window.__game.save(); return JSON.parse(localStorage.getItem('almuzare_save')).player.coins; });
@@ -607,6 +671,10 @@ server.close();
 const fatal = errors.filter(e => !/favicon/.test(e));
 if (fatal.length) {
   console.error('❌ أخطاء بالمتصفح:\n' + fatal.join('\n'));
+  process.exit(1);
+}
+if (extra.fields < 3 || !extra.planted || !extra.barnBuilt || extra.inBarn < 1 || !extra.movedOk) {
+  console.error('❌ الحقول أو المخزن أو الترتيب فيه مشكلة', extra);
   process.exit(1);
 }
 if (bld.insideOk || !bld.outsideOk || !bld.loomOutside || !bld.penMoved || !bld.camelsInside || !bld.chest || bld.comfort < 3 || bld.toChest < 1 || !bld.upOk || bld.stallSpeed !== 1.25 || bld.paths < 2) {

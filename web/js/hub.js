@@ -9,7 +9,7 @@ import { SHEEP_BREEDS } from './data/sheep.js';
 import { TRAITS, camelBreedName } from './data/camels.js';
 import { count, add, addStat, has, bagUsed, bagCap, bagFree, counts } from './systems/inventory.js';
 import * as placement from './systems/placement.js';
-import { PLACEABLES, BAG_CAPS, BAG_UPGRADE_COINS } from './data/buildings.js';
+import { PLACEABLES, BAG_CAPS, BAG_UPGRADE_COINS, MATS } from './data/buildings.js';
 import { spotStatus } from './systems/crafting.js';
 import { applyReward } from './systems/rewards.js';
 import * as farming from './systems/farming.js';
@@ -81,6 +81,8 @@ export function advice(g) {
     if (seed) out.push({ icon: '🌱', text: `${empty.length} حوض فاضي. ازرع ${SEEDS[seed].name} (عندك ${count(s, seed)}).`, btn: '📍 وديني', go: { guide: empty[0], label: 'ازرع' } });
     else out.push({ icon: '🛒', text: 'أحواضك فاضية وما عندك بذور. اشترِ بذور من أبو سالم أو المتجر.', btn: '🌱 اشترِ بذور', go: { store: 'seeds' } });
   }
+  const seedsHave = Object.keys(s.inv).filter(id => id.startsWith('seed_')).reduce((a, id) => a + s.inv[id], 0);
+  if (!empty.length && seedsHave >= 5 && placement.canAddMore(s, 'field') && s.player.coins >= placement.fieldPrice(s)) out.push({ icon: '🌾', text: `كل أحواضك مزروعة وعندك ${seedsHave} بذرة. اشترِ حقل جديد بـ🪙${placement.fieldPrice(s)} وحطه وين ما تبي.`, btn: '🌱 حقل جديد', go: { store: 'build:field' } });
   const thirsty = s.built.stable ? s.camels.filter(c => camels.camelNeeds(c, day).some(n => n !== 'milk')) : [];
   const sheepNeed = s.built.sheepfold ? s.sheep.filter(sh => sheepSys.sheepNeeds(sh, day).some(n => n !== 'wool')) : [];
   if (thirsty.length + sheepNeed.length) out.push({ icon: '🐪', text: `${thirsty.length + sheepNeed.length} من حلالك يبي أكل أو ماي.`, btn: '🌿 اعتنِ بالكل', go: { tend: true } });
@@ -277,7 +279,9 @@ export function installHub(UI) {
     const g = this.g;
     const s = g.state;
     m.bcat = m.bcat || 'out';
-    const cats = [['out', '🏗️ مباني برا'], ['deco', '🌺 ديكور وطرق'], ['in', '🛋️ داخل البيت'], ['home', '🏠 ترميم البيت']];
+    const cats = [['out', '🏗️ مباني برا'], ['field', '🌾 حقول'], ['deco', '🌺 ديكور وطرق'], ['in', '🛋️ داخل البيت'], ['home', '🏠 ترميم البيت']];
+    m.handlers.arrange = () => { m.close(); g.startArrange(); };
+    const arrangeBtn = '<div class="row center" style="margin:4px 0 8px"><button class="btn blue" data-a="arrange">🧩 رتّب مزرعتك (انقل أي شي)</button></div>';
     m.handlers.bcat = (v) => { m.bcat = v; this.audio.play('ui'); m.rerender(); };
     const buyMissing = (cost) => {
       const mc = missingCost(s, cost, (x) => this.buyPrice(x));
@@ -298,7 +302,15 @@ export function installHub(UI) {
     const chips = `<div class="helpnav">${cats.map(([id, label]) => `<button class="hbtn2 ${m.bcat === id ? 'on' : ''}" data-a="bcat" data-v="${id}"><small>${label}</small></button>`).join('')}</div>`;
     const miss = (cost) => { const mc = missingCost(s, cost, (x) => this.buyPrice(x)); return mc.coins ? `<button class="btn" data-a="MISS" ${s.player.coins >= mc.coins ? '' : 'disabled'}>اشترِ الناقص 🪙${fmt(mc.coins)}</button>` : ''; };
     let body = '';
-    if (m.bcat === 'home') {
+    if (m.bcat === 'field') {
+      const n = placement.placedOf(s, 'field').length, max = placement.maxFields(s), price = placement.fieldPrice(s);
+      const empty = placement.placedOf(s, 'field').filter(p => !s.plots[placement.fieldId(p)]).length;
+      body = `<p class="howto">🌾 اشترِ حقول وحطها بأي مكان برا (على الرمل أو جنب الأحواض). كل حقل تزرع فيه زي الأحواض، ولو نقلته <b>الزرع ينتقل معه</b>. عدد الحقول يزيد كل ما كبر مستواك.</p>
+        <div class="sgrid"><div class="scard ${n < max && s.player.coins >= price ? 'ready' : ''}"><div class="sbig">🌱</div><b>حقل زراعة</b>
+          <div class="sinfo">عندك ${n}/${max} حقل${empty ? ` • ${empty} فاضي` : ''}</div><div class="sinfo">السعر: 🪙${price} (يزيد مع كل حقل)</div>
+          <div class="row center">${n < max ? `<button class="btn green big" data-a="place" data-v="field" ${s.player.coins >= price ? '' : 'disabled'}>📍 ضعه</button>` : `<div class="lock">🔒 الحقل الجاي بمستوى ${(max - 3) * 2}</div>`}</div></div>
+          <div class="scard"><div class="sbig">🧩</div><b>رتّب حقولك</b><div class="sinfo">انقل أي حقل أو مبنى لمكان ثاني</div><button class="btn blue" data-a="arrange">🧩 رتّب</button></div></div>`;
+    } else if (m.bcat === 'home') {
       const list = Object.entries(BUILD_SPOTS).filter(([id]) => g.worldObjById['spot:' + id] && !g.worldObjById['spot:' + id].dynamic && !spotStatus(s, id).hidden);
       list.sort((x, y) => (s.built[x[0]] ? 1 : 0) - (s.built[y[0]] ? 1 : 0));
       body = `<p class="howto">🏠 هذي تصليحات لبيتك نفسه (الجدران والغرف والمجلس...). مكانها ثابت داخل البيت.</p><div class="sgrid">${list.map(([id, sp]) => {
@@ -314,7 +326,7 @@ export function installHub(UI) {
       }).join('')}</div>`;
     } else if (m.bcat === 'out') {
       const types = Object.keys(PLACEABLES).filter(t => PLACEABLES[t].cat === 'building');
-      body = `<p class="howto">🏗️ اختر المبنى واضغط <b>«📍 ضعه»</b>، وحرّكه لأي مكان تبيه <b>برا بيتك</b> (الأخضر = يصير). بعدين ابنه بنفسك أو خلّ البنّاء يبنيه.</p><div class="sgrid">${types.map(type => {
+      body = `<p class="howto">🏗️ اختر المبنى واضغط <b>«📍 ضعه»</b>، وحرّكه لأي مكان تبيه <b>برا بيتك</b> (الأخضر = يصير). بعدين ابنه بنفسك أو خلّ البنّاء يبنيه.</p>${arrangeBtn}<div class="sgrid">${types.map(type => {
         const d = PLACEABLES[type];
         const inf = placement.info(type);
         const st = spotStatus(s, d.spot);
@@ -408,24 +420,25 @@ export function installHub(UI) {
   P.openChest = function (pid) {
     const g = this.g;
     const s = g.state;
-    const MATS = new Set(['wood', 'frond', 'stone', 'clay', 'plank', 'rope', 'brick', 'herb', 'oldcoin', 'bone', 'stinger', 'wool', 'water', 'beans', 'alfalfa', 'flour', 'jar', 'lantern']);
+    const isBarn = !!(s.chests[pid] && s.chests[pid].only);
     this.modal({
-      title: '📦 الصندوق',
+      title: isBarn ? '🏚️ المخزن (مواد البناء)' : '📦 الصندوق',
       cls: 'store',
       render: (m) => {
         const box = s.chests[pid];
         if (!box) { m.close(); return; }
         const cap = placement.chestCap(s, pid), used = placement.chestUsed(s, pid);
         const bu = bagUsed(s), bc = bagCap(s);
-        const bagIds = Object.keys(s.inv).filter(id => ITEMS[id] && s.inv[id] > 0).sort();
+        const bagIds = Object.keys(s.inv).filter(id => ITEMS[id] && s.inv[id] > 0 && (!isBarn || MATS.has(id))).sort();
         const boxIds = Object.keys(box.items).filter(id => box.items[id] > 0).sort();
         const row = (id, n, a) => `<div class="shop-row"><span class="ic">${itemIcon(id)}</span><span class="nm">${itemName(id)} <small class="muted">×${n}</small></span><button class="btn" data-a="${a}" data-v="${id}:1">1</button><button class="btn green" data-a="${a}" data-v="${id}:all">الكل</button></div>`;
         m.body.innerHTML = `<div class="row center" style="margin-bottom:6px">
             <button class="btn" data-a="depcat" data-v="mats">⬅️ حط كل المواد</button>
-            <button class="btn" data-a="depcat" data-v="crops">⬅️ حط كل المحاصيل</button>
-            <button class="btn" data-a="depcat" data-v="all">⬅️ حط الكل</button></div>
+            ${isBarn ? '' : `<button class="btn" data-a="depcat" data-v="crops">⬅️ حط كل المحاصيل</button>
+            <button class="btn" data-a="depcat" data-v="all">⬅️ حط الكل</button>`}</div>
+          ${isBarn ? '<p class="muted center">المخزن يشيل مواد البناء بس: خشب، حجر، طين، ألواح، حبال، طوب، صوف...</p>' : ''}
           <div class="chestwrap">
-            <div class="chestcol"><h4><span>📦 الصندوق</span><span>${used}/${cap}</span></h4><div class="bar"><i style="width:${Math.min(100, used / cap * 100)}%"></i></div>
+            <div class="chestcol"><h4><span>${isBarn ? '🏚️ المخزن' : '📦 الصندوق'}</span><span>${used}/${cap}</span></h4><div class="bar"><i style="width:${Math.min(100, used / cap * 100)}%"></i></div>
               ${boxIds.map(id => row(id, box.items[id], 'wd')).join('') || '<p class="muted center">فاضي</p>'}</div>
             <div class="chestcol"><h4><span>🎒 حقيبتك</span><span>${bu}/${bc}</span></h4><div class="bar"><i style="width:${Math.min(100, bu / bc * 100)}%"></i></div>
               ${bagIds.map(id => row(id, s.inv[id], 'dep')).join('') || '<p class="muted center">فاضية</p>'}</div>
@@ -517,13 +530,16 @@ export function installHub(UI) {
     const seeds = farming.ownedSeeds(s);
     m.handlers.cyc = () => { farming.cycleSeed(s); m.rerender(); this.refresh(); };
     m.handlers.pm = (pid) => { m.close(); this.openPlacedMenu(pid); };
+    m.handlers.arr = () => { m.close(); this.g.startArrange(); };
     const blds = (s.placed || []).filter(p => placement.isBuilding(p.type)).map(p => {
       const d = PLACEABLES[p.type];
       const b = placement.isBuilt(s, p);
       return `<div class="acard"><span class="sbig">${d.icon}</span><div class="ainfo"><b>${esc(placement.info(p.type).name)}</b><small>${b ? `مستوى ${placement.levelOf(s, p)}` : '🚧 موقع بناء'}</small></div><div class="acol">${btn({ guide: { x: placement.anchor(p).x, y: placement.anchor(p).y }, label: placement.info(p.type).name }, '📍')}<button class="btn" data-a="pm" data-v="${p.id}">🔧</button></div></div>`;
     }).join('');
     return `<h4 class="sub">🌾 الأحواض</h4><div class="pgrid">${cards}</div>
-      <h4 class="sub">🏗️ مبانيك برا (تنقلها وترقيها)</h4>${blds || '<p class="muted">ما حطيت مباني للحين. افتح 🛒 المتجر ← مباني.</p>'}
+      <h4 class="sub">🏗️ مبانيك برا (تنقلها وترقيها)</h4>
+      <div class="row center" style="margin-bottom:6px"><button class="btn blue" data-a="arr">🧩 رتّب مزرعتك</button>${btn({ store: 'build:field' }, '🌱 حقول أكثر', 'green')}</div>
+      ${blds || '<p class="muted">ما حطيت مباني للحين. افتح 🛒 المتجر ← مباني.</p>'}
       <p>🌰 البذرة اللي تنزرع: <b>${farming.firstSeed(s) ? SEEDS[farming.firstSeed(s)].name : 'ما عندك بذور'}</b> ${seeds.length > 1 ? `<button class="link" data-a="cyc">🔄 بدّل</button>` : ''} ${btn({ store: 'seeds' }, '🌱 اشترِ بذور')}</p>
       <h4 class="sub">🏠 مبانيك (${built.length})</h4><div class="traits">${built.map(id => `<span class="ctag">✅ ${esc(BUILD_SPOTS[id].name)}</span>`).join('') || '<span class="muted">ما بنيت شي للحين</span>'}</div>
       <div class="row center" style="margin-top:6px">${btn({ store: 'build' }, '🏗️ ابنِ أكثر', 'blue')}</div>`;
@@ -610,15 +626,17 @@ export function installHub(UI) {
 
   P.manageStorage = function (m, btn) {
     const s = this.g.state;
-    const chests = placement.placedOf(s, 'chest');
+    const chests = placement.placedOf(s, 'barn').concat(placement.placedOf(s, 'chest'));
     const bu = bagUsed(s), bc = bagCap(s);
     const rows = chests.map((p, i) => {
       const used = placement.chestUsed(s, p.id), cap = placement.chestCap(s, p.id);
       const top = Object.entries(s.chests[p.id].items).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => `${itemIcon(k)}${n}`).join(' ');
-      return `<div class="acard"><span class="sbig">📦</span><div class="ainfo"><b>صندوق ${i + 1}</b> <small class="muted">مستوى ${placement.levelOf(s, p)} • ${used}/${cap}</small><small>${top || 'فاضي'}</small></div><div class="acol">${btn({ guide: placement.anchor(p), label: 'الصندوق' }, '📍 وديني')}</div></div>`;
+      if (!s.chests[p.id]) return '';
+      if (p.type === 'barn') return `<div class="acard owned"><span class="sbig">🏚️</span><div class="ainfo"><b>المخزن الكبير</b> <small class="muted">${placement.isBuilt(s, p) ? `مستوى ${placement.levelOf(s, p)} • ${used}/${cap}` : '🚧 ما انبنى للحين'}</small><small>${top || 'فاضي'}</small></div><div class="acol">${btn({ guide: placement.anchor(p), label: 'المخزن' }, '📍 وديني')}</div></div>`;
+      return `<div class="acard"><span class="sbig">📦</span><div class="ainfo"><b>صندوق ${i + 1 - (placement.placedOf(s, 'barn').length)}</b> <small class="muted">مستوى ${placement.levelOf(s, p)} • ${used}/${cap}</small><small>${top || 'فاضي'}</small></div><div class="acol">${btn({ guide: placement.anchor(p), label: 'الصندوق' }, '📍 وديني')}</div></div>`;
     }).join('');
     return `<p class="howto">🎒 حقيبتك: <b>${bu}/${bc}</b>. إذا امتلت، اللي تجمعه يروح للصناديق تلقائياً. البناء والصناعة ياخذون من الصناديق بعد.</p>
-      <div class="row center">${btn({ store: 'build:in' }, '📦 صندوق جديد', 'green')}${btn({ store: 'items' }, '🎒 كبّر حقيبتك')}</div>
+      <div class="row center">${placement.placedOf(s, 'barn').length ? '' : btn({ store: 'build' }, '🏚️ ابنِ المخزن الكبير', 'blue')}${btn({ store: 'build:in' }, '📦 صندوق جديد', 'green')}${btn({ store: 'items' }, '🎒 كبّر حقيبتك')}</div>
       ${rows || '<p class="muted center">ما عندك صناديق. ابنِ صندوق داخل بيتك من 🛒 المتجر ← مباني ← داخل البيت.</p>'}`;
   };
 

@@ -50,6 +50,9 @@ export const DAILY_QUEST_POOL = [
   { id: 'enemy',   stat: 'kills',   name: 'اهزم {n} وحوش بالسرداب', range: [3, 8],  coins: 70 },
   { id: 'clay',    stat: 'clay',    name: 'احفر طين {n} مرات',     range: [4, 8],  coins: 35 },
   { id: 'coins',   stat: 'coinsEarned', name: 'اكسب {n} درهم',     range: [100, 250], coins: 50 },
+  { id: 'stall',   stat: 'stallSales', name: 'بيع {n} مرات من البسطة', range: [2, 4], coins: 50, needs: 'stall_shop' },
+  { id: 'orders',  stat: 'ordersDone', name: 'سلّم {n} طلبات للقوافل', range: [2, 4], coins: 60, needs: 'orders_board' },
+  { id: 'shear',   stat: 'sheared', name: 'جز صوف {n} مرات', range: [2, 4], coins: 45, needs: 'sheepfold' },
   { id: 'milk',    stat: 'milked',  name: 'احلب {n} مرات',         range: [2, 4],  coins: 50, needs: 'stable' },
   { id: 'cfeed',   stat: 'camelFed', name: 'أطعم النياق {n} مرات', range: [3, 6],  coins: 45, needs: 'stable' },
   { id: 'trough',  stat: 'troughFilled', name: 'كب {n} ماء بالحوض', range: [4, 8], coins: 40, needs: 'trough' },
@@ -75,6 +78,9 @@ export const ACHIEVEMENTS = [
   { stat: 'marketSales', name: 'تاجر الحلال', tiers: [1, 10, 40] },
   { stat: 'milked',    name: 'حلّاب الخير',   tiers: [5, 40, 150] },
   { stat: 'mazayenWins', name: 'شيخ المزاين', tiers: [1, 5, 15] },
+  { stat: 'hired',     name: 'صاحب شركة',     tiers: [1, 4, 10] },
+  { stat: 'stallSales', name: 'تاجر البسطة',  tiers: [3, 25, 100] },
+  { stat: 'ordersDone', name: 'صديق القوافل', tiers: [3, 25, 100] },
 ];
 export const ACH_TIER_NAMES = ['برونزي', 'فضي', 'ذهبي'];
 export const ACH_TIER_REWARDS = [

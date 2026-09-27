@@ -838,3 +838,108 @@ export function fencePost() {
     R(ctx, 1, 0, 2, 12, PAL.woodDark); R(ctx, 1, 0, 2, 1, PAL.woodLight);
   });
 }
+
+// ---------- إيزومتريك ----------
+// مكعب بارتفاع h: سطح معيّن 32×16 وجانبين
+export function isoBlock(kind, h, variant = 0) {
+  return cached(`iso:${kind}:${h}:${variant}`, 32, 16 + h + 1, (ctx) => {
+    const cols = {
+      wall: ['#d4a46b', '#b07e4c', '#8a5a33', '#946438'],
+      rubble: ['#c9975e', '#a0703f', '#7d5431', '#7d5431'],
+      dune: ['#e8c07c', '#d09a55', '#b98543', '#c99a55'],
+      dwall: ['#6e5844', '#5a4636', '#3e2e22', '#2e2218'],
+    }[kind];
+    const [top, left, right, lineC] = cols;
+    const poly = (pts, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (const p of pts.slice(1)) ctx.lineTo(p[0], p[1]); ctx.closePath(); ctx.fill(); };
+    // الجانب اليسار (الجنوب الغربي) واليمين (الجنوب الشرقي)
+    poly([[0, 8], [16, 16], [16, 16 + h], [0, 8 + h]], left);
+    poly([[16, 16], [32, 8], [32, 8 + h], [16, 16 + h]], right);
+    poly([[16, 0], [32, 8], [16, 16], [0, 8]], top);
+    if (kind === 'wall' || kind === 'dwall') {
+      // خطوط الطوب
+      ctx.fillStyle = lineC;
+      for (let yy = 5; yy < h; yy += 5) {
+        for (let x = 0; x < 16; x++) ctx.fillRect(x, 8 + yy + Math.floor(x / 2), 1, 1);
+        for (let x = 16; x < 32; x++) ctx.fillRect(x, 16 + yy - Math.floor((x - 16) / 2), 1, 1);
+      }
+      for (let yy = 0; yy < h; yy += 10) {
+        ctx.fillRect(6 + (variant % 2) * 4, 8 + yy + 3 + Math.floor((6 + (variant % 2) * 4) / 2), 1, 5);
+        ctx.fillRect(22 - (variant % 2) * 4, 16 + yy + 3 - Math.floor((6 - (variant % 2) * 4) / 2), 1, 5);
+      }
+      // حافة فاتحة فوق
+      ctx.fillStyle = shade(top, 0.2);
+      for (let x = 0; x < 16; x++) ctx.fillRect(x, 8 + Math.floor(x / 2), 1, 1);
+      for (let x = 16; x < 32; x++) ctx.fillRect(x, 16 - Math.floor((x - 16) / 2), 1, 1);
+    }
+    if (kind === 'rubble') {
+      ctx.fillStyle = '#e0b27a';
+      ctx.fillRect(10, 4, 5, 3); ctx.fillRect(18, 7, 4, 2);
+    }
+  });
+}
+
+// شرفات عربية فوق جدار الخان
+export function merlon() {
+  return cached('merlon', 8, 8, (ctx) => {
+    R(ctx, 1, 2, 6, 6, PAL.wallTop); R(ctx, 2, 0, 4, 2, PAL.wallTop); R(ctx, 1, 6, 6, 2, PAL.wall);
+  });
+}
+
+export function sheepSprite(body, head, frame) {
+  return cached(`sheepS:${body}:${head}:${frame}`, 16, 13, (ctx) => {
+    ellipse(ctx, 8, 12, 6, 1, 'rgba(0,0,0,0.2)');
+    ellipse(ctx, 7, 7, 6, 3, shade(body, -0.12));
+    ellipse(ctx, 7, 6, 5, 3, body);
+    P(ctx, 4, 4, '#ffffff'); P(ctx, 8, 4, '#ffffff');
+    R(ctx, 11, 4, 4, 4, head); P(ctx, 14, 5, '#1a1010'); R(ctx, 11, 3, 1, 2, head);
+    R(ctx, 3, 9, 1, 3 - (frame ? 1 : 0), '#3a2a20'); R(ctx, 6, 9, 1, 2 + (frame ? 1 : 0), '#3a2a20');
+    R(ctx, 9, 9, 1, 3 - (frame ? 1 : 0), '#3a2a20'); R(ctx, 11, 9, 1, 2 + (frame ? 1 : 0), '#3a2a20');
+  });
+}
+
+export function mudHouse(level = 1) {
+  return cached('mudhouse' + level, 44, 40, (ctx) => {
+    ellipse(ctx, 22, 38, 20, 2, 'rgba(0,0,0,0.2)');
+    R(ctx, 3, 12, 38, 26, '#c79a66'); R(ctx, 3, 12, 38, 3, '#e0b27a');
+    R(ctx, 3, 36, 38, 2, '#8a5a33');
+    for (let x = 4; x < 40; x += 6) R(ctx, x, 9, 4, 3, '#e0b27a');
+    R(ctx, 18, 22, 9, 16, '#5e3a1f'); R(ctx, 19, 23, 7, 1, '#8a5a33');
+    R(ctx, 7, 20, 6, 5, '#3a2418'); R(ctx, 31, 20, 6, 5, '#3a2418');
+    R(ctx, 7, 20, 6, 1, '#1a1010'); R(ctx, 31, 20, 6, 1, '#1a1010');
+    if (level > 1) { R(ctx, 12, 2, 20, 8, '#c79a66'); R(ctx, 12, 2, 20, 2, '#e0b27a'); R(ctx, 19, 4, 6, 4, '#3a2418'); }
+    for (let i = 0; i < 4; i++) R(ctx, 2 + i * 12, 14, 1, 1, '#6e4424'); // خشب بارز
+  });
+}
+
+export function ordersBoard() {
+  return cached('oboard', 28, 30, (ctx) => {
+    ellipse(ctx, 14, 28, 12, 2, 'rgba(0,0,0,0.2)');
+    R(ctx, 3, 12, 2, 16, PAL.woodDark); R(ctx, 23, 12, 2, 16, PAL.woodDark);
+    R(ctx, 1, 2, 26, 16, PAL.wood); R(ctx, 2, 3, 24, 14, PAL.woodLight);
+    const papers = ['#f4ecd8', '#fff8e8', '#efe2c4'];
+    for (let i = 0; i < 6; i++) { const x = 3 + (i % 3) * 8, y = 4 + Math.floor(i / 3) * 7; R(ctx, x, y, 6, 5, papers[i % 3]); R(ctx, x + 1, y + 1, 4, 1, '#8a8070'); P(ctx, x + 3, y, '#c9302c'); }
+  });
+}
+
+export function shopStall() {
+  return cached('shopstall', 40, 34, (ctx) => {
+    ellipse(ctx, 20, 32, 18, 2, 'rgba(0,0,0,0.2)');
+    R(ctx, 2, 4, 36, 6, '#c9302c');
+    for (let x = 2; x < 38; x += 6) R(ctx, x, 4, 3, 6, '#f4ecd8');
+    for (let x = 2; x < 38; x += 4) R(ctx, x, 10, 2, 2, '#c9302c');
+    R(ctx, 4, 10, 2, 22, PAL.woodDark); R(ctx, 34, 10, 2, 22, PAL.woodDark);
+    R(ctx, 3, 20, 34, 5, PAL.woodLight); R(ctx, 3, 25, 34, 7, PAL.wood);
+    const goods = ['#d9401a', '#e6c050', '#3f8f3a', '#f4f0e8', '#8a5a33', '#c98a3c'];
+    for (let i = 0; i < 6; i++) { R(ctx, 5 + i * 5, 16, 4, 4, goods[i]); P(ctx, 6 + i * 5, 16, '#fff'); }
+  });
+}
+
+export function scaffold(p) {
+  return cached('scaf' + Math.round(p * 4), 30, 30, (ctx) => {
+    R(ctx, 2, 4, 2, 26, PAL.woodDark); R(ctx, 26, 4, 2, 26, PAL.woodDark);
+    R(ctx, 2, 10, 26, 2, PAL.wood); R(ctx, 2, 20, 26, 2, PAL.wood);
+    line(ctx, 3, 28, 27, 6, PAL.woodLight);
+    const h = Math.round(p * 18);
+    R(ctx, 6, 28 - h, 18, h, '#c79a66');
+  });
+}

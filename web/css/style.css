@@ -257,3 +257,14 @@ canvas#fx { position: absolute; left: 0; top: 0; pointer-events: none; }
 .rare-title { font: 700 22px Kufi, Cairo; color: #b8860b; margin: 2px 0; text-shadow: 0 2px 0 #fff3c4; }
 .rare-value { font: 700 20px Cairo; color: #1a6a10; }
 .rarebirth .phead { background: linear-gradient(#f0c040, #a07010); color: #fff; }
+
+/* العمال والتجارة */
+#dock { position: absolute; left: calc(10px + var(--safe-l)); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 6px; }
+.ccard.strike { background: rgba(220,80,60,.18); border-color: #c0302a; }
+.ctag.warn { background: rgba(200,40,20,.18); color: #a01a10; font-weight: 700; }
+.stall { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.sslot { aspect-ratio: auto; min-height: 84px; font-size: 28px; }
+.sslot small { font-size: 11px; }
+.sslot b { position: static; font-size: 13px; color: #1a6a10; }
+.sslot.empty { font-size: 30px; color: var(--wood); border-style: dashed; }
+.sslot.sold { background: linear-gradient(#fff3b0, #f0c040); border-color: var(--gold); animation: bounce 1.2s infinite; }

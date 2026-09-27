@@ -21,6 +21,18 @@ import * as camels from './systems/camels.js';
 import * as market from './systems/market.js';
 import { PEN } from './data/map.js';
 import { camelBreedName } from './data/camels.js';
+import { screenToWorldDir } from './engine/iso.js';
+import * as workers from './systems/workers.js';
+import * as shop from './systems/shop.js';
+import * as sheepSys from './systems/sheep.js';
+import { FOLD } from './data/map.js';
+import { WORKER_TYPES } from './data/workers.js';
+
+// اتجاه حركة بالعالم ← وجه الشخصية على الشاشة
+export function screenDir(dx, dy) {
+  const sx = dx - dy, sy = (dx + dy) / 2;
+  return Math.abs(sx) > Math.abs(sy) * 2 ? (sx > 0 ? 'right' : 'left') : (sy > 0 ? 'down' : 'up');
+}
 
 const SPEED = 64;
 const ACTION_REPEAT = 0.34;
@@ -135,6 +147,7 @@ export class Game {
 
     const newDays = time.advance(s, dt);
     if (newDays) this.onNewDay(newDays);
+    this.clockTick();
     this.audio.night = time.isNight(s) || this.mode === 'dungeon';
 
     if (this.anim) this.updateAnim(dt);
@@ -173,19 +186,317 @@ export class Game {
         const sp = 34 * dt;
         g.x += (dx / d) * Math.min(sp, d);
         g.y += (dy / d) * Math.min(sp, d);
-        g.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+        g.dir = screenDir(dx, dy);
       } else if (!g.leaving) g.dir = 'down';
       if (g.leaving && !g.moving) g.gone = true;
     }
     if (this.guestRt.some(g => g.gone)) this.guestRt = this.guestRt.filter(g => !g.gone);
     this.updateCamels(dt);
+    this.updateSheep(dt);
+    this.updateWorkers(dt);
+  }
+
+  // ---------- ساعات اللعبة ----------
+  absMinutes() {
+    return this.state.time.day * 1440 + this.state.time.minute;
+  }
+
+  clockTick() {
+    const s = this.state;
+    const nowMin = this.absMinutes();
+    const absHour = Math.floor(nowMin / 60);
+    if (s.payroll.lastHour == null) s.payroll.lastHour = absHour;
+    while (s.payroll.lastHour < absHour) {
+      s.payroll.lastHour += 1;
+      for (const ev of workers.hourTick(s, (s.payroll.lastHour - 1) % 24)) {
+        if (ev.type === 'strike') { this.audio.play('deny'); this.ui.toast(`✊ ${ev.worker.name} مضرب عن الشغل! ادفع راتبه والغرامة عشان يرجع`, 'ach', 5); }
+        else if (ev.type === 'late') this.ui.toast(`⚠️ راتب ${ev.worker.name} متأخر! ساعة وحدة ويضرب`, '', 4);
+        else if (ev.type === 'autopay') this.fx.float(...this.fx.at(s.player.x, s.player.y, 34), `💸 رواتب −${ev.amount}`, '#ffb0a0', 11);
+      }
+      this.ui.refresh();
+    }
+    // البسطة كل 10 دقايق لعبة
+    s.stallMin = s.stallMin || nowMin;
+    if (nowMin - s.stallMin >= 10) {
+      const sold = shop.stallTick(s, nowMin - s.stallMin, this.rng);
+      s.stallMin = nowMin;
+      for (const x of sold) {
+        this.audio.play('coin');
+        this.ui.toast(`🏪 ${x.buyer} اشترى ${x.kind === 'item' ? ITEMS[x.item].icon + ' ×' + x.qty : '🐑'} من بسطتك بـ ${x.price} — استلم الدراهم!`, 'gain', 4);
+      }
+      if (sold.length) this.ui.refresh();
+    }
+    if (s.built.orders_board) shop.ensureOrders(s, this.rng, nowMin);
+  }
+
+  // ---------- العمّال ----------
+  workerHome() {
+    const o = this.worldObjById['spot:workers_house'];
+    return this.state.built.workers_house ? { x: o.x, y: o.y + 14 } : { x: this.world.cryptExit.x - 60, y: this.world.cryptExit.y + 20 };
+  }
+
+  updateWorkers(dt) {
+    const s = this.state;
+    this.workerRt = this.workerRt || {};
+    const home = this.workerHome();
+    const ids = new Set(s.workers.map(w => w.id));
+    for (const id of Object.keys(this.workerRt)) if (!ids.has(id)) delete this.workerRt[id];
+    const workHour = workers.isWorkHour(time.hour(s));
+    const reserved = new Set(Object.values(this.workerRt).map(r => r.task && r.task.key).filter(Boolean));
+    for (const w of s.workers) {
+      let rt = this.workerRt[w.id];
+      if (!rt) rt = this.workerRt[w.id] = { x: home.x + (this.rng() - 0.5) * 30, y: home.y + this.rng() * 20, dir: 'down', task: null, t: 0 };
+      rt.working = false;
+      if (w.status === 'strike' || !workHour) {
+        rt.task = null;
+        this.walkTo(rt, { x: home.x + ((w.look * 13) % 40) - 20, y: home.y + 10 }, 30 * dt);
+        continue;
+      }
+      if (!rt.task || !this.taskValid(w, rt.task)) {
+        if (rt.task) reserved.delete(rt.task.key);
+        rt.task = this.pickTask(w, rt, reserved);
+        rt.t = 0;
+        if (rt.task) reserved.add(rt.task.key);
+      }
+      const task = rt.task;
+      if (!task) { this.walkTo(rt, { x: home.x, y: home.y + 16 }, 26 * dt); continue; }
+      const arrived = this.walkTo(rt, task.at, 44 * w.speed * dt);
+      if (!arrived) continue;
+      rt.working = true;
+      rt.t += dt * w.speed;
+      if (task.kind === 'build') {
+        const done = workers.progressBuild(s, w, dt * time.GAME_MIN_PER_SEC / 60);
+        if (done) this.onWorkerBuilt(w, done);
+        continue;
+      }
+      if (rt.t >= task.dur) {
+        rt.t = 0;
+        const again = this.doTask(w, task, rt);
+        if (!again) { reserved.delete(task.key); rt.task = null; }
+      }
+    }
+  }
+
+  walkTo(rt, p, step) {
+    const dx = p.x - rt.x, dy = p.y - rt.y;
+    const d = Math.hypot(dx, dy);
+    rt.moving = d > 6;
+    if (!rt.moving) return true;
+    rt.x += (dx / d) * Math.min(step, d);
+    rt.y += (dy / d) * Math.min(step, d);
+    rt.dir = screenDir(dx, dy);
+    return false;
+  }
+
+  near(rt, list) {
+    let best = null, bd = 1e9;
+    for (const it of list) {
+      const d = Math.hypot(it.x - rt.x, it.y - rt.y);
+      if (d < bd) { bd = d; best = it; }
+    }
+    return best;
+  }
+
+  activePlots() {
+    return this.world.objects.filter(o => o.kind === 'plot' && (o.group === 1 || this.state.built.farm2));
+  }
+
+  pickTask(w, rt, reserved) {
+    const s = this.state;
+    const free = (key) => !reserved.has(key);
+    const well = this.worldObjById.well;
+    const fetchWater = { kind: 'well', key: 'well:' + w.id, at: { x: well.x + 10, y: well.y + 10 }, dur: 1.2 };
+    if (w.type === 'builder') {
+      if (!w.job) return null;
+      const o = this.worldObjById['spot:' + w.job.spot];
+      return { kind: 'build', key: 'build:' + w.job.spot, at: { x: o.x + 12, y: o.y + 8 }, dur: 999 };
+    }
+    if (w.type === 'woodcutter') {
+      const nodes = this.world.objects.filter(o => (o.kind === 'palm' || o.kind === 'rock') && !this.depleted(o) && free('node:' + o.id));
+      const o = this.near(rt, nodes);
+      return o ? { kind: 'node', key: 'node:' + o.id, obj: o, at: { x: o.x + 10, y: o.y + 8 }, dur: 1.1 } : null;
+    }
+    if (w.type === 'farmer') {
+      const plots = this.activePlots().filter(o => free('plot:' + o.id));
+      const ready = plots.filter(o => s.plots[o.id] && farming.isReady(s.plots[o.id]));
+      const dry = plots.filter(o => s.plots[o.id] && !s.plots[o.id].watered && !farming.isReady(s.plots[o.id]));
+      const empty = plots.filter(o => !s.plots[o.id]);
+      let o = this.near(rt, ready);
+      if (o) return { kind: 'harvest', key: 'plot:' + o.id, obj: o, at: { x: o.x, y: o.y + 10 }, dur: 1.2 };
+      if (dry.length) {
+        if (count(s, 'water') < 1) return fetchWater;
+        o = this.near(rt, dry);
+        return { kind: 'waterPlot', key: 'plot:' + o.id, obj: o, at: { x: o.x, y: o.y + 10 }, dur: 1.4 };
+      }
+      if (empty.length && farming.firstSeed(s)) {
+        o = this.near(rt, empty);
+        return { kind: 'plant', key: 'plot:' + o.id, obj: o, at: { x: o.x, y: o.y + 10 }, dur: 1.4 };
+      }
+      return null;
+    }
+    if (w.type === 'herder') {
+      const day = s.time.day;
+      const rts = this.camelRt || {};
+      const thirsty = s.camels.filter(c => !camels.isWatered(c, day) && rts[c.id] && free('camel:' + c.id));
+      const hungry = s.camels.filter(c => !camels.isFed(c, day) && rts[c.id] && free('camel:' + c.id));
+      if (thirsty.length) {
+        if (count(s, 'water') < 1) return fetchWater;
+        const c = thirsty[0];
+        return { kind: 'waterCamel', key: 'camel:' + c.id, id: c.id, at: rts[c.id], dur: 1.2 };
+      }
+      if (hungry.length && camels.feedItem(s)) {
+        const c = hungry[0];
+        return { kind: 'feedCamel', key: 'camel:' + c.id, id: c.id, at: rts[c.id], dur: 1.2 };
+      }
+      const srts = this.sheepRt || {};
+      const sThirsty = s.sheep.filter(x => x.wateredDay !== day && srts[x.id] && free('sheep:' + x.id));
+      if (sThirsty.length) {
+        if (count(s, 'water') < 1) return fetchWater;
+        return { kind: 'waterSheep', key: 'sheep:' + sThirsty[0].id, id: sThirsty[0].id, at: srts[sThirsty[0].id], dur: 1 };
+      }
+      const sHungry = s.sheep.filter(x => x.fedDay !== day && srts[x.id] && free('sheep:' + x.id));
+      if (sHungry.length && sheepSys.sheepFeedItem(s)) return { kind: 'feedSheep', key: 'sheep:' + sHungry[0].id, id: sHungry[0].id, at: srts[sHungry[0].id], dur: 1 };
+      if (s.built.trough && s.trough.water < 10 && (s.camels.length || s.sheep.length)) {
+        if (count(s, 'water') < 1) return fetchWater;
+        const o = this.worldObjById['spot:trough'];
+        return { kind: 'trough', key: 'trough', obj: o, at: { x: o.x - 12, y: o.y + 6 }, dur: 1 };
+      }
+      return null;
+    }
+    return null;
+  }
+
+  taskValid(w, task) {
+    const s = this.state;
+    if (task.kind === 'node') return !this.depleted(task.obj);
+    if (task.kind === 'build') return !!w.job;
+    if (task.kind === 'harvest') return !!(s.plots[task.obj.id] && farming.isReady(s.plots[task.obj.id]));
+    if (task.kind === 'waterPlot') return !!(s.plots[task.obj.id] && !s.plots[task.obj.id].watered);
+    if (task.kind === 'plant') return !s.plots[task.obj.id];
+    return true;
+  }
+
+  // ينفّذ خطوة شغل. يرجع true إذا المهمة تبي تكمل
+  doTask(w, task, rt) {
+    const s = this.state;
+    const day = s.time.day;
+    const at = (lift) => this.fx.at(rt.x, rt.y, lift);
+    switch (task.kind) {
+      case 'node': {
+        const o = task.obj;
+        o.shakeT = 0.15;
+        this.fx.burst(...this.fx.at(o.x, o.y, 8), o.kind === 'palm' ? ['#8a5a33', '#4f8a2f'] : ['#9c948a', '#c4bcb0'], 5, 40, 0.4);
+        if (this.visibleNear(o)) this.audio.play(o.kind === 'palm' ? 'chop' : 'mine');
+        const n = s.nodes[o.id] && !(s.nodes[o.id].respawnDay > day) ? s.nodes[o.id] : { hits: 0 };
+        n.hits = (n.hits || 0) + 1;
+        s.nodes[o.id] = n;
+        if (n.hits < 3) return true;
+        n.hits = 0;
+        n.respawnDay = day + 2;
+        this.boxVersion = (this.boxVersion || 0) + 1;
+        const loot = o.kind === 'palm' ? { wood: 2, frond: randInt(this.rng, 1, 2) } : { stone: 2 };
+        addStat(s, o.kind === 'palm' ? 'palms' : 'rocks', 1);
+        this.gainItems(loot, o.x, o.y, 16);
+        return false;
+      }
+      case 'well':
+        add(s, 'water', 3);
+        this.fx.float(...at(26), '💧 +3', '#b9f0ff', 11);
+        return false;
+      case 'harvest': {
+        const h = farming.harvest(s, task.obj.id, this.rng);
+        if (h) this.fx.float(...this.fx.at(task.obj.x, task.obj.y, 16), `${ITEMS[h.crop].icon} +${h.n}`, '#fff3c4', 12);
+        this.ui.refresh();
+        return false;
+      }
+      case 'waterPlot':
+        if (farming.water(s, task.obj.id)) this.fx.burst(...this.fx.at(task.obj.x, task.obj.y, 4), ['#57a9cf', '#a6def0'], 8, 30, 0.4);
+        return false;
+      case 'plant': {
+        const seed = farming.firstSeed(s);
+        if (seed && farming.plant(s, task.obj.id, seed)) { task.obj.popT = this.t; this.fx.float(...this.fx.at(task.obj.x, task.obj.y, 14), '🌱', '#d8ffb0', 12); }
+        return false;
+      }
+      case 'waterCamel': camels.waterCamel(s, task.id, day); this.fx.float(...at(24), '💧', '#b9f0ff', 12); return false;
+      case 'feedCamel': camels.feed(s, task.id, day); this.fx.float(...at(24), '🌿', '#d8ffb0', 12); return false;
+      case 'waterSheep': sheepSys.waterSheep(s, task.id, day); this.fx.float(...at(20), '💧', '#b9f0ff', 11); return false;
+      case 'feedSheep': sheepSys.feedSheep(s, task.id, day); this.fx.float(...at(20), '🌿', '#d8ffb0', 11); return false;
+      case 'trough': camels.fillTrough(s, 1); return s.trough.water < 10 && count(s, 'water') > 0;
+      default: return false;
+    }
+  }
+
+  visibleNear(o) {
+    const p = this.state.player;
+    return Math.hypot(o.x - p.x, o.y - p.y) < 200;
+  }
+
+  onWorkerBuilt(w, spotId) {
+    const o = this.worldObjById['spot:' + spotId];
+    this.audio.play('build');
+    this.fx.burst(...this.fx.at(o.x, o.y, 8), ['#d4a46b', '#b07e4c', '#fff3c4'], 30, 90, 0.9);
+    this.fx.float(...this.fx.at(o.x, o.y, 30), `🔨 ${w.name} خلّص البناء!`, '#ffd24a', 14);
+    this.ui.toast(`🔨 ${w.name} بنى ${BUILD_SPOTS[spotId].name}`, 'gain', 4);
+    this.tileDirty = true;
+    this.boxVersion = (this.boxVersion || 0) + 1;
+    if (spotId === 'stable') this.giftStarterCamels();
+    this.save();
+    this.checkProgress();
+  }
+
+  // ---------- الغنم ----------
+  updateSheep(dt) {
+    const s = this.state;
+    this.sheepRt = this.sheepRt || {};
+    const r = { x0: FOLD.x0 * TILE + 10, x1: (FOLD.x1 + 1) * TILE - 10, y0: FOLD.y0 * TILE + 18, y1: (FOLD.y1 + 1) * TILE - 6 };
+    const ids = new Set(s.sheep.map(x => x.id));
+    for (const id of Object.keys(this.sheepRt)) if (!ids.has(id)) delete this.sheepRt[id];
+    for (const sh of s.sheep) {
+      let rt = this.sheepRt[sh.id];
+      if (!rt) { rt = this.sheepRt[sh.id] = { x: r.x0 + this.rng() * (r.x1 - r.x0), y: r.y0 + this.rng() * (r.y1 - r.y0), wait: this.rng() * 3, dir: 1 }; rt.tx = rt.x; rt.ty = rt.y; }
+      const dx = rt.tx - rt.x, dy = rt.ty - rt.y, d = Math.hypot(dx, dy);
+      rt.moving = d > 1;
+      if (rt.moving) { const sp = 14 * dt; rt.x += (dx / d) * Math.min(sp, d); rt.y += (dy / d) * Math.min(sp, d); if (Math.abs(dx - dy) > 0.5) rt.dir = dx - dy > 0 ? 1 : -1; }
+      else if ((rt.wait -= dt) <= 0) { rt.wait = 2 + this.rng() * 4; rt.tx = r.x0 + this.rng() * (r.x1 - r.x0); rt.ty = r.y0 + this.rng() * (r.y1 - r.y0); }
+    }
+  }
+
+  sheepAction(sh, rt) {
+    const s = this.state;
+    const day = s.time.day;
+    const tgt = { x: rt.x, y: rt.y };
+    this.input.action = false;
+    if (sh.wateredDay !== day && count(s, 'water') > 0) {
+      if (!this.spendEnergy(1)) return;
+      this.startAnim('water', tgt, 0.8, 0.6, () => { sheepSys.waterSheep(s, sh.id, day); this.audio.play('water'); this.fx.float(...this.fx.at(rt.x, rt.y, 20), '💧', '#b9f0ff', 12); this.gainXp(1, rt.x, rt.y, 30); });
+      return;
+    }
+    if (sh.fedDay !== day && sheepSys.sheepFeedItem(s)) {
+      if (!this.spendEnergy(1)) return;
+      this.startAnim('feed', tgt, 0.6, 0.45, () => { sheepSys.feedSheep(s, sh.id, day); this.audio.play('eat'); this.fx.float(...this.fx.at(rt.x, rt.y, 20), '🌿', '#d8ffb0', 12); this.gainXp(1, rt.x, rt.y, 30); });
+      return;
+    }
+    if (sheepSys.canShear(sh, day)) {
+      if (!this.spendEnergy(2)) return;
+      this.startAnim('shear', tgt, 1.0, 0.8, () => {
+        const n = sheepSys.shear(s, sh.id, day);
+        this.audio.play('pick');
+        this.fx.burst(...this.fx.at(rt.x, rt.y, 6), ['#f4f0e6', '#ffffff'], 14, 40, 0.8);
+        this.fx.float(...this.fx.at(rt.x, rt.y, 22), `🧶 +${n}`, '#ffffff', 13);
+        this.gainXp(3, rt.x, rt.y, 32);
+        this.ui.refresh();
+      });
+      return;
+    }
+    this.ui.toast(`🐑 ${sheepSys.SHEEP_BREEDS[sh.breed].name} — ${sh.ageDays >= 2 ? 'بالغ' : 'طلي صغير'}. الصوف يطلع كل يومين.`, '', 2.5);
   }
 
   // ---------- الأنيميشن ----------
   // الفعل ياخذ وقته: يبدأ، وعند hitAt يصير التأثير، وينتهي عند dur
   startAnim(type, target, dur, hitAt, onHit) {
     const p = this.state.player;
-    if (target && Math.abs(target.x - p.x) > 3) p.dir = target.x > p.x ? 'right' : 'left';
+    const sdx = target ? (target.x - p.x) - (target.y - p.y) : 0;
+    if (target && Math.abs(sdx) > 3) p.dir = sdx > 0 ? 'right' : 'left';
     this.anim = { type, target, dur, hitAt, onHit, t: 0, hit: false };
     this.swing = 0;
   }
@@ -198,16 +509,18 @@ export class Game {
     // خيط الماء من الجرة
     if ((a.type === 'water' || a.type === 'pour') && k > 0.25 && k < 0.85 && a.target) {
       const side = p.dir === 'left' ? -1 : 1;
-      const x0 = p.x + side * 12, y0 = p.y - 17;
+      const [sx, sy] = this.fx.at(p.x, p.y, 17);
+      const x0 = sx + side * 12, y0 = sy;
       const T = 0.3, g = 320;
       for (let i = 0; i < 2; i++) {
-        const tx = a.target.x + (Math.random() - 0.5) * 6, ty = a.target.y - 4;
+        const [tx, ty] = this.fx.at(a.target.x + (Math.random() - 0.5) * 6, a.target.y, 3);
         this.fx.emit(x0, y0, (tx - x0) / T, (ty - y0) / T - 0.5 * g * T, Math.random() < 0.5 ? '#6fb8e0' : '#b6e6f6', T, g, i ? 1 : 2);
       }
     }
     if (a.type === 'feed' && !a.hit && k > 0.3 && a.target) {
-      const x0 = p.x, y0 = p.y - 14;
-      this.fx.emit(x0, y0, (a.target.x - x0) / 0.35, (a.target.y - 10 - y0) / 0.35 - 50, '#7fb846', 0.35, 280, 2);
+      const [x0, y0] = this.fx.at(p.x, p.y, 14);
+      const [tx, ty] = this.fx.at(a.target.x, a.target.y, 10);
+      this.fx.emit(x0, y0, (tx - x0) / 0.35, (ty - y0) / 0.35 - 50, '#7fb846', 0.35, 280, 2);
     }
     if (!a.hit && a.t >= a.hitAt) {
       a.hit = true;
@@ -240,7 +553,7 @@ export class Game {
         const sp = (camels.isAdult(c) ? 10 : 16) * dt;
         rt.x += (dx / d) * Math.min(sp, d);
         rt.y += (dy / d) * Math.min(sp, d);
-        if (Math.abs(dx) > 0.5) rt.dir = dx > 0 ? 1 : -1;
+        if (Math.abs(dx - dy) > 0.5) rt.dir = dx - dy > 0 ? 1 : -1;
       } else {
         rt.wait -= dt;
         if (rt.wait <= 0) {
@@ -249,7 +562,7 @@ export class Game {
           rt.ty = r.y0 + this.rng() * (r.y1 - r.y0);
         }
       }
-      if (c.rare && this.rng() < dt * 3) this.fx.emit(rt.x + (this.rng() - 0.5) * 20, rt.y - 10 - this.rng() * 12, 0, -12, '#fff0a0', 0.8, 0, 1);
+      if (c.rare && this.rng() < dt * 3) this.fx.emit(...this.fx.at(rt.x + (this.rng() - 0.5) * 16, rt.y, 8 + this.rng() * 14), 0, -12, '#fff0a0', 0.8, 0, 1);
     }
   }
 
@@ -263,8 +576,8 @@ export class Game {
       this.startAnim('water', tgt, 0.8, 0.6, () => {
         camels.waterCamel(s, c.id, day);
         this.audio.play('water');
-        this.fx.float(rt.x, rt.y - 28, '💧 شربت', '#b9f0ff', 12);
-        this.gainXp(1, rt.x, rt.y - 38);
+        this.fx.float(...this.fx.at(rt.x, rt.y, 28), '💧 شربت', '#b9f0ff', 12);
+        this.gainXp(1, rt.x, rt.y, 38);
       });
       return;
     }
@@ -273,9 +586,9 @@ export class Game {
       this.startAnim('feed', tgt, 0.6, 0.45, () => {
         const it = camels.feed(s, c.id, day);
         this.audio.play('eat');
-        this.fx.float(rt.x, rt.y - 28, it === 'alfalfa' ? '🌿 كلت برسيم' : '🟤 كلت تمر', '#d8ffb0', 12);
-        this.fx.burst(rt.x + 8, rt.y - 8, ['#7fb846', '#4f8a2f'], 6, 30, 0.5);
-        this.gainXp(2, rt.x, rt.y - 38);
+        this.fx.float(...this.fx.at(rt.x, rt.y, 28), it === 'alfalfa' ? '🌿 كلت برسيم' : '🟤 كلت تمر', '#d8ffb0', 12);
+        this.fx.burst(...this.fx.at(rt.x + 8, rt.y, 8), ['#7fb846', '#4f8a2f'], 6, 30, 0.5);
+        this.gainXp(2, rt.x, rt.y, 38);
       });
       return;
     }
@@ -284,8 +597,8 @@ export class Game {
       this.startAnim('milk', tgt, 1.0, 0.8, () => {
         const n = camels.milk(s, c.id, day);
         this.audio.play('pick');
-        this.fx.float(rt.x, rt.y - 28, `🥛 +${n}`, '#ffffff', 14);
-        this.gainXp(3, rt.x, rt.y - 38);
+        this.fx.float(...this.fx.at(rt.x, rt.y, 28), `🥛 +${n}`, '#ffffff', 14);
+        this.gainXp(3, rt.x, rt.y, 38);
         this.ui.refresh();
       });
       return;
@@ -296,15 +609,15 @@ export class Game {
 
   troughAction(o) {
     const s = this.state;
-    if (s.trough.water >= 10) { this.input.action = false; this.fx.float(o.x, o.y - 20, 'الحوض مليان ✔', '#b9f0ff', 12); return; }
+    if (s.trough.water >= 10) { this.input.action = false; this.fx.float(...this.fx.at(o.x, o.y, 20), 'الحوض مليان ✔', '#b9f0ff', 12); return; }
     if (count(s, 'water') < 1) { this.input.action = false; this.say('ما معك ماء! اسحب من البير واكبه بالحوض.'); return; }
     if (!this.spendEnergy(1)) return;
     this.startAnim('pour', { x: o.x, y: o.y - 2 }, 0.8, 0.62, () => {
       camels.fillTrough(s, 1);
       this.audio.play('water');
-      this.fx.burst(o.x, o.y - 6, ['#6fb8e0', '#b6e6f6'], 8, 35, 0.4);
-      this.fx.float(o.x, o.y - 22, `🏺 ${s.trough.water}/10`, '#b9f0ff', 12);
-      this.gainXp(1, o.x, o.y - 32);
+      this.fx.burst(...this.fx.at(o.x, o.y, 6), ['#6fb8e0', '#b6e6f6'], 8, 35, 0.4);
+      this.fx.float(...this.fx.at(o.x, o.y, 22), `🏺 ${s.trough.water}/10`, '#b9f0ff', 12);
+      this.gainXp(1, o.x, o.y, 32);
     });
   }
 
@@ -340,8 +653,11 @@ export class Game {
     if (!this.moving) return;
     const tired = p.energy <= 0 && this.mode === 'world';
     const sp = SPEED * (tired ? 0.6 : 1) * Math.min(1, Math.hypot(m.x, m.y) * 1.3);
-    const len = Math.hypot(m.x, m.y) || 1;
-    const vx = (m.x / len) * sp * dt, vy = (m.y / len) * sp * dt;
+    // العصا باتجاه الشاشة ← اتجاه بالعالم الإيزومتريك
+    const wv = screenToWorldDir(m.x, m.y);
+    const len = Math.hypot(wv.x, wv.y) || 1;
+    const vx = (wv.x / len) * sp * dt, vy = (wv.y / len) * sp * dt;
+    p.fx = wv.x / len; p.fy = wv.y / len;
     if (Math.abs(m.x) > Math.abs(m.y)) p.dir = m.x > 0 ? 'right' : 'left';
     else p.dir = m.y > 0 ? 'down' : 'up';
     if (!this.blocked(p.x + vx, p.y)) p.x += vx;
@@ -453,6 +769,12 @@ export class Game {
     }
     for (const c of s.groundChests || []) list.push({ kind: 'gchest', ref: c, x: c.x, y: c.y + 2 });
     if (s.built.trough) { const o = this.worldObjById['spot:trough']; list.push({ kind: 'trough', ref: o, x: o.x, y: o.y }); }
+    for (const [spot, kind] of [['stall_shop', 'shop'], ['orders_board', 'orders'], ['workers_house', 'whouse']]) {
+      if (s.built[spot]) { const o = this.worldObjById['spot:' + spot]; list.push({ kind, ref: o, x: o.x, y: o.y }); }
+    }
+    if (s.built.sheepfold && this.sheepRt) {
+      for (const sh of s.sheep) { const rt = this.sheepRt[sh.id]; if (rt) list.push({ kind: 'sheep', ref: sh, rt, x: rt.x, y: rt.y, r: 18 }); }
+    }
     if (s.built.stable && this.camelRt) {
       for (const c of s.camels) { const rt = this.camelRt[c.id]; if (rt) list.push({ kind: 'camel', ref: c, rt, x: rt.x, y: rt.y, r: 22 }); }
     }
@@ -466,8 +788,8 @@ export class Game {
   findTarget() {
     const p = this.state.player;
     const dirs = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
-    const [dx, dy] = dirs[p.dir];
-    const probe = { x: p.x + dx * 10, y: p.y - 3 + dy * 10 };
+    const [dx, dy] = p.fx !== undefined ? [p.fx, p.fy] : dirs[p.dir];
+    const probe = { x: p.x + dx * 10, y: p.y + dy * 10 };
     let best = null, bd = 1e9;
     for (const it of this.interactables()) {
       const d = Math.hypot(it.x - probe.x, it.y - 4 - probe.y);
@@ -504,6 +826,16 @@ export class Game {
       case 'guest': return { icon: t.ref.served ? '💬' : '☕', label: 'قدّم' };
       case 'gchest': case 'dchest': return { icon: '📦', label: 'افتح' };
       case 'enemy': return { icon: '⚔️', label: 'اضرب' };
+      case 'shop': return { icon: '🏪', label: 'البسطة' };
+      case 'orders': return { icon: '📋', label: 'الطلبات' };
+      case 'whouse': return { icon: '👷', label: 'العمّال' };
+      case 'sheep': {
+        const sh = t.ref, day = s.time.day;
+        if (sh.wateredDay !== day && count(s, 'water') > 0) return { icon: '💧', label: 'اسقِ' };
+        if (sh.fedDay !== day && sheepSys.sheepFeedItem(s)) return { icon: '🌿', label: 'أطعم' };
+        if (sheepSys.canShear(sh, day)) return { icon: '✂️', label: 'جز الصوف' };
+        return { icon: '🐑', label: 'شوف' };
+      }
       case 'trough': return s.trough.water >= 10 ? { icon: '✔', label: 'مليان' } : { icon: '🏺', label: 'كب ماء' };
       case 'camel': {
         const c = t.ref, day = s.time.day;
@@ -561,6 +893,10 @@ export class Game {
       case 'stairsDown': this.input.action = false; this.enterFloor(this.dungeon.floor + 1); break;
       case 'plot': this.plotAction(t.ref); break;
       case 'trough': this.troughAction(t.ref); break;
+      case 'sheep': this.sheepAction(t.ref, t.rt); break;
+      case 'shop': this.input.action = false; this.ui.openTrade('stall'); break;
+      case 'orders': this.input.action = false; this.ui.openTrade('orders'); break;
+      case 'whouse': this.input.action = false; this.ui.openWorkers(); break;
       case 'camel': this.camelAction(t.ref, t.rt); break;
       default: break;
     }
@@ -570,7 +906,7 @@ export class Game {
     this.swing = 0.25;
     this.shake = Math.max(this.shake, 2);
     o.shakeT = 0.15;
-    this.fx.burst(o.x, o.y - 8, color, n, 50, 0.5);
+    this.fx.burst(...this.fx.at(o.x, o.y, 8), color, n, 50, 0.5);
     this.ui.vibrate(15);
   }
 
@@ -607,27 +943,27 @@ export class Game {
     if (o.kind === 'herb') { loot.herb = randInt(this.rng, 1, 2); if (this.rng() < 0.25) loot[pick(this.rng, ['seed_tomato', 'seed_wheat'])] = 1; }
     addStat(s, specs.stat, 1);
     for (const [k, v] of Object.entries(specs.kp)) s.kp[k] = (s.kp[k] || 0) + v;
-    this.gainItems(loot, o.x, o.y - 14);
-    this.gainXp(specs.xp, o.x, o.y - 24);
+    this.gainItems(loot, o.x, o.y, 14);
+    this.gainXp(specs.xp, o.x, o.y, 24);
     if (this.rng() < GATHER_CHEST_CHANCE || (!s.flags.firstChest && (s.stats.palms || 0) + (s.stats.rocks || 0) >= 4)) {
       s.flags.firstChest = true;
       this.dropChest(o.x + 10, o.y + 4, rollChestRarity(this.rng));
     }
   }
 
-  gainItems(loot, x, y) {
+  gainItems(loot, x, y, lift = 14) {
     let i = 0;
     for (const [id, n] of Object.entries(loot)) {
       add(this.state, id, n);
-      this.fx.float(x, y - i * 9, `${ITEMS[id].icon} +${n}`, '#fff3c4', 13);
+      this.fx.float(...this.fx.at(x, y, lift + i * 9), `${ITEMS[id].icon} +${n}`, '#fff3c4', 13);
       i++;
     }
     this.ui.refresh();
   }
 
-  gainXp(n, x, y) {
+  gainXp(n, x, y, lift = 24) {
     const res = applyReward(this.state, { xp: n }, this.rng);
-    this.fx.float(x, y, `+${n} ✨`, '#b9f0ff', 11);
+    this.fx.float(...this.fx.at(x, y, lift), `+${n} ✨`, '#b9f0ff', 11);
     this.handleLevelUps(res);
   }
 
@@ -635,7 +971,7 @@ export class Game {
     if (!res.levelUps.length) return;
     const p = this.state.player;
     this.audio.play('level');
-    this.fx.confetti(p.x, p.y - 20);
+    this.fx.confetti(...this.fx.at(p.x, p.y, 20));
     this.shake = 4;
     this.ui.levelUp(res.levelUps[res.levelUps.length - 1], res.levelGains || [], res.chests);
   }
@@ -646,8 +982,8 @@ export class Game {
       this.audio.play('water');
       this.hitFx(o, ['#57a9cf', '#a6def0'], 7);
       addStat(this.state, 'water', 1);
-      this.gainItems({ water: 1 }, o.x, o.y - 26);
-      if (this.rng() < 0.5) this.gainXp(1, o.x, o.y - 34);
+      this.gainItems({ water: 1 }, o.x, o.y, 26);
+      if (this.rng() < 0.5) this.gainXp(1, o.x, o.y, 34);
     });
   }
 
@@ -662,10 +998,10 @@ export class Game {
         if (!farming.plant(s, o.id, seed)) return;
         o.popT = this.t;
         this.audio.play('plant');
-        this.fx.burst(o.x, o.y - 6, ['#7a4f2e', '#5e3b21'], 8, 30, 0.4);
-        this.fx.burst(o.x, o.y - 8, ['#6cc24a'], 5, 25, 0.5);
-        this.fx.float(o.x, o.y - 16, `🌱 ${SEEDS[seed].name}`, '#d8ffb0', 12);
-        this.gainXp(2, o.x, o.y - 26);
+        this.fx.burst(...this.fx.at(o.x, o.y, 6), ['#7a4f2e', '#5e3b21'], 8, 30, 0.4);
+        this.fx.burst(...this.fx.at(o.x, o.y, 8), ['#6cc24a'], 5, 25, 0.5);
+        this.fx.float(...this.fx.at(o.x, o.y, 16), `🌱 ${SEEDS[seed].name}`, '#d8ffb0', 12);
+        this.gainXp(2, o.x, o.y, 26);
       });
       return;
     }
@@ -676,9 +1012,9 @@ export class Game {
         if (!h) return;
         this.audio.play('pick');
         this.hitFx(o, ['#e6c050', '#d9401a', '#6cc24a'], 10);
-        this.fx.float(o.x, o.y - 16, `${ITEMS[h.crop].icon} +${h.n}`, '#fff3c4', 13);
+        this.fx.float(...this.fx.at(o.x, o.y, 16), `${ITEMS[h.crop].icon} +${h.n}`, '#fff3c4', 13);
         s.kp.n = (s.kp.n || 0) + 1;
-        this.gainXp(6, o.x, o.y - 28);
+        this.gainXp(6, o.x, o.y, 28);
         this.ui.refresh();
       });
       return;
@@ -690,14 +1026,14 @@ export class Game {
         if (!farming.water(s, o.id)) return;
         o.wetT = this.t;
         this.audio.play('water');
-        this.fx.burst(o.x, o.y - 6, ['#57a9cf', '#a6def0'], 10, 40, 0.5);
-        this.gainXp(1, o.x, o.y - 20);
+        this.fx.burst(...this.fx.at(o.x, o.y, 6), ['#57a9cf', '#a6def0'], 10, 40, 0.5);
+        this.gainXp(1, o.x, o.y, 20);
         this.ui.refresh();
       });
       return;
     }
     this.input.action = false;
-    this.fx.float(o.x, o.y - 16, 'انسقى اليوم ✔', '#b9f0ff', 11);
+    this.fx.float(...this.fx.at(o.x, o.y, 16), 'انسقى اليوم ✔', '#b9f0ff', 11);
   }
 
   say(text, who = 'lamp') {
@@ -709,8 +1045,8 @@ export class Game {
     s.groundChests = s.groundChests || [];
     s.groundChests.push({ x, y, rarity, t: this.t });
     this.audio.play('chest');
-    this.fx.burst(x, y - 6, ['#ffd24a', '#fff6c0'], 16, 70, 0.8);
-    this.fx.float(x, y - 22, 'صندوق كنز! 📦', '#ffd24a', 14);
+    this.fx.burst(...this.fx.at(x, y, 6), ['#ffd24a', '#fff6c0'], 16, 70, 0.8);
+    this.fx.float(...this.fx.at(x, y, 22), 'صندوق كنز! 📦', '#ffd24a', 14);
   }
 
   async openGroundChest(c) {
@@ -733,7 +1069,7 @@ export class Game {
     const res = applyReward(this.state, reward, this.rng);
     const p = this.state.player;
     if (reward.coins) this.audio.play('coin');
-    this.fx.burst(p.x, p.y - 16, ['#ffd24a', '#fff6c0'], 14, 70, 0.7);
+    this.fx.burst(...this.fx.at(p.x, p.y, 16), ['#ffd24a', '#fff6c0'], 14, 70, 0.7);
     if (!quiet || res.chests.length) this.ui.gains(title, res);
     else this.ui.gainToast(res.gains);
     this.handleLevelUps(res);
@@ -781,10 +1117,10 @@ export class Game {
     const pay = Math.round(ITEMS[g.want].price * 2.4 * coinMultiplier(s) * (g.golden ? 3 : 1)) + stars(s) * 2;
     addStat(s, 'guests', 1);
     this.audio.play('coin');
-    this.fx.burst(g.x, g.y - 20, ['#ff6a8a', '#ffd24a'], 12, 60, 0.7);
-    this.fx.float(g.x, g.y - 30, '❤️', '#ff6a8a', 16);
+    this.fx.burst(...this.fx.at(g.x, g.y, 20), ['#ff6a8a', '#ffd24a'], 12, 60, 0.7);
+    this.fx.float(...this.fx.at(g.x, g.y, 30), '❤️', '#ff6a8a', 16);
     const res = applyReward(s, { coins: pay, xp: 5 }, this.rng);
-    this.fx.float(g.x, g.y - 42, `🪙 +${pay}`, '#ffd24a', 15);
+    this.fx.float(...this.fx.at(g.x, g.y, 42), `🪙 +${pay}`, '#ffd24a', 15);
     if (this.rng() < 0.3) s.kp.c = (s.kp.c || 0) + 1;
     this.ui.toast(`${g.name}: ${pick(this.rng, GUEST_LINES.thanks)}`);
     this.handleLevelUps(res);
@@ -844,7 +1180,7 @@ export class Game {
     if (nd) this.onNewDay(nd);
     s.player.energy = maxEnergy(s);
     s.player.hp = maxHp(s);
-    this.fx.float(s.player.x, s.player.y - 24, '⚡ طاقة كاملة', '#ffe07a', 14);
+    this.fx.float(...this.fx.at(s.player.x, s.player.y, 24), '⚡ طاقة كاملة', '#ffe07a', 14);
     this.save();
   }
 
@@ -854,6 +1190,7 @@ export class Game {
     addStat(s, 'days', n);
     const births = [];
     for (let d = s.time.day - n + 1; d <= s.time.day; d++) births.push(...camels.dailyUpdate(s, d, this.rng));
+    for (let d = s.time.day - n + 1; d <= s.time.day; d++) sheepSys.sheepDaily(s, d);
     for (const calf of births) {
       if (calf.rare) {
         this.audio.play('rare');
@@ -923,7 +1260,7 @@ export class Game {
     add(s, id, -1);
     s.player.energy = Math.min(maxEnergy(s), s.player.energy + it.food);
     this.audio.play('eat');
-    this.fx.float(s.player.x, s.player.y - 24, `⚡ +${it.food}`, '#ffe07a', 14);
+    this.fx.float(...this.fx.at(s.player.x, s.player.y, 24), `⚡ +${it.food}`, '#ffe07a', 14);
     this.ui.refresh();
     return true;
   }
@@ -937,11 +1274,11 @@ export class Game {
     const o = this.worldObjById['spot:' + spotId];
     this.audio.play('build');
     this.shake = 5;
-    this.fx.burst(o.x, o.y - 8, ['#d4a46b', '#b07e4c', '#fff3c4'], 30, 90, 0.9);
-    this.fx.float(o.x, o.y - 30, b.rating ? `⭐ سمعة +${b.rating}` : '🔨 تم البناء', '#ffd24a', 15);
+    this.fx.burst(...this.fx.at(o.x, o.y, 8), ['#d4a46b', '#b07e4c', '#fff3c4'], 30, 90, 0.9);
+    this.fx.float(...this.fx.at(o.x, o.y, 30), b.rating ? `⭐ سمعة +${b.rating}` : '🔨 تم البناء', '#ffd24a', 15);
     this.tileDirty = true;
     this.boxVersion = (this.boxVersion || 0) + 1;
-    this.gainXp(10 + b.rating, o.x, o.y - 42);
+    this.gainXp(10 + b.rating, o.x, o.y, 42);
     if (spotId === 'stable') this.giftStarterCamels();
     this.ui.refresh();
     this.save();
@@ -1026,20 +1363,20 @@ export class Game {
     this.tryMoveEnemy(e, ((e.x - p.x) / d) * kb, ((e.y - p.y) / d) * kb);
     this.audio.play('hit');
     this.shake = 2;
-    this.fx.burst(e.x, e.y - 8, ['#ffffff', '#ffd24a'], 6, 60, 0.4);
-    this.fx.float(e.x, e.y - 22, `-${dmg}`, '#ff8080', 13);
+    this.fx.burst(...this.fx.at(e.x, e.y, 8), ['#ffffff', '#ffd24a'], 6, 60, 0.4);
+    this.fx.float(...this.fx.at(e.x, e.y, 22), `-${dmg}`, '#ff8080', 13);
     if (e.hp <= 0) this.killEnemy(e);
   }
 
   killEnemy(e) {
     const s = this.state;
     addStat(s, 'kills', 1);
-    this.fx.burst(e.x, e.y - 8, ['#5a2a1a', '#8f8a70', '#fff6c0'], 18, 80, 0.8);
-    this.gainXp(e.def.xp, e.x, e.y - 30);
+    this.fx.burst(...this.fx.at(e.x, e.y, 8), ['#5a2a1a', '#8f8a70', '#fff6c0'], 18, 80, 0.8);
+    this.gainXp(e.def.xp, e.x, e.y, 30);
     const loot = {};
     if (e.def.drop && !e.def.boss && this.rng() < 0.5) loot[e.def.drop] = 1;
     if (this.rng() < 0.3) loot.oldcoin = 1;
-    if (Object.keys(loot).length) this.gainItems(loot, e.x, e.y - 16);
+    if (Object.keys(loot).length) this.gainItems(loot, e.x, e.y, 16);
     if (this.rng() < 0.45) s.kp.s = (s.kp.s || 0) + 1;
     if (!e.def.boss && this.rng() < 0.06) {
       const missing = Object.keys(RELICS).filter(id => !s.relics[id] && RELICS[id].set !== 'salem');
@@ -1049,7 +1386,7 @@ export class Game {
       s.flags['boss' + e.def.boss] = true;
       this.dungeon.bossDead = true;
       this.shake = 8;
-      this.fx.confetti(e.x, e.y - 10);
+      this.fx.confetti(...this.fx.at(e.x, e.y, 10));
       this.dungeon.chests.push({ x: e.x, y: e.y, rarity: 'rare', opened: false });
       this.claimReward({ relic: e.def.drop, coins: 60 * e.def.boss }, `🏆 هزمت ${e.def.name}!`);
       this.checkProgress();
@@ -1080,7 +1417,7 @@ export class Game {
       if (d < 120) {
         const sp = e.def.speed * dt * (e.hurt > 0 ? 0.2 : 1);
         this.tryMoveEnemy(e, (dx / d) * sp, (dy / d) * sp);
-        e.face = dx > 0 ? 1 : -1;
+        e.face = dx - dy > 0 ? 1 : -1;
       } else {
         e.wander -= dt;
         if (e.wander <= 0) { e.wander = 1 + this.rng() * 2; const a = this.rng() * Math.PI * 2; e.vx = Math.cos(a) * 12; e.vy = Math.sin(a) * 12; }
@@ -1093,7 +1430,7 @@ export class Game {
         this.audio.play('hurt');
         this.shake = 5;
         this.ui.vibrate(60);
-        this.fx.float(p.x, p.y - 26, `-${e.def.dmg} ❤️`, '#ff5050', 14);
+        this.fx.float(...this.fx.at(p.x, p.y, 26), `-${e.def.dmg} ❤️`, '#ff5050', 14);
         const k = 18 / (d || 1);
         const ox = p.x, oy = p.y;
         if (!this.blocked(p.x + dx * k, p.y)) p.x += dx * k;
@@ -1111,7 +1448,7 @@ export class Game {
     if (choice === 'revive') {
       s.player.hp = maxHp(s);
       this.hurtT = 2;
-      this.fx.burst(s.player.x, s.player.y - 10, ['#7fb2ff', '#fff'], 30, 80, 1);
+      this.fx.burst(...this.fx.at(s.player.x, s.player.y, 10), ['#7fb2ff', '#fff'], 30, 80, 1);
       this.ui.refresh();
       return;
     }

@@ -304,6 +304,82 @@ await ev(() => { const g = window.__game; const p = g.worldObjById['spot:trough'
 await tick(400);
 await shot('29-pen-world');
 
+// 14) العمّال: توظيف، إضراب، غرامة، بنّاء
+const wk = await ev(async () => {
+  const g = window.__game; const s = g.state;
+  const W = await import('./js/systems/workers.js');
+  s.player.coins += 5000; s.built.workers_house = true;
+  s.time.minute = 9 * 60; g.clockTick();
+  const cands = W.candidates(s, s.time.day);
+  for (const c of cands) W.hire(s, c);
+  const builder = s.workers.find(w => w.type === 'builder') || s.workers[0];
+  builder.type = 'builder';
+  s.inv.plank = 20; s.inv.frond = 20; s.inv.rope = 10;
+  const assigned = W.assignBuild(s, builder.id, 'stall_shop').ok;
+  // عدّي 4 ساعات بدون دفع
+  s.payroll.auto = false;
+  for (let i = 0; i < 4; i++) { s.time.minute += 60; g.clockTick(); }
+  const strikers = s.workers.filter(w => w.status === 'strike').length;
+  const cost = W.reinstateCost(s.workers[0]);
+  const back = W.reinstate(s, s.workers[0].id);
+  for (const w of s.workers) if (w.status === 'strike') W.reinstate(s, w.id);
+  return { hired: s.workers.length, assigned, strikers, cost, back };
+});
+console.log('workers:', wk);
+await tick(2500);
+await ev(() => { const g = window.__game; const w = g.state.workers[0]; const rt = g.workerRt[w.id]; g.state.player.x = rt.x - 20; g.state.player.y = rt.y; });
+await tick(300);
+await closeModals();
+await shot('30-workers-world');
+await ev(() => window.__game.ui.openWorkers());
+await tick(300);
+await shot('31-workers-panel');
+await closeModals();
+// البنّاء يخلص البسطة
+const built = await ev(async () => {
+  const g = window.__game; const s = g.state;
+  const b = s.workers.find(w => w.job);
+  if (b) { const rt = g.workerRt[b.id]; const o = g.worldObjById['spot:' + b.job.spot]; rt.x = o.x + 12; rt.y = o.y + 8; b.job.progress = b.job.need - 0.01; }
+  await new Promise(r => setTimeout(r, 800));
+  return !!s.built.stall_shop;
+});
+console.log('builder built stall:', built);
+await closeModals();
+// البسطة والطلبات والغنم
+const trade = await ev(async () => {
+  const g = window.__game; const s = g.state;
+  const shop = await import('./js/systems/shop.js');
+  s.inv.tomato = 20; s.inv.wood = 30; s.inv.stone = 30;
+  shop.listItem(s, 0, 'tomato', 5, 5);
+  s.built.orders_board = true; s.built.sheepfold = true;
+  const rngFn = Math.random;
+  let sold = [];
+  for (let i = 0; i < 30 && !sold.length; i++) sold = shop.stallTick(s, 60, rngFn);
+  const got = shop.collect(s, 0);
+  const sh = await import('./js/systems/sheep.js');
+  sh.buyLamb(s, 'najdi', rngFn); sh.buyLamb(s, 'naimi', rngFn);
+  s.sheep[0].ageDays = 3;
+  return { sold: sold.length, got, sheep: s.sheep.length };
+});
+console.log('trade:', trade);
+await ev(() => window.__game.ui.openTrade('stall'));
+await tick(300);
+await shot('32-stall');
+await closeModals();
+await ev(() => window.__game.ui.openTrade('orders'));
+await tick(300);
+await shot('33-orders');
+await closeModals();
+await ev(() => { const g = window.__game; g.state.player.x = 37 * 16; g.state.player.y = 37 * 16; });
+await tick(1500);
+await closeModals();
+await shot('34-fold-world');
+await ev(() => { const g = window.__game; g.state.player.x = 30 * 16; g.state.player.y = 22 * 16; g.state.time.minute = 22 * 60; });
+await tick(500);
+await closeModals();
+await shot('35-night-iso');
+await ev(() => { const g = window.__game; g.state.time.minute = 10 * 60; });
+
 // حفظ وتحميل
 const saved = await ev(() => { window.__game.save(); return JSON.parse(localStorage.getItem('almuzare_save')).player.coins; });
 console.log('saved coins:', saved);
@@ -323,6 +399,10 @@ server.close();
 const fatal = errors.filter(e => !/favicon/.test(e));
 if (fatal.length) {
   console.error('❌ أخطاء بالمتصفح:\n' + fatal.join('\n'));
+  process.exit(1);
+}
+if (wk.strikers < 1 || !wk.back || !built || !trade.got || trade.sheep < 2) {
+  console.error('❌ العمال/التجارة ما اشتغلت', { wk, built, trade });
   process.exit(1);
 }
 if (camelsCount < 2 || trough < 1 || !born.rare || sold < 1) {

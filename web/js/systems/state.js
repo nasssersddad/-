@@ -1,7 +1,8 @@
 // حالة اللعبة، الحفظ والتحميل
 import { emptyMarket } from './market.js';
+import { emptyStall } from './shop.js';
 export const SAVE_KEY = 'almuzare_save';
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 export function newState(now = Date.now()) {
   return {
@@ -38,6 +39,15 @@ export function newState(now = Date.now()) {
     blessNext: false,
     blessDay: null,
     mazayenWeek: -1,
+    workers: [],
+    workerSeq: 0,
+    payroll: { auto: false, lastHour: null },
+    stall: emptyStall(),
+    orders: [],
+    orderSeq: 0,
+    sheep: [],
+    sheepSeq: 0,
+    paper: null,
     settings: { music: true, sfx: true },
     tutorialDone: false,
     introSeen: false,

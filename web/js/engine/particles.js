@@ -3,6 +3,12 @@ export class Particles {
   constructor() {
     this.list = [];
     this.texts = [];
+    this.ox = 768;
+  }
+
+  // نقطة بالعالم (مع ارتفاع) ← نقطة إيزومتريك. كل دوال الجسيمات تاخذ نقاط إيزومتريك
+  at(x, y, lift = 0) {
+    return [x - y + this.ox, (x + y) / 2 - lift];
   }
 
   burst(x, y, color, n = 8, speed = 60, life = 0.6, gravity = 120, size = 2) {

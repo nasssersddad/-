@@ -15,6 +15,11 @@ import * as time from './systems/time.js';
 import { SAVE_KEY } from './systems/state.js';
 import { character, PLAYER_LOOK, DJINN_LOOK, SALEM_LOOK } from './engine/art.js';
 import { setAdSimulator } from './systems/ads.js';
+import * as workersSys from './systems/workers.js';
+import * as shop from './systems/shop.js';
+import * as sheepSys from './systems/sheep.js';
+import { WORKER_TYPES, WORKER_LOOKS, STRIKE_AFTER } from './data/workers.js';
+import { SHEEP_BREEDS, SHEEP_CAP } from './data/sheep.js';
 import { camelSprite } from './engine/art.js';
 import * as camels from './systems/camels.js';
 import * as market from './systems/market.js';
@@ -55,6 +60,8 @@ export class UI {
         else if (k === 'settings') this.openSettings();
         else if (k === 'quest') this.openQuests();
         else if (k === 'camels') this.openCamels();
+        else if (k === 'workers') this.openWorkers();
+        else if (k === 'trade') this.openTrade();
       });
       el.addEventListener('pointerdown', e => e.stopPropagation());
     });
@@ -137,6 +144,13 @@ export class UI {
       b.textContent = pend;
       b.classList.toggle('on', pend > 0);
       $('badgeTech').classList.toggle('on', TECH.some(t => techStatus(s, t.id) === 'ready'));
+      const strikers = s.workers.filter(w => w.status === 'strike' || w.late >= 2).length;
+      $('badgeWorkers').textContent = strikers ? '!' : '';
+      $('badgeWorkers').classList.toggle('on', strikers > 0);
+      const nowMin = g.absMinutes();
+      const tradeReady = s.stall.slots.filter(x => x && x.sold).length + (s.built.orders_board ? s.orders.filter(o => shop.canFulfill(s, o, nowMin)).length : 0);
+      $('badgeTrade').textContent = tradeReady;
+      $('badgeTrade').classList.toggle('on', tradeReady > 0);
       const offers = market.openOffersCount(s);
       $('badgeCamels').textContent = offers;
       $('badgeCamels').classList.toggle('on', offers > 0);
@@ -329,8 +343,8 @@ export class UI {
           const r = RECIPES.find(x => x.id === id);
           const [outId, outN] = Object.entries(r.out)[0];
           this.audio.play('craft');
-          g.fx.burst(s.player.x, s.player.y - 20, ['#ffd24a', '#fff'], 10, 50, 0.6);
-          g.fx.float(s.player.x, s.player.y - 30, `${itemIcon(outId)} +${outN * made}`, '#fff3c4', 14);
+          g.fx.burst(...g.fx.at(s.player.x, s.player.y, 20), ['#ffd24a', '#fff'], 10, 50, 0.6);
+          g.fx.float(...g.fx.at(s.player.x, s.player.y, 30), `${itemIcon(outId)} +${outN * made}`, '#fff3c4', 14);
           g.gainXp(r.xp * made, s.player.x, s.player.y - 40);
           this.toast(`${itemIcon(outId)} صنعت ${itemName(outId)} ×${outN * made}`, 'gain', 1.6);
           m.rerender();
@@ -429,7 +443,7 @@ export class UI {
           add(s, id, -n);
           applyReward(s, { coins: earn }, Math.random);
           this.audio.play('coin');
-          g.fx.float(s.player.x, s.player.y - 30, `🪙 +${earn}`, '#ffd24a', 14);
+          g.fx.float(...g.fx.at(s.player.x, s.player.y, 30), `🪙 +${earn}`, '#ffd24a', 14);
           m.rerender();
           this.refresh();
         };
@@ -483,7 +497,7 @@ export class UI {
         m.handlers.learn = (id) => {
           if (!learnTech(s, id)) { this.audio.play('deny'); return; }
           this.audio.play('magic');
-          this.g.fx.confetti(s.player.x, s.player.y - 20);
+          this.g.fx.confetti(...g.fx.at(s.player.x, s.player.y, 20));
           this.toast(`📘 تعلّمت: ${TECH_BY_ID[id].name}`, 'gain');
           if (id === 't_stamina' || id === 't_armor') { s.player.energy = maxEnergy(s); s.player.hp = maxHp(s); }
           this.g.save();
@@ -708,6 +722,220 @@ export class UI {
     };
   }
 
+  // ---------- العمّال ----------
+  openWorkers(tab = 'mine') {
+    const g = this.g;
+    const s = g.state;
+    this.modal({
+      title: '👷 العمّال',
+      render: (m) => {
+        this.tabs(m, [{ id: 'mine', label: '👷 عمّالي' }, { id: 'hire', label: '📝 وظّف' }], tab, (v) => { tab = v; m.rerender(); });
+        if (tab === 'hire') return this.renderHire(m);
+        const owed = workersSys.totalOwed(s);
+        const hour = time.hour(s);
+        m.body.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:6px">
+            <span>💸 الرواتب المستحقة: <b class="price" style="color:${owed ? '#b00' : '#1a6a10'}">${owed}</b> • العمال ${s.workers.length}/${workersSys.workerCap(s)} • ${workersSys.isWorkHour(hour) ? '🕐 وقت دوام' : '🌙 راحة (الدوام 6 الصبح لين 8 بالليل)'}</span>
+            <span class="row"><button class="btn green" data-a="pay" ${owed && s.player.coins >= owed ? '' : 'disabled'}>سدد الرواتب</button>
+            <button class="btn ${s.payroll.auto ? 'blue' : ''}" data-a="auto">${s.payroll.auto ? '✔ دفع تلقائي' : 'دفع تلقائي'}</button></span></div>
+          <p class="muted">الراتب ينحسب كل ساعة دوام باللعبة. إذا تأخرت <b>${STRIKE_AFTER} ساعات</b> يضرب العامل ويوقف، وما يرجع إلا إذا دفعت راتبه <b>+ غرامة</b>.</p>
+          <div class="camels">${s.workers.map(w => {
+            const T = WORKER_TYPES[w.type];
+            const rt = g.workerRt && g.workerRt[w.id];
+            const doing = w.status === 'strike' ? '✊ مضرب عن الشغل' : !workersSys.isWorkHour(hour) ? '😴 يرتاح' : w.type === 'builder' ? (w.job ? `🔨 يبني ${BUILD_SPOTS[w.job.spot].name}` : '⏳ ينتظر تحدد له بناء') : rt && rt.task ? `${T.icon} يشتغل` : '🤷 ما لقى شغل';
+            return `<div class="ccard ${w.status === 'strike' ? 'strike' : ''}"><div class="cpic" style="font-size:36px">${T.icon}</div><div class="cinfo">
+              <h3>${esc(w.name)} <small class="muted">— ${T.name}</small></h3>
+              <div class="ctags"><span class="ctag">راتب ${w.wage}/ساعة</span><span class="ctag">سرعة ×${w.speed}</span><span class="ctag ${w.owed ? 'warn' : ''}">دين ${w.owed}</span>${w.late ? `<span class="ctag warn">متأخر ${w.late} ساعة</span>` : ''}</div>
+              <div class="muted">${doing}</div>
+              ${w.job ? `<div class="prog"><i style="width:${Math.min(100, (w.job.progress / w.job.need) * 100)}%"></i></div>` : ''}
+              <div class="row">${w.status === 'strike' ? `<button class="btn green" data-a="back" data-v="${w.id}" ${s.player.coins >= workersSys.reinstateCost(w) ? '' : 'disabled'}>ادفع ${w.owed} + غرامة ${w.fine} وارجعه</button>` : ''}
+                ${w.type === 'builder' && !w.job && w.status !== 'strike' ? `<button class="btn blue" data-a="assign" data-v="${w.id}">حدد بناء 🏗️</button>` : ''}
+                ${w.job ? `<button class="btn mini2" data-a="cancel" data-v="${w.id}">ألغِ البناء</button>` : ''}
+                <button class="btn mini2" data-a="fire" data-v="${w.id}">اطرده</button></div></div></div>`;
+          }).join('') || '<p class="muted">ما عندك عمّال. روح لتبويب "وظّف" 📝</p>'}</div>`;
+        m.handlers.pay = () => { const n = workersSys.payAll(s); if (n) { this.audio.play('coin'); this.toast(`💸 سددت الرواتب: ${n} درهم`, 'gain'); g.save(); } m.rerender(); this.refresh(); };
+        m.handlers.auto = () => { s.payroll.auto = !s.payroll.auto; g.save(); m.rerender(); };
+        m.handlers.back = (id) => { const n = workersSys.reinstate(s, id); if (n) { this.audio.play('deal'); this.toast(`🤝 رجع للشغل بعد ما دفعت ${n}`, 'gain'); g.save(); } m.rerender(); this.refresh(); };
+        m.handlers.fire = async (id) => { if (await this.confirm('متأكد تبي تطرده؟')) { workersSys.fire(s, id); g.save(); } m.rerender(); };
+        m.handlers.cancel = (id) => { workersSys.cancelBuild(s, id); g.save(); m.rerender(); };
+        m.handlers.assign = (id) => this.pickBuild(id, () => m.rerender());
+      },
+    });
+  }
+
+  renderHire(m) {
+    const g = this.g;
+    const s = g.state;
+    const cands = workersSys.candidates(s, s.time.day);
+    m.body.innerHTML = `<p class="muted">مرشحين اليوم (يتغيرون كل يوم باللعبة). الحد ${workersSys.workerCap(s)} عمّال — ابنِ "بيت العمّال" عشان توظف أكثر.</p>
+      <div class="camels">${cands.map(c => {
+        const T = WORKER_TYPES[c.type];
+        const hired = s.workers.some(w => w.cid === c.cid);
+        return `<div class="ccard"><div class="cpic" style="font-size:36px">${T.icon}</div><div class="cinfo"><h3>${esc(c.name)} <small class="muted">— ${T.name}</small></h3>
+          <p>${T.desc}</p><div class="ctags"><span class="ctag">راتب ${c.wage}/ساعة</span><span class="ctag">سرعة ×${c.speed}</span><span class="ctag money">توظيف 🪙${c.hire}</span></div>
+          <div class="row">${hired ? '<span class="muted">✔ توظّف</span>' : `<button class="btn green" data-a="hire" data-v="${c.cid}" ${s.player.coins >= c.hire && s.workers.length < workersSys.workerCap(s) ? '' : 'disabled'}>وظّفه</button>`}</div></div></div>`;
+      }).join('')}</div>`;
+    m.handlers.hire = (cid) => {
+      const c = cands.find(x => x.cid === cid);
+      const r = workersSys.hire(s, c);
+      if (!r.ok) { this.audio.play('deny'); this.toast(r.reason === 'full' ? 'وصلت الحد، ابنِ بيت العمّال' : 'الدراهم ما تكفي'); return; }
+      this.audio.play('deal');
+      this.toast(`👷 ${c.name} صار يشتغل عندك! لا تنسى راتبه كل ساعة`, 'gain', 4);
+      g.save();
+      m.rerender();
+    };
+  }
+
+  pickBuild(workerId, done) {
+    const g = this.g;
+    const s = g.state;
+    const spots = Object.keys(BUILD_SPOTS).filter(id => !s.built[id] && !spotStatus(s, id).hidden && !s.workers.some(w => w.job && w.job.spot === id));
+    this.modal({
+      title: '🏗️ وش يبني؟', cls: 'small',
+      render: (mm) => {
+        mm.body.innerHTML = spots.map(id => {
+          const st = spotStatus(s, id);
+          return `<div class="shop-row"><span class="nm">${BUILD_SPOTS[id].name}<br>${this.costHtml(BUILD_SPOTS[id].cost)}</span>${st.ok ? `<button class="btn green" data-a="go" data-v="${id}">ابنِ</button>` : `<small class="muted">${esc(st.reason)}</small>`}</div>`;
+        }).join('') || '<p class="muted">ما فيه شي تقدر تبنيه الحين.</p>';
+        mm.handlers.go = (id) => {
+          const r = workersSys.assignBuild(s, workerId, id);
+          if (!r.ok) { this.toast(r.reason); return; }
+          this.audio.play('build');
+          this.toast(`🏗️ بدأ البناء: ${BUILD_SPOTS[id].name}`, 'gain');
+          g.save(); mm.close(); done();
+        };
+      },
+    });
+  }
+
+  // ---------- التجارة: البسطة، الطلبات، الجريدة، الغنم ----------
+  openTrade(tab = 'stall') {
+    const g = this.g;
+    this.modal({
+      title: '🏪 التجارة',
+      render: (m) => {
+        const s = g.state;
+        const nowMin = g.absMinutes();
+        this.tabs(m, [
+          { id: 'stall', label: '🏪 البسطة', badge: s.stall.slots.filter(x => x && x.sold).length },
+          { id: 'orders', label: '📋 الطلبات', badge: s.built.orders_board ? s.orders.filter(o => shop.canFulfill(s, o, nowMin)).length : 0 },
+          { id: 'paper', label: '📰 الجريدة' },
+          { id: 'sheep', label: '🐑 الغنم' },
+        ], tab, (v) => { tab = v; m.rerender(); });
+        if (tab === 'stall') this.renderStall(m);
+        else if (tab === 'orders') this.renderOrders(m);
+        else if (tab === 'paper') this.renderPaper(m);
+        else this.renderSheep(m);
+      },
+    });
+  }
+
+  renderStall(m) {
+    const g = this.g;
+    const s = g.state;
+    if (!s.built.stall_shop) { m.body.innerHTML = '<p>ابنِ <b>البسطة</b> على الطريق قدام الخان (موقع البناء جنب البوابة)، وتقدر تعرض فيها زرعك ومنتجاتك وغنمك، والمارّة يشترون حتى وأنت تشتغل. 🏪</p>'; return; }
+    m.body.innerHTML = `<p class="muted">اعرض أي شي بالسعر اللي تبيه. كل ما رخّصت انباع أسرع، وإذا غليته ممكن ما أحد يشتريه.</p><div class="stall">${s.stall.slots.map((x, i) => {
+      if (!x) return `<button class="slot sslot empty" data-a="add" data-v="${i}">＋<small>اعرض</small></button>`;
+      const icon = x.kind === 'item' ? ITEMS[x.item].icon : '🐑';
+      const name = x.kind === 'item' ? `${ITEMS[x.item].name} ×${x.qty}` : SHEEP_BREEDS[x.sheep.breed].name;
+      if (x.sold) return `<button class="slot sslot sold" data-a="collect" data-v="${i}">${icon}<small>انباع لـ ${esc(x.buyer)}</small><b>🪙${x.price}</b></button>`;
+      return `<button class="slot sslot" data-a="remove" data-v="${i}">${icon}<small>${name}</small><b>🪙${x.price}</b></button>`;
+    }).join('')}</div>`;
+    m.handlers.collect = (i) => { const n = shop.collect(s, Number(i)); if (n) { this.audio.play('coin'); g.fx.float(...g.fx.at(s.player.x, s.player.y, 30), `🪙 +${n}`, '#ffd24a', 15); g.save(); } m.rerender(); this.refresh(); };
+    m.handlers.remove = async (i) => { if (await this.confirm('تسحب الغرض من البسطة؟')) { shop.unlistSlot(s, Number(i)); g.save(); } m.rerender(); };
+    m.handlers.add = (i) => this.pickForStall(Number(i), () => m.rerender());
+  }
+
+  pickForStall(idx, done) {
+    const g = this.g;
+    const s = g.state;
+    const items = Object.keys(s.inv).filter(id => ITEMS[id] && s.inv[id] > 0);
+    this.modal({
+      title: '🏪 وش تعرض؟', cls: 'small',
+      render: (mm) => {
+        mm.body.innerHTML = `<div class="inv">${items.map(id => `<button class="slot" data-a="it" data-v="${id}">${ITEMS[id].icon}<small>${ITEMS[id].name}</small><b>${s.inv[id]}</b></button>`).join('')}
+          ${s.sheep.map(sh => `<button class="slot food" data-a="sh" data-v="${sh.id}">🐑<small>${SHEEP_BREEDS[sh.breed].name}</small></button>`).join('')}</div>`;
+        mm.handlers.it = (id) => {
+          mm.close();
+          const max = s.inv[id];
+          const qty = Math.min(max, 10);
+          const base = ITEMS[id].price * qty;
+          const r = shop.priceRange(base);
+          this.numberPrompt({
+            title: `${ITEMS[id].icon} ${ITEMS[id].name} ×${qty}`,
+            text: `السعر المقترح: <b>🪙${r.suggested}</b> (المسموح ${r.min} إلى ${r.max}). الكمية ${qty} من ${max}.`,
+            value: r.suggested, presets: [r.min, base, r.suggested, Math.round(base * 2)], ok: 'اعرض بالبسطة',
+            onOk: (price) => { shop.listItem(s, idx, id, qty, price); this.audio.play('coin'); g.save(); done(); },
+          });
+        };
+        mm.handlers.sh = (id) => {
+          mm.close();
+          const sh = s.sheep.find(x => x.id === id);
+          const r = shop.priceRange(shop.sheepValue(sh));
+          this.numberPrompt({
+            title: `🐑 ${SHEEP_BREEDS[sh.breed].name}`, text: `السعر المقترح: <b>🪙${r.suggested}</b> (المسموح ${r.min} إلى ${r.max}).`,
+            value: r.suggested, presets: [r.min, r.suggested, r.max], ok: 'اعرض بالبسطة',
+            onOk: (price) => { shop.listSheep(s, idx, id, price); g.save(); done(); },
+          });
+        };
+      },
+    });
+  }
+
+  renderOrders(m) {
+    const g = this.g;
+    const s = g.state;
+    if (!s.built.orders_board) { m.body.innerHTML = '<p>ابنِ <b>لوحة قافلة الطلبات</b> جنب الطريق. القوافل تطلب منك أغراض، وتدفع لك دراهم وخبرة وأحياناً صناديق! 📋</p>'; return; }
+    const nowMin = g.absMinutes();
+    shop.ensureOrders(s, g.rng, nowMin);
+    m.body.innerHTML = `<div class="grid">${s.orders.map(o => {
+      if (nowMin < o.readyAt) {
+        const left = Math.ceil(o.readyAt - nowMin);
+        return `<div class="card locked"><h3>🐪 قافلة جاية...</h3><p class="muted">توصل بعد ${left} دقيقة لعبة</p><button class="btn ad" data-a="rush" data-v="${o.id}">سرّعها</button></div>`;
+      }
+      const ok = shop.canFulfill(s, o, nowMin);
+      return `<div class="card ${ok ? 'ready' : ''}"><h3>📋 طلب</h3>${this.costHtml(o.items)}
+        <div class="ctags"><span class="ctag money">🪙${o.coins}</span><span class="ctag">✨${o.xp}</span>${o.chest ? '<span class="ctag gold">📦 صندوق</span>' : ''}</div>
+        <div class="row"><button class="btn green" data-a="done" data-v="${o.id}" ${ok ? '' : 'disabled'}>سلّم 🐪</button><button class="btn mini2" data-a="drop" data-v="${o.id}">🗑️</button></div></div>`;
+    }).join('')}</div>`;
+    m.handlers.done = (id) => {
+      const r = shop.fulfill(s, id, g.rng, g.absMinutes());
+      if (!r) return;
+      this.audio.play('deal');
+      g.claimReward(r, null, true);
+      m.rerender();
+    };
+    m.handlers.drop = (id) => { shop.discard(s, id, g.rng, g.absMinutes()); m.rerender(); };
+    m.handlers.rush = async (id) => { if (await g.watchAd('energy')) { const o = s.orders.find(x => x.id === id); if (o) o.readyAt = 0; m.rerender(); } };
+  }
+
+  renderPaper(m) {
+    const g = this.g;
+    const s = g.state;
+    const list = shop.newspaper(s, s.time.day);
+    m.body.innerHTML = `<p class="muted">📰 جريدة السوق: بسطات تجّار ثانيين اليوم. اشترِ اللي ناقصك.</p><div class="shop-list">${list.map(p => `<div class="shop-row"><span class="ic">${ITEMS[p.item].icon}</span><span class="nm">${ITEMS[p.item].name} ×${p.qty}<br><small class="muted">بسطة ${esc(p.seller)}</small></span>
+      ${p.sold ? '<span class="muted">انباعت</span>' : `<button class="btn" data-a="buy" data-v="${p.id}" ${s.player.coins >= p.price ? '' : 'disabled'}>🪙${p.price}</button>`}</div>`).join('')}</div>`;
+    m.handlers.buy = (id) => { if (shop.buyFromPaper(s, id)) { this.audio.play('coin'); g.save(); } m.rerender(); this.refresh(); };
+  }
+
+  renderSheep(m) {
+    const g = this.g;
+    const s = g.state;
+    if (!s.built.sheepfold) { m.body.innerHTML = '<p>ابنِ <b>حظيرة الغنم</b> جنب المزرعة، وبعدها تشتري طليان تربيها وتجز صوفها وتبيعها بالبسطة. 🐑</p>'; return; }
+    const day = s.time.day;
+    m.body.innerHTML = `<p>🐑 بالحظيرة ${s.sheep.length}/${SHEEP_CAP}. يطعمون برسيم أو قمح أو أعشاب، والصوف كل يومين.</p>
+      <div class="row">${Object.entries(SHEEP_BREEDS).map(([b, d]) => `<button class="btn" data-a="buy" data-v="${b}" ${s.player.coins >= sheepSys.lambPrice(b) ? '' : 'disabled'}>اشترِ طلي ${d.name} 🪙${sheepSys.lambPrice(b)}</button>`).join('')}</div>
+      <div class="camels" style="margin-top:8px">${s.sheep.map(sh => `<div class="shop-row"><span class="ic">🐑</span><span class="nm">${SHEEP_BREEDS[sh.breed].name} — ${sh.ageDays >= 2 ? 'بالغ' : 'طلي'}<br><small class="muted">${sh.wateredDay === day ? '💧✔' : '💧✖'} ${sh.fedDay === day ? '🌿✔' : '🌿✖'} ${sheepSys.canShear(sh, day) ? '🧶 جاهز للجز' : ''} • ≈🪙${shop.sheepValue(sh)}</small></span></div>`).join('')}</div>`;
+    m.handlers.buy = (b) => {
+      const r = sheepSys.buyLamb(s, b, g.rng);
+      if (!r.ok) { this.toast(r.reason); return; }
+      this.audio.play('deal');
+      this.toast(`🐑 اشتريت طلي ${SHEEP_BREEDS[b].name}!`, 'gain');
+      g.save();
+      m.rerender();
+      this.refresh();
+    };
+  }
+
   // ---------- الحلال: المراح والسوق ----------
   camelImg(c, size = 60) {
     this.camelCache = this.camelCache || {};
@@ -812,7 +1040,7 @@ export class UI {
           if (!camels.breed(s, mid, fid, day, s.blessNext)) { this.audio.play('deny'); return; }
           s.blessNext = false;
           this.audio.play('camel');
-          g.fx.burst(s.player.x, s.player.y - 20, ['#ff6a8a', '#ffd24a'], 14, 60, 0.8);
+          g.fx.burst(...g.fx.at(s.player.x, s.player.y, 20), ['#ff6a8a', '#ffd24a'], 14, 60, 0.8);
           this.toast(`💞 تم التلقيح! الحوار يوصل بعد ${GESTATION_DAYS} أيام`, 'gain', 3);
           g.save();
           mm.close();
@@ -887,7 +1115,7 @@ export class UI {
     const after = (res) => {
       if (res.result === 'bought') {
         this.audio.play('deal');
-        g.fx.confetti(s.player.x, s.player.y - 20);
+        g.fx.confetti(...g.fx.at(s.player.x, s.player.y, 20));
         this.toast(`🤝 اشتريت ${res.camel.name} بـ ${market.fmt(res.price)}! تلقاها بالمراح`, 'gain', 4);
         g.save();
       } else if (res.result === 'poor') this.toast('ما عندك دراهم تكفي 💸');
@@ -952,8 +1180,8 @@ export class UI {
     if (!res) return;
     const s = g.state;
     this.audio.play(res.camel && res.camel.rare ? 'rare' : 'deal');
-    g.fx.confetti(s.player.x, s.player.y - 20);
-    if (res.price >= 20000) g.fx.goldRain(s.player.x, s.player.y - 60, 200);
+    g.fx.confetti(...g.fx.at(s.player.x, s.player.y, 20));
+    if (res.price >= 20000) g.fx.goldRain(...g.fx.at(s.player.x, s.player.y, 60), 200);
     this.toast(`🤝 بعت ${res.camel ? res.camel.name : ''} على ${res.buyer} بـ ${market.fmt(res.price)} درهم!`, res.price >= 20000 ? 'ach' : 'gain', 4);
     g.save();
     if (m) m.rerender();
@@ -1052,7 +1280,7 @@ export class UI {
       if (rank === 1) addStat(s, 'mazayenWins', 1);
       m.body.innerHTML = `<h3>${rank === 1 ? '🥇 فزت بالمركز الأول!' : `المركز ${rank}`}</h3><ol class="board">${board.map(x => `<li class="${x.me ? 'me' : ''}">${esc(x.n)} — ${x.sc}</li>`).join('')}</ol><div class="row center"><button class="btn green big" data-a="close">استلم الجائزة</button></div>`;
       g.claimReward(prize, null, true);
-      if (rank === 1) g.fx.confetti(s.player.x, s.player.y - 20);
+      if (rank === 1) g.fx.confetti(...g.fx.at(s.player.x, s.player.y, 20));
     };
   }
 
@@ -1060,7 +1288,7 @@ export class UI {
     const g = this.g;
     const s = g.state;
     const v = market.valueOf(s, calf);
-    g.fx.goldRain(s.player.x, s.player.y - 80, 260);
+    g.fx.goldRain(...g.fx.at(s.player.x, s.player.y, 80), 260);
     g.shake = 6;
     this.modal({
       title: '✨ ناقة نادرة! ✨', cls: 'small rarebirth',
@@ -1110,7 +1338,7 @@ export class UI {
           setTimeout(() => {
             if (m.closed) return;
             this.audio.play('chest');
-            g.fx.confetti(g.state.player.x, g.state.player.y - 20);
+            g.fx.confetti(...g.fx.at(g.state.player.x, g.state.player.y, 20));
             const canAd = retention.adsLeft(g.state, g.now()) > 0;
             m.body.innerHTML = `<div class="reveal shine rarity-${rarity}"><div class="big-ic">✨${icon}✨</div>${this.gainsHtml(describeReward(contents))}</div>
               <div class="row center">${canAd ? '<button class="btn ad big" data-a="x2">ضاعف الصندوق</button>' : ''}<button class="btn green big" data-a="x1">خذها</button></div>`;

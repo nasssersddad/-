@@ -57,6 +57,18 @@ export const MAIN_QUESTS = [
     end: [['lamp', 'فرن جديد! تعلّم صناعة الطوب، ورمّم الجدار الشمالي. الخان بلا جدار مثل البيت بلا باب.']],
   },
   {
+    id: 'q_worker', title: 'أول عامل', desc: 'افتح "العمّال" 👷 ووظّف عامل يساعدك. ولا تنسى راتبه كل ساعة!',
+    target: null, check: s => (s.stats.hired || 0) >= 1,
+    reward: { coins: 60, xp: 25 },
+    end: [['lamp', 'كفو! بس ترى العامل إذا ما دفعت له يضرب، ويبي غرامة عشان يرجع. فعّل "الدفع التلقائي" إذا تنسى.']],
+  },
+  {
+    id: 'q_stall', title: 'البسطة', desc: 'ابنِ البسطة على الطريق واعرض فيها شي من زرعك.',
+    target: 'spot:stall_shop', check: s => (s.stats.stallSales || 0) >= 1 || !!(s.built.stall_shop && s.stall.slots.some(Boolean)),
+    reward: { coins: 60, xp: 25, items: { seed_tomato: 4, seed_wheat: 4 } },
+    end: [['lamp', 'المارّة يشترون من البسطة حتى وأنت مشغول. وابنِ لوحة الطلبات بعد، القوافل تدفع زين!']],
+  },
+  {
     id: 'q_wall', title: 'الجدار', desc: 'رمّم الجدار الشمالي للخان.',
     target: 'spot:wall_n', check: s => !!s.built.wall_n,
     reward: { coins: 60, xp: 35, chest: 'common' },

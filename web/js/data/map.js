@@ -18,6 +18,7 @@ export const WALL_S = [{ x0: 23, x1: 29 }, { x0: 34, x1: 40 }];
 export const GATE = { x0: 31, x1: 32, y: 27 };
 export const OASIS = { cx: 53, cy: 20, r: 3.6, grass: 8 };
 export const PEN = { x0: 53, y0: 31, x1: 60, y1: 38 };
+export const FOLD = { x0: 34, y0: 34, x1: 40, y1: 39 };
 
 function px(tx) {
   return tx * TILE + TILE / 2;
@@ -116,6 +117,11 @@ export function buildWorld() {
   add({ id: 'spot:trough', kind: 'spot', spot: 'trough', tx: 54, ty: 33 });
   add({ id: 'spot:pen2', kind: 'spot', spot: 'pen2', tx: 52, ty: 36 });
   add({ id: 'spot:pen3', kind: 'spot', spot: 'pen3', tx: 52, ty: 38 });
+  add({ id: 'spot:sheepfold', kind: 'spot', spot: 'sheepfold', tx: 37, ty: 33 });
+  add({ id: 'spot:stall_shop', kind: 'spot', spot: 'stall_shop', tx: 27, ty: 31 });
+  add({ id: 'spot:orders_board', kind: 'spot', spot: 'orders_board', tx: 35, ty: 31 });
+  add({ id: 'spot:workers_house', kind: 'spot', spot: 'workers_house', tx: 20, ty: 25 });
+  add({ id: 'spot:workers_house2', kind: 'spot', spot: 'workers_house2', tx: 18, ty: 25 });
   add({ id: 'spot:farm2', kind: 'spot', spot: 'farm2', tx: 41, ty: 34 });
   add({ id: 'tent', kind: 'tent', tx: 15, ty: 20, solid: true });
   add({ id: 'stall', kind: 'stall', tx: 10, ty: 21, solid: true });
@@ -173,6 +179,9 @@ export function buildWorld() {
     if ((t !== T.SAND && t !== T.SAND2) || !free(tx, ty)) continue;
     if (tx >= KHAN.x0 - 1 && tx <= KHAN.x1 + 1 && ty >= KHAN.y0 - 1 && ty <= KHAN.y1 + 2) continue;
     if (tx >= PEN.x0 - 2 && tx <= PEN.x1 + 1 && ty >= PEN.y0 - 1 && ty <= PEN.y1 + 1) continue;
+    if (tx >= FOLD.x0 - 1 && tx <= FOLD.x1 + 1 && ty >= FOLD.y0 - 2 && ty <= FOLD.y1 + 1) continue;
+    if (ty >= 30 && ty <= 32 && tx >= 25 && tx <= 37) continue;
+    if (tx >= 17 && tx <= 22 && ty >= 23 && ty <= 27) continue;
     add({ id: 'deco' + n, kind: 'deco', variant: Math.floor(rng() * 4), tx, ty });
     mark(tx, ty);
   }

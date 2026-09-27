@@ -1,5 +1,7 @@
 // الواجهة: الشريط العلوي، الحوار، النوافذ، المكافآت
-import { ITEMS, RELICS, RELIC_SETS, itemIcon, itemName } from './data/items.js';
+import { ITEMS, RELICS, RELIC_SETS, SEEDS, itemIcon, itemName } from './data/items.js';
+import * as farming from './systems/farming.js';
+import { installHub, advice } from './hub.js';
 import { RECIPES, STATIONS, BUILD_SPOTS } from './data/recipes.js';
 import { TECH, TECH_BY_ID, KP_TYPES } from './data/tech.js';
 import { NPCS, WEEKDAYS, WEEKDAY_ICONS } from './data/npcs.js';
@@ -29,7 +31,7 @@ import { camelSprite } from './engine/art.js';
 import * as art from './engine/art.js';
 import * as camels from './systems/camels.js';
 import * as market from './systems/market.js';
-import { BREEDS, RARES, camelColors, camelBreedName, GESTATION_DAYS, TROUGH_CAP } from './data/camels.js';
+import { BREEDS, RARES, camelColors, camelBreedName, GESTATION_DAYS, TROUGH_CAP, TRAITS } from './data/camels.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -69,10 +71,20 @@ export class UI {
         else if (k === 'workers') this.openWorkers();
         else if (k === 'trade') this.openTrade();
         else if (k === 'events') this.openEvents();
+        else if (k === 'store') this.openStore();
+        else if (k === 'store-sell') this.openStore('seeds');
+        else if (k === 'manage') this.openManage();
+        else if (k === 'map') this.openMap();
       });
       el.addEventListener('pointerdown', e => e.stopPropagation());
     });
     $('eatBtn').addEventListener('pointerdown', (e) => { e.stopPropagation(); this.quickEat(); });
+    $('seedChip').addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      const id = farming.cycleSeed(this.g.state);
+      if (id) { this.audio.play('ui'); this.toast(`🌰 الحين تزرع: ${SEEDS[id].name} (عندك ${count(this.g.state, id)})`, '', 1.6); }
+      else this.openVeggie();
+    });
     $('dialog').addEventListener('pointerdown', (e) => { e.stopPropagation(); this.advance(); });
     window.addEventListener('keydown', (e) => {
       if (this.dialogOpen && (e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyE')) this.advance();
@@ -141,6 +153,13 @@ export class UI {
     set('actIcon', info.icon);
     set('actLabel', info.label);
     $('actionBtn').classList.toggle('pulse', !!g.target);
+    const nearPlot = g.mode === 'world' && g.target && g.target.kind === 'plot' && !s.plots[g.target.ref.id];
+    $('seedChip').classList.toggle('show', !!nearPlot);
+    if (nearPlot) {
+      const sd = farming.firstSeed(s);
+      set('seedIcon', sd ? ITEMS[SEEDS[sd].crop].icon : '🛒');
+      set('seedName', sd ? `${SEEDS[sd].name} ×${count(s, sd)} 🔄` : 'اشترِ بذور');
+    }
 
     if (this.dirty || (Math.floor(g.t * 2) !== this.last.halfSec)) {
       this.last.halfSec = Math.floor(g.t * 2);
@@ -162,6 +181,9 @@ export class UI {
       const evReady = events.canClaimTier(s) || (EVENTS.find(e => e.id === s.event.id).game && events.playsLeft(s, g.now()) > 0);
       $('badgeEvents').textContent = evReady ? '!' : '';
       $('badgeEvents').classList.toggle('on', !!evReady);
+      const adv = advice(g).filter(a => !a.go.travel).length;
+      $('badgeManage').textContent = adv;
+      $('badgeManage').classList.toggle('on', adv > 0);
       const offers = market.openOffersCount(s);
       $('badgeCamels').textContent = offers;
       $('badgeCamels').classList.toggle('on', offers > 0);
@@ -789,10 +811,11 @@ export class UI {
   playRace() {
     const g = this.g;
     const s = g.state;
-    const best = [...s.camels].filter(c => camels.isAdult(c)).sort((a, b) => (b.beauty + (b.rare ? 40 : 0)) - (a.beauty + (a.rare ? 40 : 0)))[0];
+    const power = (c) => (c.beauty + (c.rare ? 40 : 0)) * camels.speedMul(c);
+    const best = [...s.camels].filter(c => camels.isAdult(c)).sort((a, b) => power(b) - power(a))[0];
     const myBeauty = best ? best.beauty + (best.rare ? 40 : 0) + (camels.isFed(best, s.time.day) ? 8 : 0) : 25;
     const rivals = events.raceRivals((s.seed + s.time.day * 31 + (s.event.earned || 0)) >>> 0);
-    const lanes = [{ name: best ? best.name : 'ناقة مستأجرة', me: true, x: 0, speed: events.raceBaseSpeed(myBeauty), boost: 0, col: best ? camelColors(best) : BREEDS.shual }]
+    const lanes = [{ name: best ? best.name : 'ناقة مستأجرة', me: true, x: 0, speed: events.raceBaseSpeed(myBeauty) * (best ? camels.speedMul(best) : 1), boost: 0, col: best ? camelColors(best) : BREEDS.shual }]
       .concat(rivals.map((r, i) => ({ name: r.name, x: 0, speed: r.speed, jitter: r.jitter, col: Object.values(BREEDS)[i % 6] })));
     let t = 0, marker = 0, dir = 1, cd = 0, done = false, raf;
     const finish = {};
@@ -1287,10 +1310,16 @@ export class UI {
     return `<img class="cimg ${c.rare ? 'rare' : ''}" src="${this.camelCache[key]}" style="width:${Math.round(size * sc)}px" alt="">`;
   }
 
+  traitChips(c) {
+    camels.ensureTraits(c);
+    return c.traits.filter(t => TRAITS[t]).map(t => `<span class="ctag trait ${TRAITS[t].tier}" title="${esc(TRAITS[t].desc)}">${TRAITS[t].icon} ${TRAITS[t].name}</span>`).join('');
+  }
+
   camelTag(c) {
     const s = this.g.state;
+    camels.ensureTraits(c);
     const v = market.valueOf(s, c);
-    return `<span class="ctag">${c.sex === 'f' ? '♀ ناقة' : '♂ فحل'}</span><span class="ctag ${c.rare ? 'gold' : ''}">${c.rare ? '✨ ' : ''}${camelBreedName(c)}</span><span class="ctag">جمال ${c.beauty}</span><span class="ctag">${camels.isAdult(c) ? 'بالغ' : 'حوار'}</span><span class="ctag money">≈ 🪙${market.fmt(v)}</span>`;
+    return this.traitChips(c) + `<span class="ctag">${c.sex === 'f' ? '♀ ناقة' : '♂ فحل'}</span><span class="ctag ${c.rare ? 'gold' : ''}">${c.rare ? '✨ ' : ''}${camelBreedName(c)}</span><span class="ctag">جمال ${c.beauty}</span><span class="ctag">${camels.isAdult(c) ? 'بالغ' : 'حوار'}</span><span class="ctag money">≈ 🪙${market.fmt(v)}</span>`;
   }
 
   openCamels(focusId, tab) {
@@ -1339,7 +1368,7 @@ export class UI {
         const st = [];
         st.push(camels.isWatered(c, day) ? '💧✔' : '💧✖');
         st.push(camels.isFed(c, day) ? '🌿✔' : '🌿✖');
-        if (c.pregnant) st.push(`🤰 باقي ${GESTATION_DAYS - c.pregnant.days} يوم`);
+        if (c.pregnant) st.push(`🤰 باقي ${camels.gestationDays(c) - c.pregnant.days} يوم`);
         if (camels.canMilk(c, day)) st.push('🥛 جاهزة للحلب');
         const canBreed = c.sex === 'f' && camels.isAdult(c) && !c.pregnant;
         return `<div class="ccard ${c.rare ? 'rare' : ''} ${c.id === focusId ? 'focus' : ''}">
@@ -1383,7 +1412,7 @@ export class UI {
           s.blessNext = false;
           this.audio.play('camel');
           g.fx.burst(...g.fx.at(s.player.x, s.player.y, 20), ['#ff6a8a', '#ffd24a'], 14, 60, 0.8);
-          this.toast(`💞 تم التلقيح! الحوار يوصل بعد ${GESTATION_DAYS} أيام`, 'gain', 3);
+          this.toast(`💞 تم التلقيح! الحوار يوصل بعد ${camels.gestationDays(camels.camelById(s, fid))} أيام`, 'gain', 3);
           g.save();
           mm.close();
           done();
@@ -1871,3 +1900,5 @@ function drawWheel(c) {
   ctx.textBaseline = 'middle';
   ctx.fillText('🌴', cx, cy + 2);
 }
+
+installHub(UI);

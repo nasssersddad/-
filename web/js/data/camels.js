@@ -32,3 +32,24 @@ export function camelColors(c) {
 export function camelBreedName(c) {
   return c.rare ? RARES[c.rare].name : BREEDS[c.breed].name;
 }
+
+// خواص النياق: كل ناقة لها خاصية عادية أو ثنتين، وبعضها يطلع لها خاصية نادرة تغيّر اللعب
+// tier: common = تجي للكل، rare = نادرة
+export const TRAITS = {
+  fast:     { tier: 'common', icon: '💨', name: 'سريعة',     desc: 'أسرع بالسباق +8%', speed: 0.08 },
+  milky:    { tier: 'common', icon: '🍼', name: 'حلوب',      desc: 'تعطي حليب +1 كل حلبة', milk: 1 },
+  fertile:  { tier: 'common', icon: '🤱', name: 'ولود',      desc: 'حملها يومين بدل ثلاثة', gestation: -1 },
+  pretty:   { tier: 'common', icon: '🌸', name: 'مزيونة',    desc: 'قيمتها أعلى +15%', value: 0.15 },
+  hardy:    { tier: 'common', icon: '🏜️', name: 'صبورة',     desc: 'تقدر تنحلب بدون ما تشرب', hardy: true },
+  lightning:{ tier: 'rare',   icon: '⚡', name: 'البرق',      desc: 'سرعة خارقة بالسباق +25%', speed: 0.25 },
+  fountain: { tier: 'rare',   icon: '⛲', name: 'نبع الحليب', desc: 'حليبها دبل ×2', milkMul: 2 },
+  royal:    { tier: 'rare',   icon: '👑', name: 'دم ملكي',    desc: 'عيالها فرصتهم يطلعون نوادر ×3', rareMul: 3 },
+  treasure: { tier: 'rare',   icon: '💎', name: 'كنز',        desc: 'قيمتها ×1.8', value: 0.8 },
+  lucky:    { tier: 'rare',   icon: '🍀', name: 'المبروكة',   desc: 'تجيب لك رزق كل يوم: 40–120 درهم', lucky: [40, 120] },
+};
+export const COMMON_TRAITS = Object.keys(TRAITS).filter(k => TRAITS[k].tier === 'common');
+export const RARE_TRAITS = Object.keys(TRAITS).filter(k => TRAITS[k].tier === 'rare');
+export const RARE_TRAIT_CHANCE = 0.06;      // ناقة عادية يطلع لها خاصية نادرة
+export const SECOND_TRAIT_CHANCE = 0.45;    // خاصية عادية ثانية
+export const INHERIT_COMMON = 0.4;          // الحوار يورث خاصية عادية من أبوه أو أمه
+export const INHERIT_RARE = 0.3;            // ويورث النادرة

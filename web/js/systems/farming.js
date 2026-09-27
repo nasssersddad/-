@@ -7,8 +7,30 @@ export function plotState(state, id) {
   return state.plots[id] || null;
 }
 
+// البذرة اللي تنزرع: اللي اخترتها، وإذا خلصت أول بذرة عندك
 export function firstSeed(state) {
+  if (state.selectedSeed && count(state, state.selectedSeed) > 0) return state.selectedSeed;
   return Object.keys(SEEDS).find(s => count(state, s) > 0) || null;
+}
+
+export function ownedSeeds(state) {
+  return Object.keys(SEEDS).filter(s => count(state, s) > 0);
+}
+
+// يبدّل البذرة المختارة للي بعدها
+export function cycleSeed(state) {
+  const list = ownedSeeds(state);
+  if (!list.length) return null;
+  const cur = list.indexOf(firstSeed(state));
+  state.selectedSeed = list[(cur + 1) % list.length];
+  return state.selectedSeed;
+}
+
+// كم تكسب تقريباً من بذرة وحدة (للمتجر)
+export function seedProfit(seedId, buyPrice, cropPrice) {
+  const d = SEEDS[seedId];
+  const avg = (d.yield[0] + d.yield[1]) / 2;
+  return Math.round(avg * cropPrice - buyPrice);
 }
 
 export function plant(state, id, seedId) {

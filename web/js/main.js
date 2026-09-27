@@ -5,6 +5,7 @@ import { UI } from './ui.js';
 import { Input } from './engine/input.js';
 import { Audio } from './engine/audio.js';
 import { Particles } from './engine/particles.js';
+import { Minimap } from './minimap.js';
 
 function safeStorage() {
   try {
@@ -27,6 +28,7 @@ const particles = new Particles();
 const renderer = new Renderer($('world'), $('fx'), $('post'));
 const game = new Game({ ui, audio, input, particles, storage: safeStorage() });
 window.__game = game;
+const minimap = new Minimap($('minimap'));
 
 // زر الرجوع بالأندرويد
 window.__androidBack = () => ui.back();
@@ -49,6 +51,7 @@ function frame(now) {
     game.update(dt);
     renderer.draw(game);
     ui.hud();
+    minimap.update(game, dt);
   }
   requestAnimationFrame(frame);
 }

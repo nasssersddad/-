@@ -196,11 +196,49 @@ export function farmDaily(state, day) {
     if (!f || !f.owned || f.lastIncomeDay >= day) continue;
     const days = Math.min(3, day - (f.lastIncomeDay || day));
     f.lastIncomeDay = day;
-    for (const [item, n] of Object.entries(def.produce)) f.storage[item] = Math.min(60, (f.storage[item] || 0) + n * days);
-    f.storage.coins = Math.min(def.income * 5, (f.storage.coins || 0) + def.income * days);
+    const mul = farmMul(f);
+    for (const [item, n] of Object.entries(def.produce)) f.storage[item] = Math.min(storageCap(f), (f.storage[item] || 0) + Math.round(n * mul) * days);
+    f.storage.coins = Math.min(Math.round(def.income * mul) * 5, (f.storage.coins || 0) + Math.round(def.income * mul) * days);
     out.push(id);
   }
   return out;
+}
+
+// تطوير المزرعة: كل مستوى يزيد الإنتاج 50% والمخزن يكبر
+export const FARM_MAX_LEVEL = 4;
+export function farmLevel(f) { return f.level || 1; }
+export function farmMul(f) { return 1 + 0.5 * (farmLevel(f) - 1); }
+export function storageCap(f) { return 60 + 30 * (farmLevel(f) - 1); }
+export function upgradeCost(farmId, f) {
+  return round(FARMS[farmId].price * 0.35 * farmLevel(f));
+}
+export function dailyYield(farmId, f) {
+  const def = FARMS[farmId], mul = farmMul(f);
+  return { coins: Math.round(def.income * mul), items: Object.fromEntries(Object.entries(def.produce).map(([k, n]) => [k, Math.round(n * mul)])) };
+}
+export function upgradeFarm(state, farmId) {
+  const f = farmState(state, farmId);
+  if (!f.owned) return { result: 'notowned' };
+  if (farmLevel(f) >= FARM_MAX_LEVEL) return { result: 'max' };
+  const cost = upgradeCost(farmId, f);
+  if (state.player.coins < cost) return { result: 'poor', cost };
+  state.player.coins -= cost;
+  f.level = farmLevel(f) + 1;
+  addStat(state, 'farmUpgrades', 1);
+  return { result: 'upgraded', level: f.level, cost };
+}
+export function storageValue(f) {
+  return Object.entries(f.storage || {}).reduce((a, [k, v]) => a + (k === 'coins' ? v : (ITEMS[k] ? ITEMS[k].price * v : 0)), 0);
+}
+// استلام عن بعد من شاشة الإدارة: المندوب ياخذ 10% من الدراهم
+export const COURIER_FEE = 0.1;
+export function collectRemote(state, farmId) {
+  const f = farmState(state, farmId);
+  if (!f.owned) return null;
+  const fee = Math.round((f.storage.coins || 0) * COURIER_FEE);
+  if (f.storage.coins) f.storage.coins -= fee;
+  const got = collectStorage(state, farmId);
+  return { got, fee };
 }
 
 export function collectStorage(state, farmId) {

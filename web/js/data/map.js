@@ -197,6 +197,7 @@ export function buildWorld() {
     trader: { x: px(16), y: 22 * TILE + 8 },
     herbalist: { x: px(10), y: 22 * TILE + 10 },
     shepherd: { x: px(20), y: 35 * TILE },
+    veggie: { x: px(51), y: 32 * TILE + 8 },
   };
   const guestSpots = [
     [29, 21], [33, 21], [29, 17], [34, 20], [28, 22], [35, 23], [30, 25], [33, 25],

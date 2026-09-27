@@ -1,7 +1,7 @@
 // تربية النياق: الأكل والشرب والتلقيح والولادة والحلب والقيمة
-import { BREEDS, RARES, RARE_CHANCE, BLESSED_RARE_CHANCE, GESTATION_DAYS, ADULT_AGE, TROUGH_CAP, PEN_CAPACITY, FEMALE_NAMES, MALE_NAMES } from '../data/camels.js';
+import { BREEDS, RARES, RARE_CHANCE, BLESSED_RARE_CHANCE, GESTATION_DAYS, ADULT_AGE, TROUGH_CAP, PEN_CAPACITY, FEMALE_NAMES, MALE_NAMES, TRAITS, COMMON_TRAITS, RARE_TRAITS, RARE_TRAIT_CHANCE, SECOND_TRAIT_CHANCE, INHERIT_COMMON, INHERIT_RARE } from '../data/camels.js';
 import { add, count, addStat } from './inventory.js';
-import { pick, randInt, clamp } from './util.js';
+import { pick, randInt, clamp, mulberry32, hashString } from './util.js';
 
 export function makeCamel(state, rng, opts = {}) {
   state.camelSeq = (state.camelSeq || 0) + 1;
@@ -16,8 +16,43 @@ export function makeCamel(state, rng, opts = {}) {
     ageDays: opts.ageDays != null ? opts.ageDays : ADULT_AGE,
     pregnant: null,
     fedDay: null, wateredDay: null, milkedDay: null,
+    traits: opts.traits || rollTraits(rng, !!opts.rare),
   };
 }
+
+// ---------- الخواص ----------
+// نوادر السلالة دايم لها خاصية نادرة
+export function rollTraits(rng, rare = false, inherited = []) {
+  const out = [...new Set(inherited)];
+  const hasRare = () => out.some(t => TRAITS[t].tier === 'rare');
+  if ((rare || rng() < RARE_TRAIT_CHANCE) && !hasRare()) out.push(pick(rng, RARE_TRAITS));
+  const commons = () => out.filter(t => TRAITS[t].tier === 'common').length;
+  const want = rng() < SECOND_TRAIT_CHANCE ? 2 : 1;
+  for (let i = 0; i < 6 && commons() < want; i++) {
+    const t = pick(rng, COMMON_TRAITS);
+    if (!out.includes(t)) out.push(t);
+  }
+  return out;
+}
+
+// النياق القديمة (قبل الخواص) تاخذ خواص ثابتة من رقمها
+export function ensureTraits(c) {
+  if (!Array.isArray(c.traits)) c.traits = rollTraits(mulberry32(hashString('traits:' + c.id)), !!c.rare);
+  return c.traits;
+}
+
+export function hasTrait(c, t) {
+  return !!(c && c.traits && c.traits.includes(t));
+}
+
+function traitSum(c, key) {
+  return (c.traits || []).reduce((a, t) => a + (TRAITS[t] && TRAITS[t][key] ? TRAITS[t][key] : 0), 0);
+}
+
+export function speedMul(c) { return 1 + traitSum(c, 'speed'); }
+export function valueMul(c) { return 1 + traitSum(c, 'value'); }
+export function gestationDays(c) { return Math.max(1, GESTATION_DAYS + traitSum(c, 'gestation')); }
+export function rareMul(c) { return (c.traits || []).reduce((a, t) => a * ((TRAITS[t] && TRAITS[t].rareMul) || 1), 1); }
 
 export function isAdult(c) {
   return c.ageDays >= ADULT_AGE;
@@ -36,9 +71,10 @@ export function camelById(state, id) {
 // القيمة التقديرية. idx = مؤشر السوق للسلالة
 export function camelValue(c, idx = 1) {
   const young = isAdult(c) ? 1 : 0.55;
-  if (c.rare) return Math.round(RARES[c.rare].base * (0.6 + c.beauty / 100) * young / 100) * 100;
+  const tm = valueMul(c);
+  if (c.rare) return Math.round(RARES[c.rare].base * (0.6 + c.beauty / 100) * young * tm / 100) * 100;
   const sexMul = c.sex === 'f' ? 1.1 : 1;
-  return Math.round(BREEDS[c.breed].base * (0.55 + c.beauty / 90) * young * sexMul * idx / 10) * 10;
+  return Math.round(BREEDS[c.breed].base * (0.55 + c.beauty / 90) * young * sexMul * idx * tm / 10) * 10;
 }
 
 export function isFed(c, day) { return c.fedDay === day; }
@@ -90,7 +126,9 @@ export function canMilk(c, day) {
 export function milk(state, id, day) {
   const c = camelById(state, id);
   if (!c || !canMilk(c, day)) return 0;
-  const n = isFed(c, day) && isWatered(c, day) ? 2 : 1;
+  let n = isFed(c, day) && (isWatered(c, day) || hasTrait(c, 'hardy')) ? 2 : 1;
+  n += traitSum(c, 'milk');
+  n *= (c.traits || []).reduce((a, t) => a * ((TRAITS[t] && TRAITS[t].milkMul) || 1), 1);
   c.milkedDay = day;
   add(state, 'milk', n);
   addStat(state, 'milked', 1);
@@ -117,16 +155,25 @@ export function breed(state, maleId, femaleId, day, blessed = false) {
   return true;
 }
 
-export function rollRare(rng, blessed) {
-  return rng() < (blessed ? BLESSED_RARE_CHANCE : RARE_CHANCE);
+export function rollRare(rng, blessed, mul = 1) {
+  return rng() < (blessed ? BLESSED_RARE_CHANCE : RARE_CHANCE) * mul;
 }
 
 export function makeCalf(state, mother, father, rng, blessed) {
-  const rare = rollRare(rng, blessed) ? pick(rng, Object.keys(RARES)) : null;
+  const mul = Math.max(rareMul(mother), father ? rareMul(father) : 1);
+  const rare = rollRare(rng, blessed, mul) ? pick(rng, Object.keys(RARES)) : null;
   const parentBeauty = father ? (mother.beauty + father.beauty) / 2 : mother.beauty;
   const beauty = clamp(Math.round(parentBeauty + randInt(rng, -8, 12) + (rare ? 20 : 0)), 1, 100);
   const breed = father && rng() < 0.5 ? father.breed : mother.breed;
-  return makeCamel(state, rng, { breed, rare, beauty, ageDays: 0 });
+  // الوراثة: كل خاصية عند الأب أو الأم لها فرصة تنتقل للحوار
+  const inherited = [];
+  for (const t of [...(mother.traits || []), ...((father && father.traits) || [])]) {
+    if (!TRAITS[t] || inherited.includes(t)) continue;
+    if (rng() < (TRAITS[t].tier === 'rare' ? INHERIT_RARE : INHERIT_COMMON)) inherited.push(t);
+  }
+  const rareKept = inherited.filter(t => TRAITS[t].tier === 'rare');
+  const clean = inherited.filter(t => TRAITS[t].tier === 'common').concat(rareKept.slice(0, 1));
+  return makeCamel(state, rng, { breed, rare, beauty, ageDays: 0, traits: rollTraits(rng, !!rare, clean) });
 }
 
 // بداية كل يوم: يشربون من الحوض، يكبرون، والحوامل يولدون. يرجع الولادات
@@ -140,7 +187,7 @@ export function dailyUpdate(state, day, rng) {
     }
     if (c.pregnant) {
       c.pregnant.days += 1;
-      if (c.pregnant.days >= GESTATION_DAYS) {
+      if (c.pregnant.days >= gestationDays(c)) {
         const father = camelById(state, c.pregnant.father);
         const calf = makeCalf(state, c, father, rng, c.pregnant.blessed);
         c.pregnant = null;
@@ -152,6 +199,17 @@ export function dailyUpdate(state, day, rng) {
     }
   }
   return births;
+}
+
+// المبروكة تجيب رزق كل يوم. يرجع مجموع الدراهم
+export function luckyIncome(state, rng) {
+  let sum = 0;
+  for (const c of state.camels) {
+    const r = (c.traits || []).map(t => TRAITS[t] && TRAITS[t].lucky).find(Boolean);
+    if (r && isAdult(c)) sum += randInt(rng, r[0], r[1]);
+  }
+  if (sum) { state.player.coins += sum; addStat(state, 'luckyCoins', sum); }
+  return sum;
 }
 
 export function camelNeeds(c, day) {

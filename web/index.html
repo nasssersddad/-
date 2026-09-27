@@ -24,20 +24,23 @@
           <div class="bar energy"><i id="enFill"></i><b id="enText"></b></div>
           <div class="bar hp" id="hpBar"><i id="hpFill"></i><b id="hpText"></b></div>
         </div>
-        <div class="coins">🪙 <span id="coins">0</span></div>
       </div>
       <div class="hud-center">
         <div class="clock"><span id="dayName"></span> <span id="clock"></span></div>
         <div class="stars" id="stars"></div>
       </div>
       <div class="hud-left">
-        <button class="hbtn" data-open="rewards">🎁<span class="badge" id="badgeRewards"></span><small>المكافآت</small></button>
-        <button class="hbtn" data-open="camels">🐪<span class="badge" id="badgeCamels"></span><small>الحلال</small></button>
-        <button class="hbtn" data-open="inventory">🎒<small>الحقيبة</small></button>
-        <button class="hbtn" data-open="tech">🔮<span class="badge dot" id="badgeTech"></span><small>المعرفة</small></button>
-        <button class="hbtn" data-open="relics">🏺<small>التحف</small></button>
-        <button class="hbtn small" data-open="settings">⚙️</button>
+        <button class="hbtn small" data-open="settings" title="الإعدادات">⚙️</button>
+        <div class="coins" data-open="store-sell"><span class="cic">🪙</span><span id="coins">0</span><b class="plus">+</b></div>
       </div>
+    </div>
+
+    <div id="minimap" data-open="map"><canvas></canvas><span class="mmtag">🗺️ الخريطة</span></div>
+    <div id="sidebar">
+      <button class="sbtn" data-open="rewards">🎁<span class="badge" id="badgeRewards"></span><small>مكافآت</small></button>
+      <button class="sbtn" data-open="events">🎪<span class="badge" id="badgeEvents"></span><small>فعاليات</small></button>
+      <button class="sbtn" data-open="tech">🔮<span class="badge dot" id="badgeTech"></span><small>المعرفة</small></button>
+      <button class="sbtn" data-open="relics">🏺<small>التحف</small></button>
     </div>
 
     <div id="quest" data-open="quest">
@@ -47,11 +50,15 @@
     <div id="dqMini" data-open="rewards-dq"></div>
 
     <button id="actionBtn"><span id="actIcon">✋</span><small id="actLabel"></small></button>
+    <button id="seedChip" title="بدّل البذرة"><span id="seedIcon">🌰</span><small id="seedName"></small></button>
     <button id="eatBtn" title="كل">🍽️</button>
     <div id="dock">
-      <button class="hbtn" data-open="workers">👷<span class="badge" id="badgeWorkers"></span><small>العمّال</small></button>
-      <button class="hbtn" data-open="events">🎪<span class="badge" id="badgeEvents"></span><small>الفعاليات</small></button>
-      <button class="hbtn" data-open="trade">🏪<span class="badge" id="badgeTrade"></span><small>التجارة</small></button>
+      <button class="dbtn" data-open="inventory">🎒<small>الحقيبة</small></button>
+      <button class="dbtn" data-open="camels">🐪<span class="badge" id="badgeCamels"></span><small>الحلال</small></button>
+      <button class="dbtn main" data-open="store">🛒<small>المتجر</small></button>
+      <button class="dbtn" data-open="manage">📋<span class="badge" id="badgeManage"></span><small>إدارتي</small></button>
+      <button class="dbtn" data-open="trade">🏪<span class="badge" id="badgeTrade"></span><small>التجارة</small></button>
+      <button class="dbtn" data-open="workers">👷<span class="badge" id="badgeWorkers"></span><small>العمّال</small></button>
     </div>
 
     <div id="toasts"></div>

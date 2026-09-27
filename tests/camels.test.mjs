@@ -28,8 +28,8 @@ test('rare chance is 2% and doubles with blessing', () => {
 test('breeding needs adult male+female, fed and watered, and births after gestation', () => {
   const s = pen(newState(T0));
   const rng = mulberry32(1);
-  const m = makeCamel(s, rng, { sex: 'm' });
-  const f = makeCamel(s, rng, { sex: 'f' });
+  const m = makeCamel(s, rng, { sex: 'm', traits: ['milky'] });
+  const f = makeCamel(s, rng, { sex: 'f', traits: ['milky'] });
   s.camels.push(m, f);
   const day = s.time.day;
   assert.equal(breedBlocker(s, m.id, f.id, day), 'أطعمهم اليوم أول');
@@ -207,4 +207,51 @@ test('barter swaps camels and pays the coin difference', () => {
     assert.equal(s.camels[0].name, r.got.name);
   }
   assert.ok(Object.keys(PERSONAS).length >= 5);
+});
+
+import { rollTraits, ensureTraits, speedMul, gestationDays, luckyIncome, makeCalf as mkCalf, camelValue as cv } from '../web/js/systems/camels.js';
+import { TRAITS, RARE_TRAITS } from '../web/js/data/camels.js';
+
+test('every camel gets 1-2 common traits, rare breeds always get a rare trait', () => {
+  const rng = mulberry32(11);
+  let rareSeen = 0;
+  for (let i = 0; i < 400; i++) {
+    const t = rollTraits(rng);
+    const commons = t.filter(x => TRAITS[x].tier === 'common').length;
+    assert.ok(commons >= 1 && commons <= 2);
+    if (t.some(x => TRAITS[x].tier === 'rare')) rareSeen++;
+  }
+  assert.ok(rareSeen > 5 && rareSeen < 60, 'rare traits are uncommon: ' + rareSeen);
+  assert.ok(rollTraits(rng, true).some(x => RARE_TRAITS.includes(x)));
+});
+
+test('trait effects: speed, gestation, value, lucky income, legacy camels', () => {
+  const s = newState(0);
+  const rng = mulberry32(5);
+  const c = makeCamel(s, rng, { sex: 'f', beauty: 50, traits: ['fast', 'fertile'] });
+  assert.ok(Math.abs(speedMul(c) - 1.08) < 1e-9);
+  assert.equal(gestationDays(c), 2);
+  const plain = { ...c, traits: [] };
+  const rich = { ...c, traits: ['treasure'] };
+  assert.ok(cv(rich) > cv(plain) * 1.7);
+  s.camels.push({ ...c, traits: ['lucky'] });
+  const before = s.player.coins;
+  const got = luckyIncome(s, rng);
+  assert.ok(got >= 40 && got <= 120 && s.player.coins === before + got);
+  const old = { id: 'c9_old', rare: null };
+  ensureTraits(old);
+  assert.deepEqual(ensureTraits({ id: 'c9_old', rare: null }), old.traits);
+});
+
+test('calves can inherit their parents traits', () => {
+  const s = newState(0);
+  let inherited = 0;
+  for (let i = 0; i < 200; i++) {
+    const rng = mulberry32(100 + i);
+    const mom = makeCamel(s, rng, { sex: 'f', traits: ['milky', 'fountain'] });
+    const dad = makeCamel(s, rng, { sex: 'm', traits: ['milky'] });
+    const calf = mkCalf(s, mom, dad, rng, false);
+    if (calf.traits.includes('fountain')) inherited++;
+  }
+  assert.ok(inherited > 30 && inherited < 120, 'fountain inherited ' + inherited);
 });

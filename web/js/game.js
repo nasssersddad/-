@@ -20,7 +20,7 @@ import { showRewardedAd } from './systems/ads.js';
 import * as camels from './systems/camels.js';
 import * as market from './systems/market.js';
 import { PEN } from './data/map.js';
-import { camelBreedName } from './data/camels.js';
+import { camelBreedName, TRAITS } from './data/camels.js';
 import * as workers from './systems/workers.js';
 import * as shop from './systems/shop.js';
 import * as sheepSys from './systems/sheep.js';
@@ -84,6 +84,7 @@ export class Game {
   start() {
     const loaded = loadFromStorage(this.storage, this.now());
     this.state = loaded || newState(this.now());
+    for (const c of this.state.camels) camels.ensureTraits(c);
     const s = this.state;
     if (!loaded) {
       s.player.x = this.world.spawn.x;
@@ -162,6 +163,7 @@ export class Game {
     else if (this.mode === 'open') { this.updateWorld(dt); this.updateOpen(dt); }
     else this.updateDungeon(dt);
 
+    this.updateGuide();
     this.target = this.findTarget();
     if ((this.input.actionPressed || this.input.action) && this.actionCd <= 0 && !this.anim) {
       this.actionCd = ACTION_REPEAT;
@@ -504,6 +506,18 @@ export class Game {
   }
 
   // ---------- الغنم ----------
+  // سهم يدلّك على مكان (من شاشة الإدارة أو النصايح)
+  guideTo(pos, label = '', mode = 'world') {
+    this.guide = pos ? { x: pos.x, y: pos.y, label, mode } : null;
+  }
+
+  updateGuide() {
+    const g = this.guide;
+    if (!g) return;
+    const p = this.state.player;
+    if (g.mode === this.mode && Math.hypot(p.x - g.x, p.y - g.y) < 36) { this.guide = null; this.fx.float(...this.fx.at(p.x, p.y, 30), '📍 وصلت', '#ffe07a', 12); }
+  }
+
   // مكان حيوان جديد: عادي يطلع بمكان عشوائي بالحظيرة، والمشترى من القرية يدخل من طريق القرية ويمشي لها
   newAnimalRt(id, r) {
     const s = this.state;
@@ -1154,7 +1168,7 @@ export class Game {
     const p = s.plots[o.id];
     if (!p) {
       const seed = farming.firstSeed(s);
-      if (!seed) { this.say('ما عندك بذور! اشترِ من أبو فهد أو أم ريم، أو دوّرها بالأعشاب.'); this.input.action = false; return; }
+      if (!seed) { this.say('ما عندك بذور! اشترِ من أبو سالم 🥕 جنب الأحواض، أو من 🛒 المتجر.'); this.input.action = false; return; }
       if (!this.spendEnergy(1)) return;
       this.startAnim('plant', o, 0.75, 0.5, () => {
         if (!farming.plant(s, o.id, seed)) return;
@@ -1263,6 +1277,7 @@ export class Game {
 
   talkNpc(id) {
     this.audio.play('talk');
+    if (NPCS[id].veggie) { this.ui.openVeggie(); return; }
     this.ui.openShop(id);
   }
 
@@ -1353,6 +1368,9 @@ export class Game {
     const births = [];
     for (let d = s.time.day - n + 1; d <= s.time.day; d++) births.push(...camels.dailyUpdate(s, d, this.rng));
     for (let d = s.time.day - n + 1; d <= s.time.day; d++) sheepSys.sheepDaily(s, d);
+    let lucky = 0;
+    for (let i = 0; i < n; i++) lucky += camels.luckyIncome(s, this.rng);
+    if (lucky) this.ui.toast(`🍀 ناقتك المبروكة جابت لك رزق: 🪙${lucky}`, 'gain', 4);
     if (farmsSys.farmDaily(s, s.time.day).length) this.ui.toast('🏡 مزارعك أنتجت! روح لمخازنها بالقرية واستلم', 'gain', 4);
     for (const calf of births) {
       if (calf.rare) {
@@ -1360,8 +1378,15 @@ export class Game {
         this.claimReward({ chest: 'rare' }, null, true);
         this.ui.rareBirth(calf);
       } else {
-        this.audio.play('camel');
-        this.ui.toast(`🐪 مبروك! ولد لك حوار (${camelBreedName(calf)}): ${calf.name}`, 'gain', 4);
+        const rt = (calf.traits || []).find(t => TRAITS[t] && TRAITS[t].tier === 'rare');
+        if (rt) {
+          this.audio.play('rare');
+          this.ui.toast(`🌟 حوار بخاصية نادرة! ${calf.name}: ${TRAITS[rt].icon} ${TRAITS[rt].name} — ${TRAITS[rt].desc}`, 'gain', 6);
+          addStat(s, 'rareTraits', 1);
+        } else {
+          this.audio.play('camel');
+          this.ui.toast(`🐪 مبروك! ولد لك حوار (${camelBreedName(calf)}): ${calf.name}`, 'gain', 4);
+        }
       }
     }
     if (s.camels.length && s.built.trough && s.trough.water <= 0) this.ui.toast('🏺 حوض الماء نشف! النياق عطشانة', '', 4);

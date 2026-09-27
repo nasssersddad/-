@@ -326,6 +326,20 @@ export class Renderer {
       if (!game.npcPresent(id)) continue;
       const n = NPCS[id];
       this.sprite(list, art.character(n.look, 'down', 0, id), pos.x, pos.y, pos.y);
+      if (id === 'veggie') {
+        // صناديق الخضار قدامه
+        const cx = pos.x - 14, cy = pos.y + 12;
+        list.push({ y: cy, draw: (ctx, cam) => {
+          const x = Math.round(cx - cam.x), y = Math.round(cy - cam.y);
+          const cols = [['#d9401a', '#f08a24'], ['#3f9a3a', '#6a3a8a'], ['#f0d040', '#c86a8a']];
+          for (let i = 0; i < 3; i++) {
+            const bx = x - 14 + i * 10, by = y - 8 + (i % 2);
+            ctx.fillStyle = '#5e3a1f'; ctx.fillRect(bx, by, 9, 7);
+            ctx.fillStyle = '#8a5a33'; ctx.fillRect(bx, by, 9, 2);
+            for (let k = 0; k < 4; k++) { ctx.fillStyle = cols[i][k % 2]; ctx.fillRect(bx + 1 + (k % 2) * 4, by - 2 + Math.floor(k / 2) * 2, 3, 2); }
+          }
+        } });
+      }
       if (id === 'shepherd') {
         for (let i = 0; i < 4; i++) this.sprite(list, art.sheep(Math.floor(t * 2 + i) % 2), pos.x - 26 + i * 14 + Math.round(Math.sin(t * 0.5 + i) * 4), pos.y + 10 + (i % 2) * 8, pos.y + 10 + (i % 2) * 8);
       }
@@ -801,7 +815,7 @@ export class Renderer {
       for (const [id, pos] of Object.entries(game.world.npcSpots)) {
         if (!game.npcPresent(id)) continue;
         const [x, y] = toScreen(pos.x, pos.y - 28);
-        this.label(f, x, y, NPCS[id].name, '#ffe9a8');
+        this.label(f, x, y, NPCS[id].veggie ? '🥕 ' + NPCS[id].name + ' — بذور وخضار' : NPCS[id].name, '#ffe9a8');
       }
       // لوحات
       for (const o of game.world.objects) {
@@ -825,7 +839,15 @@ export class Renderer {
       f.closePath(); f.fill(); f.stroke();
     }
     // سهم المهمة
-    if (game.mode === 'world') {
+    // لو المكان بالعالم الثاني، السهم يدلّك على الطريق له
+    let guide = null;
+    if (game.guide && game.mode !== 'dungeon') {
+      if (game.guide.mode === game.mode) guide = game.guide;
+      else if (game.mode === 'world') guide = game.worldObjById.exit_world;
+      else guide = game.open.objects.find(o => o.kind === 'gohome');
+    }
+    if (guide) this.pointArrow(game, guide, toScreen, '📍');
+    else if (game.mode === 'world') {
       const fresh = this.freshAnimal(game);
       if (fresh) this.pointArrow(game, fresh, toScreen, null);
       else this.questArrow(game, cam, toScreen);

@@ -41,6 +41,17 @@ export const ITEMS = {
   oldcoin:   { name: 'درهم قديم',    icon: '🪙', price: 25 },
   bone:      { name: 'ناب غول',      icon: '🦴', price: 12 },
   stinger:   { name: 'إبرة عقرب',    icon: '🦂', price: 9 },
+
+  seed_carrot:   { name: 'بذور جزر',    icon: '🌰', price: 2 },
+  seed_onion:    { name: 'بصل للزراعة', icon: '🌰', price: 2 },
+  seed_cucumber: { name: 'بذور خيار',   icon: '🌰', price: 3 },
+  seed_eggplant: { name: 'بذور باذنجان', icon: '🌰', price: 4 },
+  seed_corn:     { name: 'بذور ذرة',    icon: '🌰', price: 5 },
+  carrot:    { name: 'جزر',          icon: '🥕', price: 6, food: 6 },
+  onion:     { name: 'بصل',          icon: '🧅', price: 5 },
+  cucumber:  { name: 'خيار',         icon: '🥒', price: 8, food: 7 },
+  eggplant:  { name: 'باذنجان',      icon: '🍆', price: 11 },
+  corn:      { name: 'ذرة',          icon: '🌽', price: 10, food: 10 },
 };
 
 export const SEEDS = {
@@ -49,6 +60,11 @@ export const SEEDS = {
   seed_melon: { crop: 'melon', days: 4, yield: [1, 2], name: 'بطيخ' },
   seed_cardamom: { crop: 'cardamom', days: 3, yield: [2, 3], name: 'هيل' },
   seed_alfalfa: { crop: 'alfalfa', days: 2, yield: [3, 5], name: 'برسيم' },
+  seed_carrot: { crop: 'carrot', days: 2, yield: [2, 4], name: 'جزر', level: 3 },
+  seed_onion: { crop: 'onion', days: 3, yield: [3, 4], name: 'بصل', level: 5 },
+  seed_cucumber: { crop: 'cucumber', days: 2, yield: [2, 3], name: 'خيار', level: 7 },
+  seed_eggplant: { crop: 'eggplant', days: 3, yield: [2, 3], name: 'باذنجان', level: 9 },
+  seed_corn: { crop: 'corn', days: 4, yield: [3, 4], name: 'ذرة', level: 12 },
 };
 
 // التحف الأثرية (الألبوم)

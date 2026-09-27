@@ -112,12 +112,15 @@ await ev(async () => {
   for (const id of ['plot0', 'plot1']) {
     const o = g.worldObjById[id];
     g.state.player.x = o.x; g.state.player.y = o.y + 12; g.state.player.dir = 'up';
-    const t = g.findTarget(); g.doAction(t, true);
-    await new Promise(r => setTimeout(r, 380));
     const clr = () => { for (const m of [...g.ui.modals]) m.close(); g.ui.dq = []; if (g.ui.dialogOpen) { g.ui.advance(); g.ui.advance(); } };
-    for (let k = 0; k < 10; k++) { clr(); await new Promise(r => setTimeout(r, 100)); }
+    // ينتظر لين يخلص الأنيميشن (المتصفح بالاختبار بطيء)
+    const done = async () => { await new Promise(r => setTimeout(r, 100)); for (let k = 0; k < 80 && (g.anim || g.ui.blocking()); k++) { clr(); await new Promise(r => setTimeout(r, 50)); } };
+    g.state.player.x = o.x; g.state.player.y = o.y + 12; g.state.player.dir = 'up';
     g.doAction(g.findTarget(), true);
-    for (let k = 0; k < 12; k++) { clr(); await new Promise(r => setTimeout(r, 100)); }
+    await done();
+    g.state.player.x = o.x; g.state.player.y = o.y + 12; g.state.player.dir = 'up';
+    g.doAction(g.findTarget(), true);
+    await done();
   }
 });
 await tick(300);
@@ -247,15 +250,19 @@ await tick(700);
 const trough = await ev(() => window.__game.state.trough.water);
 console.log('trough water:', trough);
 // اسقِ وأطعم كل النياق
-await skip(); await closeModals();
+await settle();
 await ev(async () => {
   const g = window.__game;
+  g.state.player.energy = 100;
   for (const c of g.state.camels) {
     for (let i = 0; i < 3; i++) {
+      for (const x of [...g.ui.modals]) { x.closable = true; x.close(); }
+      while (g.ui.dialogOpen) g.ui.advance();
       const rt = g.camelRt[c.id];
       g.state.player.x = rt.x - 12; g.state.player.y = rt.y; g.state.player.dir = 'right';
       g.camelAction(c, rt);
-      await new Promise(r => setTimeout(r, 1100));
+      for (let k = 0; k < 80 && g.anim; k++) await new Promise(r => setTimeout(r, 50));
+      await new Promise(r => setTimeout(r, 100));
     }
   }
 });
@@ -265,7 +272,8 @@ await shot('22-pen');
 const born = await ev(async () => {
   const g = window.__game; const s = g.state;
   const f = s.camels.find(c => c.sex === 'f'), m = s.camels.find(c => c.sex === 'm');
-  const ok = window.__camelBreed = (await import('./js/systems/camels.js')).breed(s, m.id, f.id, s.time.day, false);
+  const C = await import('./js/systems/camels.js');
+  const ok = window.__camelBreed = C.breed(s, m.id, f.id, s.time.day, false);
   const rng = g.rng; g.rng = () => 0.001;
   g.onNewDay(1); s.time.day += 0;
   for (let i = 0; i < 3; i++) { s.time.day += 1; g.onNewDay(1); }
@@ -449,6 +457,45 @@ await tick(700);
 await shot('43-falcon');
 await closeModals();
 
+// 17) الواجهة الجديدة: المتجر، الإدارة، بياع الخضار، الخريطة، خواص النياق
+await settle();
+const hub = await ev(async () => {
+  const g = window.__game; const s = g.state; const ui = g.ui;
+  s.player.coins += 2000; s.player.level = Math.max(s.player.level, 4);
+  ui.openVeggie();
+  let m = ui.modals.at(-1);
+  m.handlers.bseed('seed_carrot:5');
+  m.handlers.pseed('seed_carrot');
+  m.close();
+  const pick = g.world.objects.find(o => o.kind === 'plot' && !s.plots[o.id]);
+  const farming = await import('./js/systems/farming.js');
+  const seed = farming.firstSeed(s);
+  ui.openStore('sell'); m = ui.modals.at(-1); const before = s.player.coins; s.inv.tomato = (s.inv.tomato || 0) + 3; m.rerender(); m.handlers.sell('tomato:all'); const sold = s.player.coins - before; m.close();
+  ui.openManage('animals'); m = ui.modals.at(-1); m.close();
+  ui.openManage('now'); m = ui.modals.at(-1);
+  const advN = m.gos.length;
+  m.handlers.go('0');
+  const guided = !!g.guide || ui.modals.length > 0;
+  for (const x of [...ui.modals]) x.close();
+  const traits = s.camels.map(c => (c.traits || []).length);
+  return { seed, carrots: s.inv.seed_carrot, sold, advN, guided, traits, plot: !!pick };
+});
+console.log('hub:', hub);
+await tick(400);
+await shot('44-hud-guide');
+await ev(() => window.__game.ui.openStore('build'));
+await tick(300);
+await shot('45-store-build');
+await closeModals();
+await ev(() => window.__game.ui.openManage('animals'));
+await tick(300);
+await shot('46-manage-animals');
+await closeModals();
+await ev(() => window.__game.ui.openMap());
+await tick(300);
+await shot('47-map');
+await closeModals();
+
 // حفظ وتحميل
 await settle();
 const saved = await ev(() => { window.__game.save(); return JSON.parse(localStorage.getItem('almuzare_save')).player.coins; });
@@ -470,6 +517,10 @@ server.close();
 const fatal = errors.filter(e => !/favicon/.test(e));
 if (fatal.length) {
   console.error('❌ أخطاء بالمتصفح:\n' + fatal.join('\n'));
+  process.exit(1);
+}
+if (hub.seed !== 'seed_carrot' || hub.carrots !== 5 || hub.sold <= 0 || !hub.advN || !hub.guided || hub.traits.some(n => n < 1)) {
+  console.error('❌ الواجهة الجديدة فيها مشكلة', hub);
   process.exit(1);
 }
 if (ow !== 'open' || back !== 'world' || farm.bought !== 'bought' || !evr.claimed) {

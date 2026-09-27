@@ -31,6 +31,13 @@ export const NPCS = {
   },
 };
 
+// بياع الخضار: دايم موجود جنب الأحواض، يبيع بذور كل الخضار ويشتري محصولك
+NPCS.veggie = {
+  name: 'أبو سالم', title: 'بياع الخضار والبذور', days: [0, 1, 2, 3, 4, 5, 6], hours: [0, 24], veggie: true,
+  look: { robe: '#5f8a3a', head: '#f4f0e6', skin: '#b67a4a', beard: '#6a6a6a' },
+  greet: ['هلا بالمزارع! وش تبي تزرع اليوم؟', 'بذوري مضمونة، ازرعها واسقها كل يوم وتشوف الخير.', 'محصولك الزين أشتريه منك على طول!'],
+};
+
 export const GUEST_LOOKS = [
   { robe: '#efe6d2', head: '#b8292a', skin: '#c68a5a', beard: '#2b1d14' },
   { robe: '#e7e0ce', head: '#f4f0e6', skin: '#b67a4a', beard: '#1b120c' },

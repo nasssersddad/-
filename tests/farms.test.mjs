@@ -91,3 +91,26 @@ test('buying a farm makes it yours and it produces into storage daily', () => {
   assert.ok(s.player.coins > 0);
   assert.equal(s.stats.farmsOwned, 1);
 });
+
+import { upgradeFarm, upgradeCost, dailyYield, collectRemote, FARM_MAX_LEVEL } from '../web/js/systems/farms.js';
+
+test('owned farms can be upgraded for more production and collected remotely with a fee', () => {
+  const s = newState(T0);
+  const f = refreshFarm(s, 'harbi', 1);
+  assert.equal(upgradeFarm(s, 'harbi').result, 'notowned');
+  s.player.coins = 1e7;
+  buyFarm(s, 'harbi');
+  const y1 = dailyYield('harbi', f).coins;
+  const c1 = upgradeCost('harbi', f);
+  assert.equal(upgradeFarm(s, 'harbi').result, 'upgraded');
+  assert.ok(dailyYield('harbi', f).coins > y1);
+  assert.ok(upgradeCost('harbi', f) > c1);
+  while (f.level < FARM_MAX_LEVEL) upgradeFarm(s, 'harbi');
+  assert.equal(upgradeFarm(s, 'harbi').result, 'max');
+  farmDaily(s, 3);
+  const coinsInStore = f.storage.coins;
+  const before = s.player.coins;
+  const r = collectRemote(s, 'harbi');
+  assert.equal(r.fee, Math.round(coinsInStore * 0.1));
+  assert.equal(s.player.coins, before + coinsInStore - r.fee);
+});

@@ -590,7 +590,7 @@ export function soilPlot(watered) {
   });
 }
 
-const CROP_COL = { tomato: ['#d9401a', '#3f7d2a'], wheat: ['#e6c050', '#9aa83a'], melon: ['#3f8f3a', '#2f6f2a'], cardamom: ['#8fc06a', '#4f8a2f'], alfalfa: ['#b890e0', '#5a9a3a'] };
+const CROP_COL = { tomato: ['#d9401a', '#3f7d2a'], wheat: ['#e6c050', '#9aa83a'], melon: ['#3f8f3a', '#2f6f2a'], cardamom: ['#8fc06a', '#4f8a2f'], alfalfa: ['#b890e0', '#5a9a3a'], carrot: ['#f08a24', '#5aa83a'], onion: ['#c86a8a', '#6aa84a'], cucumber: ['#3f9a3a', '#2f7a2a'], eggplant: ['#6a3a8a', '#3f7d2a'], corn: ['#f0d040', '#6aa83a'] };
 export function crop(kind, stage, maxStage) {
   return cached(`crop:${kind}:${stage}:${maxStage}`, 18, 18, (ctx) => {
     const [fruit, leaf] = CROP_COL[kind] || ['#fff', '#0a0'];

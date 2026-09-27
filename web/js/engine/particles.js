@@ -13,6 +13,17 @@ export class Particles {
     }
   }
 
+  emit(x, y, vx, vy, color, life = 0.6, gravity = 120, size = 2) {
+    this.list.push({ x, y, vx, vy, life, max: life, color, g: gravity, size });
+  }
+
+  // مطر ذهب للاحتفال
+  goldRain(x, y, w) {
+    for (let i = 0; i < 70; i++) {
+      this.list.push({ x: x + (Math.random() - 0.5) * w, y: y - Math.random() * 60, vx: (Math.random() - 0.5) * 20, vy: 20 + Math.random() * 40, life: 2.2, max: 2.2, color: Math.random() < 0.5 ? '#ffd24a' : '#fff6c0', g: 40, size: 2 });
+    }
+  }
+
   confetti(x, y) {
     this.burst(x, y, ['#ffd24a', '#ff6a3a', '#6cc24a', '#4aa3d8', '#f0e6d0', '#d04ad0'], 40, 140, 1.4, 160, 2);
   }

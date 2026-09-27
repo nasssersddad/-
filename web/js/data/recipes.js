@@ -42,7 +42,10 @@ export const BUILD_SPOTS = {
   room3:      { name: 'غرفة ضيوف ٣', desc: 'غرفة فخمة للتجار الكبار.', cost: { bed: 1, carpet: 2, lantern: 1 }, rating: 12, room: true, after: 'room2' },
   majlis:     { name: 'المجلس', desc: 'مجلس عربي بسجاد ومساند. الضيوف يدفعون أكثر.', cost: { carpet: 2, cushion: 3, coffee2: 2 }, rating: 15, tech: 't_hospitality' },
   fountain:   { name: 'حوض الساحة', desc: 'حوض ماء بارد بنص الساحة.', cost: { stone: 12, brick: 6, water: 5 }, rating: 10, after: 'wall_n' },
-  stable:     { name: 'مراح الإبل', desc: 'مكان للإبل. القوافل الكبيرة تحب الخان اللي فيه مراح.', cost: { plank: 6, rope: 4, wood: 6 }, rating: 8, tech: 't_stable' },
+  stable:     { name: 'مراح الإبل', desc: 'مراح تربي فيه نياقك: تسقيها وتطعمها وتحلبها وتلقّحها. والقوافل تحب الخان اللي فيه مراح.', cost: { plank: 6, rope: 4, wood: 6 }, rating: 8, tech: 't_stable' },
+  trough:     { name: 'حوض الماء', desc: 'جرة/حوض كبير تكب فيه ماء، والنياق تشرب منه كل صباح لحالها.', cost: { clay: 6, brick: 3, jar: 1 }, rating: 3, after: 'stable' },
+  pen2:       { name: 'توسعة المراح', desc: 'المراح يشيل 8 نياق.', cost: { wood: 10, rope: 4, plank: 4 }, rating: 4, after: 'stable' },
+  pen3:       { name: 'مراح كبير', desc: 'المراح يشيل 12 ناقة.', cost: { plank: 8, rope: 6, brick: 6 }, rating: 5, after: 'pen2' },
   farm2:      { name: 'توسعة المزرعة', desc: 'أربع أحواض زراعة زيادة.', cost: { wood: 6, stone: 4, water: 4 }, rating: 2, tech: 't_farm2' },
   crypt_door: { name: 'باب السرداب', desc: 'باب قديم مقفول بطلاسم... زعبول يعرف سالفته.', cost: { lantern: 1, rope: 2 }, rating: 0, flag: 'q_crypt' },
 };

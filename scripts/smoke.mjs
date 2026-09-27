@@ -64,7 +64,7 @@ const cutPalms = await ev(async () => {
     for (let i = 0; i < 3; i++) {
       const t = g.findTarget();
       if (t && t.kind === 'palm') { g.doAction(t, true); n++; }
-      await new Promise(r => setTimeout(r, 60));
+      await new Promise(r => setTimeout(r, 400));
     }
   }
   return n;
@@ -107,11 +107,21 @@ await ev(async () => {
     const o = g.worldObjById[id];
     g.state.player.x = o.x; g.state.player.y = o.y + 12; g.state.player.dir = 'up';
     const t = g.findTarget(); g.doAction(t, true);
-    await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 380));
+    window.__plantShot = window.__plantShot || true;
+    await new Promise(r => setTimeout(r, 500));
     g.doAction(g.findTarget(), true);
+    await new Promise(r => setTimeout(r, 950));
   }
 });
-await tick(500);
+await tick(300);
+// لقطة أنيميشن السقي بنصه
+await ev(() => { const g = window.__game; const o = g.worldObjById.plot2; g.state.inv.seed_wheat = 5; g.state.player.x = o.x; g.state.player.y = o.y + 12; g.state.player.dir = 'up'; g.doAction(g.findTarget(), true); });
+await tick(900);
+await ev(() => { const g = window.__game; g.state.player.dir = 'up'; g.doAction(g.findTarget(), true); });
+await page.waitForTimeout(450);
+await page.screenshot({ path: path.join(outDir, '06a-watering.png') });
+await tick(800);
 await shot('06-farm');
 await skip(); await closeModals(); await skip(); await closeModals();
 
@@ -210,6 +220,90 @@ await tick(300);
 await shot('19-achievements');
 await closeModals();
 
+// 13) المراح والنياق
+await ev(() => { const g = window.__game; const s = g.state; s.tech.t_stable = true; s.inv.plank = 10; s.inv.rope = 10; s.inv.wood = 10; s.inv.water = 20; s.inv.alfalfa = 10;
+  s.inv.clay = 10; s.inv.brick = 10; s.inv.jar = 2; s.player.energy = 100; s.time.minute = 9 * 60; g.doBuild('stable'); });
+await tick(500);
+await skip(); await closeModals();
+await ev(() => { const g = window.__game; g.doBuild('trough'); });
+await tick(300);
+await closeModals();
+const camelsCount = await ev(() => window.__game.state.camels.length);
+console.log('starter camels:', camelsCount);
+// كب ماء بالحوض
+await ev(() => { const g = window.__game; const o = g.worldObjById['spot:trough']; g.state.player.x = o.x - 14; g.state.player.y = o.y + 2; g.state.player.dir = 'right'; });
+await tick(200);
+await ev(() => window.__game.doAction(window.__game.findTarget(), true));
+await page.waitForTimeout(450);
+await page.screenshot({ path: path.join(outDir, '21-pour-trough.png') });
+await tick(700);
+const trough = await ev(() => window.__game.state.trough.water);
+console.log('trough water:', trough);
+// اسقِ وأطعم كل النياق
+await ev(async () => {
+  const g = window.__game;
+  for (const c of g.state.camels) {
+    for (let i = 0; i < 3; i++) {
+      const rt = g.camelRt[c.id];
+      g.state.player.x = rt.x - 12; g.state.player.y = rt.y; g.state.player.dir = 'right';
+      g.camelAction(c, rt);
+      await new Promise(r => setTimeout(r, 1100));
+    }
+  }
+});
+await closeModals();
+await shot('22-pen');
+// التلقيح بالقوة مع ولادة نادرة
+const born = await ev(async () => {
+  const g = window.__game; const s = g.state;
+  const f = s.camels.find(c => c.sex === 'f'), m = s.camels.find(c => c.sex === 'm');
+  const ok = window.__camelBreed = (await import('./js/systems/camels.js')).breed(s, m.id, f.id, s.time.day, false);
+  const rng = g.rng; g.rng = () => 0.001;
+  g.onNewDay(1); s.time.day += 0;
+  for (let i = 0; i < 3; i++) { s.time.day += 1; g.onNewDay(1); }
+  g.rng = rng;
+  return { ok, n: s.camels.length, rare: s.camels.some(c => c.rare) };
+});
+console.log('breeding:', born);
+await tick(700);
+await shot('23-rare-birth');
+await closeModals(); await skip(); await closeModals();
+await ev(() => window.__game.ui.openCamels(null, 'pen'));
+await tick(300);
+await shot('24-camels-panel');
+// السوق: اعرض النادرة واستقبل عروض وساوم
+const sold = await ev(async () => {
+  const g = window.__game; const s = g.state;
+  const mk = await import('./js/systems/market.js');
+  const rare = s.camels.find(c => c.rare);
+  mk.listCamel(s, rare.id, 400000, g.now() - 3600000);
+  g.marketTick();
+  return s.market.offers.length;
+});
+console.log('offers:', sold);
+await closeModals();
+await ev(() => window.__game.ui.openCamels(null, 'mine'));
+await tick(300);
+await shot('25-offers');
+await page.click('[data-a="counter"]');
+await tick(200);
+await page.fill('#hagIn', '500000');
+await page.click('[data-a="send"]');
+await tick(300);
+await shot('26-haggle');
+await closeModals();
+await ev(() => window.__game.ui.openCamels(null, 'market'));
+await tick(300);
+await shot('27-market');
+await closeModals();
+await ev(() => window.__game.ui.openCamels(null, 'barter'));
+await tick(300);
+await shot('28-barter');
+await closeModals();
+await ev(() => { const g = window.__game; const p = g.worldObjById['spot:trough']; g.state.player.x = p.x + 40; g.state.player.y = p.y + 20; });
+await tick(400);
+await shot('29-pen-world');
+
 // حفظ وتحميل
 const saved = await ev(() => { window.__game.save(); return JSON.parse(localStorage.getItem('almuzare_save')).player.coins; });
 console.log('saved coins:', saved);
@@ -229,6 +323,10 @@ server.close();
 const fatal = errors.filter(e => !/favicon/.test(e));
 if (fatal.length) {
   console.error('❌ أخطاء بالمتصفح:\n' + fatal.join('\n'));
+  process.exit(1);
+}
+if (camelsCount < 2 || trough < 1 || !born.rare || sold < 1) {
+  console.error('❌ النياق/السوق ما اشتغلت', { camelsCount, trough, born, sold });
   process.exit(1);
 }
 if (loaded < saved || questIdx < 5 || killed < 1) {

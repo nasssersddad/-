@@ -1,6 +1,7 @@
 // حالة اللعبة، الحفظ والتحميل
+import { emptyMarket } from './market.js';
 export const SAVE_KEY = 'almuzare_save';
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 export function newState(now = Date.now()) {
   return {
@@ -30,6 +31,13 @@ export function newState(now = Date.now()) {
     },
     dungeon: { floor: 0, maxFloor: 0 },
     guests: { day: 0, list: [] },
+    camels: [],
+    camelSeq: 0,
+    trough: { water: 0 },
+    market: emptyMarket(),
+    blessNext: false,
+    blessDay: null,
+    mazayenWeek: -1,
     settings: { music: true, sfx: true },
     tutorialDone: false,
     introSeen: false,

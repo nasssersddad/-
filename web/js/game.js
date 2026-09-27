@@ -17,6 +17,10 @@ import { checkQuest, currentQuest } from './systems/quests.js';
 import { generateFloor, dTile, D, DW, DH, ENEMIES } from './systems/dungeon.js';
 import { mulberry32, pick, randInt } from './systems/util.js';
 import { showRewardedAd } from './systems/ads.js';
+import * as camels from './systems/camels.js';
+import * as market from './systems/market.js';
+import { PEN } from './data/map.js';
+import { camelBreedName } from './data/camels.js';
 
 const SPEED = 64;
 const ACTION_REPEAT = 0.34;
@@ -133,7 +137,8 @@ export class Game {
     if (newDays) this.onNewDay(newDays);
     this.audio.night = time.isNight(s) || this.mode === 'dungeon';
 
-    this.movePlayer(dt);
+    if (this.anim) this.updateAnim(dt);
+    else this.movePlayer(dt);
     this.actionCd = Math.max(0, this.actionCd - dt);
     this.swing = Math.max(0, this.swing - dt);
 
@@ -141,10 +146,13 @@ export class Game {
     else this.updateDungeon(dt);
 
     this.target = this.findTarget();
-    if ((this.input.actionPressed || this.input.action) && this.actionCd <= 0) {
+    if ((this.input.actionPressed || this.input.action) && this.actionCd <= 0 && !this.anim) {
       this.actionCd = ACTION_REPEAT;
       this.doAction(this.target, this.input.actionPressed);
+      if (this.anim) this.actionCd = Math.max(ACTION_REPEAT, this.anim.dur);
     }
+    this.marketTimer = (this.marketTimer || 0) + dt;
+    if (this.marketTimer > 2) { this.marketTimer = 0; this.marketTick(); }
     this.input.endFrame();
 
     this.questTimer += dt;
@@ -170,6 +178,158 @@ export class Game {
       if (g.leaving && !g.moving) g.gone = true;
     }
     if (this.guestRt.some(g => g.gone)) this.guestRt = this.guestRt.filter(g => !g.gone);
+    this.updateCamels(dt);
+  }
+
+  // ---------- الأنيميشن ----------
+  // الفعل ياخذ وقته: يبدأ، وعند hitAt يصير التأثير، وينتهي عند dur
+  startAnim(type, target, dur, hitAt, onHit) {
+    const p = this.state.player;
+    if (target && Math.abs(target.x - p.x) > 3) p.dir = target.x > p.x ? 'right' : 'left';
+    this.anim = { type, target, dur, hitAt, onHit, t: 0, hit: false };
+    this.swing = 0;
+  }
+
+  updateAnim(dt) {
+    const a = this.anim;
+    a.t += dt;
+    const p = this.state.player;
+    const k = a.t / a.dur;
+    // خيط الماء من الجرة
+    if ((a.type === 'water' || a.type === 'pour') && k > 0.25 && k < 0.85 && a.target) {
+      const side = p.dir === 'left' ? -1 : 1;
+      const x0 = p.x + side * 12, y0 = p.y - 17;
+      const T = 0.3, g = 320;
+      for (let i = 0; i < 2; i++) {
+        const tx = a.target.x + (Math.random() - 0.5) * 6, ty = a.target.y - 4;
+        this.fx.emit(x0, y0, (tx - x0) / T, (ty - y0) / T - 0.5 * g * T, Math.random() < 0.5 ? '#6fb8e0' : '#b6e6f6', T, g, i ? 1 : 2);
+      }
+    }
+    if (a.type === 'feed' && !a.hit && k > 0.3 && a.target) {
+      const x0 = p.x, y0 = p.y - 14;
+      this.fx.emit(x0, y0, (a.target.x - x0) / 0.35, (a.target.y - 10 - y0) / 0.35 - 50, '#7fb846', 0.35, 280, 2);
+    }
+    if (!a.hit && a.t >= a.hitAt) {
+      a.hit = true;
+      if (a.onHit) a.onHit();
+    }
+    if (a.t >= a.dur) this.anim = null;
+  }
+
+  // ---------- النياق ----------
+  penRect() {
+    return { x0: PEN.x0 * TILE + 10, x1: (PEN.x1 + 1) * TILE - 10, y0: PEN.y0 * TILE + 18, y1: (PEN.y1 + 1) * TILE - 6 };
+  }
+
+  updateCamels(dt) {
+    const s = this.state;
+    this.camelRt = this.camelRt || {};
+    const r = this.penRect();
+    const ids = new Set(s.camels.map(c => c.id));
+    for (const id of Object.keys(this.camelRt)) if (!ids.has(id)) delete this.camelRt[id];
+    for (const c of s.camels) {
+      let rt = this.camelRt[c.id];
+      if (!rt) {
+        rt = this.camelRt[c.id] = { x: r.x0 + this.rng() * (r.x1 - r.x0), y: r.y0 + this.rng() * (r.y1 - r.y0), wait: this.rng() * 3, dir: 1 };
+        rt.tx = rt.x; rt.ty = rt.y;
+      }
+      const dx = rt.tx - rt.x, dy = rt.ty - rt.y;
+      const d = Math.hypot(dx, dy);
+      rt.moving = d > 1;
+      if (rt.moving) {
+        const sp = (camels.isAdult(c) ? 10 : 16) * dt;
+        rt.x += (dx / d) * Math.min(sp, d);
+        rt.y += (dy / d) * Math.min(sp, d);
+        if (Math.abs(dx) > 0.5) rt.dir = dx > 0 ? 1 : -1;
+      } else {
+        rt.wait -= dt;
+        if (rt.wait <= 0) {
+          rt.wait = 2 + this.rng() * 5;
+          rt.tx = r.x0 + this.rng() * (r.x1 - r.x0);
+          rt.ty = r.y0 + this.rng() * (r.y1 - r.y0);
+        }
+      }
+      if (c.rare && this.rng() < dt * 3) this.fx.emit(rt.x + (this.rng() - 0.5) * 20, rt.y - 10 - this.rng() * 12, 0, -12, '#fff0a0', 0.8, 0, 1);
+    }
+  }
+
+  camelAction(c, rt) {
+    const s = this.state;
+    const day = s.time.day;
+    const tgt = { x: rt.x, y: rt.y };
+    this.input.action = false;
+    if (!camels.isWatered(c, day) && count(s, 'water') > 0) {
+      if (!this.spendEnergy(1)) return;
+      this.startAnim('water', tgt, 0.8, 0.6, () => {
+        camels.waterCamel(s, c.id, day);
+        this.audio.play('water');
+        this.fx.float(rt.x, rt.y - 28, '💧 شربت', '#b9f0ff', 12);
+        this.gainXp(1, rt.x, rt.y - 38);
+      });
+      return;
+    }
+    if (!camels.isFed(c, day) && camels.feedItem(s)) {
+      if (!this.spendEnergy(1)) return;
+      this.startAnim('feed', tgt, 0.6, 0.45, () => {
+        const it = camels.feed(s, c.id, day);
+        this.audio.play('eat');
+        this.fx.float(rt.x, rt.y - 28, it === 'alfalfa' ? '🌿 كلت برسيم' : '🟤 كلت تمر', '#d8ffb0', 12);
+        this.fx.burst(rt.x + 8, rt.y - 8, ['#7fb846', '#4f8a2f'], 6, 30, 0.5);
+        this.gainXp(2, rt.x, rt.y - 38);
+      });
+      return;
+    }
+    if (camels.canMilk(c, day)) {
+      if (!this.spendEnergy(1)) return;
+      this.startAnim('milk', tgt, 1.0, 0.8, () => {
+        const n = camels.milk(s, c.id, day);
+        this.audio.play('pick');
+        this.fx.float(rt.x, rt.y - 28, `🥛 +${n}`, '#ffffff', 14);
+        this.gainXp(3, rt.x, rt.y - 38);
+        this.ui.refresh();
+      });
+      return;
+    }
+    this.audio.play('camel');
+    this.ui.openCamels(c.id);
+  }
+
+  troughAction(o) {
+    const s = this.state;
+    if (s.trough.water >= 10) { this.input.action = false; this.fx.float(o.x, o.y - 20, 'الحوض مليان ✔', '#b9f0ff', 12); return; }
+    if (count(s, 'water') < 1) { this.input.action = false; this.say('ما معك ماء! اسحب من البير واكبه بالحوض.'); return; }
+    if (!this.spendEnergy(1)) return;
+    this.startAnim('pour', { x: o.x, y: o.y - 2 }, 0.8, 0.62, () => {
+      camels.fillTrough(s, 1);
+      this.audio.play('water');
+      this.fx.burst(o.x, o.y - 6, ['#6fb8e0', '#b6e6f6'], 8, 35, 0.4);
+      this.fx.float(o.x, o.y - 22, `🏺 ${s.trough.water}/10`, '#b9f0ff', 12);
+      this.gainXp(1, o.x, o.y - 32);
+    });
+  }
+
+  giftStarterCamels() {
+    const s = this.state;
+    if (s.camels.length || s.flags.starterCamels) return;
+    s.flags.starterCamels = true;
+    s.camels.push(camels.makeCamel(s, this.rng, { sex: 'f', beauty: 45 }), camels.makeCamel(s, this.rng, { sex: 'm', beauty: 40 }));
+    this.ui.dialogue([
+      ['shepherd', 'مبروك المراح! هذي هدية مني: ناقة وفحل. اسقهم وأطعمهم كل يوم، ولقّح الناقة من "الحلال".'],
+      ['lamp', 'وتدري؟ كل حوار يولد فيه فرصة 1 من 50 يطلع نادر... والنادرة تنباع بمئات الألوف! 🤑'],
+    ]);
+  }
+
+  // ---------- السوق ----------
+  marketTick() {
+    const s = this.state;
+    market.refreshDaily(s, s.time.day);
+    const fresh = market.tick(s, this.now(), this.rng);
+    for (const o of fresh) {
+      const c = camels.camelById(s, o.camelId);
+      this.audio.play('coin');
+      this.ui.toast(`📩 ${o.buyer} يبي ${c ? c.name : 'ناقتك'} بـ ${market.fmt(o.amount)} درهم!`, o.amount > 20000 ? 'ach' : '', 4);
+    }
+    if (fresh.length) this.ui.refresh();
   }
 
   // ---------- الحركة والتصادم ----------
@@ -292,6 +452,10 @@ export class Game {
       }
     }
     for (const c of s.groundChests || []) list.push({ kind: 'gchest', ref: c, x: c.x, y: c.y + 2 });
+    if (s.built.trough) { const o = this.worldObjById['spot:trough']; list.push({ kind: 'trough', ref: o, x: o.x, y: o.y }); }
+    if (s.built.stable && this.camelRt) {
+      for (const c of s.camels) { const rt = this.camelRt[c.id]; if (rt) list.push({ kind: 'camel', ref: c, rt, x: rt.x, y: rt.y, r: 22 }); }
+    }
     for (const [id, pos] of Object.entries(this.world.npcSpots)) {
       if (this.npcPresent(id)) list.push({ kind: 'npc', id, x: pos.x, y: pos.y });
     }
@@ -340,6 +504,14 @@ export class Game {
       case 'guest': return { icon: t.ref.served ? '💬' : '☕', label: 'قدّم' };
       case 'gchest': case 'dchest': return { icon: '📦', label: 'افتح' };
       case 'enemy': return { icon: '⚔️', label: 'اضرب' };
+      case 'trough': return s.trough.water >= 10 ? { icon: '✔', label: 'مليان' } : { icon: '🏺', label: 'كب ماء' };
+      case 'camel': {
+        const c = t.ref, day = s.time.day;
+        if (!camels.isWatered(c, day) && count(s, 'water') > 0) return { icon: '💧', label: 'اسقِ' };
+        if (!camels.isFed(c, day) && camels.feedItem(s)) return { icon: '🌿', label: 'أطعم' };
+        if (camels.canMilk(c, day)) return { icon: '🥛', label: 'احلب' };
+        return { icon: '🐪', label: c.name };
+      }
       case 'stairsUp': return { icon: '⬆️', label: 'اطلع' };
       case 'stairsDown': return { icon: '⬇️', label: 'انزل' };
       case 'plot': {
@@ -370,7 +542,7 @@ export class Game {
     if (this.mode === 'dungeon' && (!t || t.kind === 'enemy')) { this.attack(t); return; }
     if (!t) return;
     // الأفعال اللي تفتح قوائم ما تتكرر بالضغط المطوّل
-    const repeatable = ['palm', 'rock', 'clay', 'herb', 'well', 'plot'].includes(t.kind);
+    const repeatable = ['palm', 'rock', 'clay', 'herb', 'well', 'plot', 'trough'].includes(t.kind);
     if (!fresh && !repeatable) return;
     switch (t.kind) {
       case 'palm': case 'rock': case 'clay': case 'herb': this.gather(t.ref); break;
@@ -388,6 +560,8 @@ export class Game {
       case 'stairsUp': this.input.action = false; this.exitDungeon(); break;
       case 'stairsDown': this.input.action = false; this.enterFloor(this.dungeon.floor + 1); break;
       case 'plot': this.plotAction(t.ref); break;
+      case 'trough': this.troughAction(t.ref); break;
+      case 'camel': this.camelAction(t.ref, t.rt); break;
       default: break;
     }
   }
@@ -410,6 +584,12 @@ export class Game {
       herb: { hits: 1, cost: 1, sound: 'pick', color: ['#4f8a2f', '#e8e0f0'], respawn: 1, stat: 'herbs', kp: { n: 1 }, xp: 2 },
     }[o.kind];
     if (!this.spendEnergy(specs.cost)) return;
+    const type = { palm: 'chop', rock: 'mine', clay: 'dig', herb: 'pick' }[o.kind];
+    this.startAnim(type, o, 0.32, 0.16, () => this.gatherHit(o, specs));
+  }
+
+  gatherHit(o, specs) {
+    const s = this.state;
     this.audio.play(specs.sound);
     this.hitFx(o, specs.color);
     const n = s.nodes[o.id] && !(s.nodes[o.id].respawnDay > s.time.day) ? s.nodes[o.id] : { hits: 0 };
@@ -462,11 +642,13 @@ export class Game {
 
   drawWater(o) {
     if (!this.spendEnergy(1)) return;
-    this.audio.play('water');
-    this.hitFx(o, ['#57a9cf', '#a6def0'], 5);
-    addStat(this.state, 'water', 1);
-    this.gainItems({ water: 1 }, o.x, o.y - 26);
-    if (this.rng() < 0.5) this.gainXp(1, o.x, o.y - 34);
+    this.startAnim('draw', o, 0.7, 0.55, () => {
+      this.audio.play('water');
+      this.hitFx(o, ['#57a9cf', '#a6def0'], 7);
+      addStat(this.state, 'water', 1);
+      this.gainItems({ water: 1 }, o.x, o.y - 26);
+      if (this.rng() < 0.5) this.gainXp(1, o.x, o.y - 34);
+    });
   }
 
   plotAction(o) {
@@ -476,32 +658,42 @@ export class Game {
       const seed = farming.firstSeed(s);
       if (!seed) { this.say('ما عندك بذور! اشترِ من أبو فهد أو أم ريم، أو دوّرها بالأعشاب.'); this.input.action = false; return; }
       if (!this.spendEnergy(1)) return;
-      farming.plant(s, o.id, seed);
-      this.audio.play('plant');
-      this.hitFx(o, ['#7a4f2e', '#6cc24a'], 5);
-      this.fx.float(o.x, o.y - 16, `🌱 ${SEEDS[seed].name}`, '#d8ffb0', 12);
-      this.gainXp(2, o.x, o.y - 26);
+      this.startAnim('plant', o, 0.75, 0.5, () => {
+        if (!farming.plant(s, o.id, seed)) return;
+        o.popT = this.t;
+        this.audio.play('plant');
+        this.fx.burst(o.x, o.y - 6, ['#7a4f2e', '#5e3b21'], 8, 30, 0.4);
+        this.fx.burst(o.x, o.y - 8, ['#6cc24a'], 5, 25, 0.5);
+        this.fx.float(o.x, o.y - 16, `🌱 ${SEEDS[seed].name}`, '#d8ffb0', 12);
+        this.gainXp(2, o.x, o.y - 26);
+      });
       return;
     }
     if (farming.isReady(p)) {
       if (!this.spendEnergy(1)) return;
-      const h = farming.harvest(s, o.id, this.rng);
-      this.audio.play('pick');
-      this.hitFx(o, ['#e6c050', '#d9401a', '#6cc24a'], 10);
-      this.fx.float(o.x, o.y - 16, `${ITEMS[h.crop].icon} +${h.n}`, '#fff3c4', 13);
-      s.kp.n = (s.kp.n || 0) + 1;
-      this.gainXp(6, o.x, o.y - 28);
-      this.ui.refresh();
+      this.startAnim('harvest', o, 0.55, 0.35, () => {
+        const h = farming.harvest(s, o.id, this.rng);
+        if (!h) return;
+        this.audio.play('pick');
+        this.hitFx(o, ['#e6c050', '#d9401a', '#6cc24a'], 10);
+        this.fx.float(o.x, o.y - 16, `${ITEMS[h.crop].icon} +${h.n}`, '#fff3c4', 13);
+        s.kp.n = (s.kp.n || 0) + 1;
+        this.gainXp(6, o.x, o.y - 28);
+        this.ui.refresh();
+      });
       return;
     }
     if (!p.watered) {
       if (count(s, 'water') < 1) { this.say('تحتاج ماء! اسحب من البير اللي بنص الخان.'); this.input.action = false; return; }
       if (!this.spendEnergy(1)) return;
-      farming.water(s, o.id);
-      this.audio.play('water');
-      this.fx.burst(o.x, o.y - 6, ['#57a9cf', '#a6def0'], 10, 40, 0.5);
-      this.gainXp(1, o.x, o.y - 20);
-      this.ui.refresh();
+      this.startAnim('water', o, 0.85, 0.65, () => {
+        if (!farming.water(s, o.id)) return;
+        o.wetT = this.t;
+        this.audio.play('water');
+        this.fx.burst(o.x, o.y - 6, ['#57a9cf', '#a6def0'], 10, 40, 0.5);
+        this.gainXp(1, o.x, o.y - 20);
+        this.ui.refresh();
+      });
       return;
     }
     this.input.action = false;
@@ -660,6 +852,19 @@ export class Game {
     const s = this.state;
     farming.growPlots(s, n);
     addStat(s, 'days', n);
+    const births = [];
+    for (let d = s.time.day - n + 1; d <= s.time.day; d++) births.push(...camels.dailyUpdate(s, d, this.rng));
+    for (const calf of births) {
+      if (calf.rare) {
+        this.audio.play('rare');
+        this.claimReward({ chest: 'rare' }, null, true);
+        this.ui.rareBirth(calf);
+      } else {
+        this.audio.play('camel');
+        this.ui.toast(`🐪 مبروك! ولد لك حوار (${camelBreedName(calf)}): ${calf.name}`, 'gain', 4);
+      }
+    }
+    if (s.camels.length && s.built.trough && s.trough.water <= 0) this.ui.toast('🏺 حوض الماء نشف! النياق عطشانة', '', 4);
     this.guestRt.forEach(g => { g.gone = true; });
     this.guestRt = [];
     s.guests.list = [];
@@ -737,6 +942,7 @@ export class Game {
     this.tileDirty = true;
     this.boxVersion = (this.boxVersion || 0) + 1;
     this.gainXp(10 + b.rating, o.x, o.y - 42);
+    if (spotId === 'stable') this.giftStarterCamels();
     this.ui.refresh();
     this.save();
     this.checkProgress();

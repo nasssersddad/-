@@ -50,6 +50,9 @@ export const DAILY_QUEST_POOL = [
   { id: 'enemy',   stat: 'kills',   name: 'اهزم {n} وحوش بالسرداب', range: [3, 8],  coins: 70 },
   { id: 'clay',    stat: 'clay',    name: 'احفر طين {n} مرات',     range: [4, 8],  coins: 35 },
   { id: 'coins',   stat: 'coinsEarned', name: 'اكسب {n} درهم',     range: [100, 250], coins: 50 },
+  { id: 'milk',    stat: 'milked',  name: 'احلب {n} مرات',         range: [2, 4],  coins: 50, needs: 'stable' },
+  { id: 'cfeed',   stat: 'camelFed', name: 'أطعم النياق {n} مرات', range: [3, 6],  coins: 45, needs: 'stable' },
+  { id: 'trough',  stat: 'troughFilled', name: 'كب {n} ماء بالحوض', range: [4, 8], coins: 40, needs: 'trough' },
 ];
 export const DAILY_QUEST_BONUS = { chest: 'rare', label: 'صندوق نادر' };
 
@@ -67,6 +70,11 @@ export const ACHIEVEMENTS = [
   { stat: 'stars',     name: 'نجم القوافل',   tiers: [1, 3, 5] },
   { stat: 'relics',    name: 'جامع التحف',    tiers: [2, 6, 12] },
   { stat: 'level',     name: 'خبرة سنين',     tiers: [5, 15, 30] },
+  { stat: 'camelsBorn', name: 'مربي الإبل',   tiers: [1, 10, 40] },
+  { stat: 'rareCamels', name: 'صياد النوادر', tiers: [1, 3, 8] },
+  { stat: 'marketSales', name: 'تاجر الحلال', tiers: [1, 10, 40] },
+  { stat: 'milked',    name: 'حلّاب الخير',   tiers: [5, 40, 150] },
+  { stat: 'mazayenWins', name: 'شيخ المزاين', tiers: [1, 5, 15] },
 ];
 export const ACH_TIER_NAMES = ['برونزي', 'فضي', 'ذهبي'];
 export const ACH_TIER_REWARDS = [
@@ -84,4 +92,5 @@ export const AD_PLACEMENTS = {
   revive:     'كمّل بالسرداب',
   energy:     'عبّي الطاقة',
   chest_x2:   'ضاعف الصندوق',
+  bless:      'بركة: فرصة النادرة ×2',
 };

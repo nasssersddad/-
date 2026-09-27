@@ -585,7 +585,7 @@ export function soilPlot(watered) {
   });
 }
 
-const CROP_COL = { tomato: ['#d9401a', '#3f7d2a'], wheat: ['#e6c050', '#9aa83a'], melon: ['#3f8f3a', '#2f6f2a'], cardamom: ['#8fc06a', '#4f8a2f'] };
+const CROP_COL = { tomato: ['#d9401a', '#3f7d2a'], wheat: ['#e6c050', '#9aa83a'], melon: ['#3f8f3a', '#2f6f2a'], cardamom: ['#8fc06a', '#4f8a2f'], alfalfa: ['#b890e0', '#5a9a3a'] };
 export function crop(kind, stage, maxStage) {
   return cached(`crop:${kind}:${stage}:${maxStage}`, 18, 18, (ctx) => {
     const [fruit, leaf] = CROP_COL[kind] || ['#fff', '#0a0'];
@@ -764,5 +764,77 @@ export function relicSparkle(t) {
   return cached('spark' + f, 7, 7, (ctx) => {
     const c = f ? '#fff6c0' : '#ffd24a';
     R(ctx, 3, 0, 1, 7, c); R(ctx, 0, 3, 7, 1, c);
+  });
+}
+
+// ---------- النياق ----------
+// col = { body, dark, hump }. الرسمة متجهة يمين
+export function camelSprite(col, frame, key) {
+  return cached(`camelS:${key}:${frame}`, 30, 26, (ctx) => {
+    ellipse(ctx, 15, 24, 11, 2, 'rgba(0,0,0,0.22)');
+    const c = col.body, d = col.dark, h = col.hump;
+    // الرجول
+    const l1 = frame === 1 ? 1 : 0, l2 = frame === 2 ? 1 : 0;
+    R(ctx, 7, 15, 2, 8 - l1, d); R(ctx, 10, 15, 2, 8 - l2, c);
+    R(ctx, 17, 15, 2, 8 - l2, d); R(ctx, 20, 15, 2, 8 - l1, c);
+    R(ctx, 7, 22 - l1, 2, 1, '#3a2616'); R(ctx, 10, 22 - l2, 2, 1, '#3a2616'); R(ctx, 17, 22 - l2, 2, 1, '#3a2616'); R(ctx, 20, 22 - l1, 2, 1, '#3a2616');
+    // الجسم والسنام
+    ellipse(ctx, 14, 13, 9, 4, c);
+    ellipse(ctx, 13, 9, 5, 4, c);
+    ellipse(ctx, 12, 8, 3, 2, h);
+    R(ctx, 6, 14, 17, 2, d);
+    R(ctx, 5, 11, 2, 4, c); P(ctx, 4, 12, d); // الذيل
+    // الرقبة والراس
+    line(ctx, 22, 12, 24, 6, c, 3);
+    R(ctx, 23, 3, 6, 4, c); R(ctx, 27, 5, 2, 2, d);
+    P(ctx, 26, 4, '#1a1010');
+    R(ctx, 23, 2, 2, 1, d);
+  });
+}
+
+export function heldJar(tilt) {
+  return cached('hjar', 8, 9, (ctx) => {
+    ellipse(ctx, 4, 5, 3, 3, '#b0643a');
+    R(ctx, 2, 1, 4, 2, '#9a5530'); R(ctx, 3, 0, 2, 1, '#c07a4a');
+    P(ctx, 2, 4, '#d0905a');
+  });
+}
+
+export function bowl(fill) {
+  const f = Math.round(fill * 3);
+  return cached('bowl' + f, 10, 6, (ctx) => {
+    R(ctx, 0, 1, 10, 1, '#8a5a33'); R(ctx, 1, 2, 8, 3, '#6e4424'); R(ctx, 2, 5, 6, 1, '#5e3a1f');
+    if (f > 0) R(ctx, 1, 1, 8, 1, '#ffffff');
+    if (f > 1) R(ctx, 2, 0, 6, 1, '#f4f0e8');
+  });
+}
+
+export function bucket() {
+  return cached('bucket', 6, 6, (ctx) => {
+    R(ctx, 0, 1, 6, 5, PAL.woodDark); R(ctx, 0, 1, 6, 1, PAL.woodLight); R(ctx, 1, 0, 4, 1, '#999');
+  });
+}
+
+export function trough(level) {
+  const l = Math.max(0, Math.min(10, level));
+  return cached('trough' + l, 30, 16, (ctx) => {
+    ellipse(ctx, 15, 14, 14, 2, 'rgba(0,0,0,0.22)');
+    R(ctx, 1, 4, 28, 9, '#a0603a');
+    R(ctx, 1, 4, 28, 2, '#c07a4a');
+    R(ctx, 3, 6, 24, 5, '#3a2418');
+    if (l > 0) {
+      const h = Math.max(1, Math.round((l / 10) * 5));
+      R(ctx, 3, 11 - h, 24, h, PAL.water);
+      R(ctx, 4, 11 - h, 8, 1, PAL.waterHi);
+    }
+    R(ctx, 1, 12, 28, 1, '#6e3e22');
+    // جرة كبيرة جنب الحوض
+    ellipse(ctx, 26, 5, 4, 5, '#b0643a'); R(ctx, 24, 0, 4, 2, '#9a5530');
+  });
+}
+
+export function fencePost() {
+  return cached('fpost', 4, 12, (ctx) => {
+    R(ctx, 1, 0, 2, 12, PAL.woodDark); R(ctx, 1, 0, 2, 1, PAL.woodLight);
   });
 }

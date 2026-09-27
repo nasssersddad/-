@@ -84,6 +84,9 @@ export class Audio {
       case 'spin': this.tone(700 + Math.random() * 300, 0.03, 'square', 0.05); break;
       case 'eat': this.noise(0.06, 900, 0.2); this.noise(0.06, 900, 0.2, 0.1); break;
       case 'plant': this.noise(0.1, 300, 0.25); this.tone(500, 0.1, 'sine', 0.08, 0.08); break;
+      case 'camel': this.tone(180, 0.35, 'sawtooth', 0.08, 0, -60); this.tone(150, 0.4, 'sawtooth', 0.06, 0.2, -50); this.noise(0.3, 400, 0.08, 0.1); break;
+      case 'rare': [523, 659, 784, 1047, 1319, 1568, 2093].forEach((f, i) => this.tone(f, 0.4, 'triangle', 0.14, i * 0.09)); this.noise(1.2, 7000, 0.07, 0.2, 2); break;
+      case 'deal': this.tone(392, 0.12, 'triangle', 0.14); this.tone(523, 0.12, 'triangle', 0.14, 0.1); this.tone(784, 0.3, 'triangle', 0.14, 0.2); break;
       case 'magic': [440, 554, 659, 880].forEach((f, i) => this.tone(f, 0.5, 'sine', 0.08, i * 0.1)); break;
       default: break;
     }

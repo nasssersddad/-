@@ -15,6 +15,10 @@ import * as time from './systems/time.js';
 import { SAVE_KEY } from './systems/state.js';
 import { character, PLAYER_LOOK, DJINN_LOOK, SALEM_LOOK } from './engine/art.js';
 import { setAdSimulator } from './systems/ads.js';
+import { camelSprite } from './engine/art.js';
+import * as camels from './systems/camels.js';
+import * as market from './systems/market.js';
+import { BREEDS, RARES, camelColors, camelBreedName, GESTATION_DAYS, TROUGH_CAP } from './data/camels.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -50,6 +54,7 @@ export class UI {
         else if (k === 'relics') this.openRelics();
         else if (k === 'settings') this.openSettings();
         else if (k === 'quest') this.openQuests();
+        else if (k === 'camels') this.openCamels();
       });
       el.addEventListener('pointerdown', e => e.stopPropagation());
     });
@@ -132,6 +137,9 @@ export class UI {
       b.textContent = pend;
       b.classList.toggle('on', pend > 0);
       $('badgeTech').classList.toggle('on', TECH.some(t => techStatus(s, t.id) === 'ready'));
+      const offers = market.openOffersCount(s);
+      $('badgeCamels').textContent = offers;
+      $('badgeCamels').classList.toggle('on', offers > 0);
       const q = currentQuest(s);
       const qt = q ? q.title : 'خلصت القصة! 🎉';
       if (this.last.qTitle !== qt) {
@@ -698,6 +706,373 @@ export class UI {
       g.claimReward(r.reward, `🏅 ${a.name} — ${ACH_TIER_NAMES[r.tier]}`);
       m.rerender();
     };
+  }
+
+  // ---------- الحلال: المراح والسوق ----------
+  camelImg(c, size = 60) {
+    this.camelCache = this.camelCache || {};
+    const key = (c.rare || c.breed);
+    if (!this.camelCache[key]) this.camelCache[key] = camelSprite(camelColors(c), 0, key).toDataURL();
+    const sc = camels.isAdult(c) ? 1 : 0.7;
+    return `<img class="cimg ${c.rare ? 'rare' : ''}" src="${this.camelCache[key]}" style="width:${Math.round(size * sc)}px" alt="">`;
+  }
+
+  camelTag(c) {
+    const s = this.g.state;
+    const v = market.valueOf(s, c);
+    return `<span class="ctag">${c.sex === 'f' ? '♀ ناقة' : '♂ فحل'}</span><span class="ctag ${c.rare ? 'gold' : ''}">${c.rare ? '✨ ' : ''}${camelBreedName(c)}</span><span class="ctag">جمال ${c.beauty}</span><span class="ctag">${camels.isAdult(c) ? 'بالغ' : 'حوار'}</span><span class="ctag money">≈ 🪙${market.fmt(v)}</span>`;
+  }
+
+  openCamels(focusId, tab) {
+    const g = this.g;
+    const s = g.state;
+    market.refreshDaily(s, s.time.day);
+    tab = tab || (market.openOffersCount(s) ? 'mine' : 'pen');
+    this.modal({
+      title: '🐪 الحلال',
+      render: (m) => {
+        const friday = time.weekday(s) === 6;
+        this.tabs(m, [
+          { id: 'pen', label: '🏠 مراحي' },
+          { id: 'market', label: '🛒 سوق الحلال' },
+          { id: 'mine', label: '📩 عروضي', badge: market.openOffersCount(s) },
+          { id: 'barter', label: '🔁 مقايضة', badge: s.market.barters.filter(b => !b.closed).length },
+          { id: 'mazayen', label: friday ? '🏆 مزاين (اليوم!)' : '🏆 مزاين' },
+        ], tab, (v) => { tab = v; m.rerender(); });
+        if (tab === 'pen') this.renderPen(m, focusId);
+        else if (tab === 'market') this.renderMarket(m);
+        else if (tab === 'mine') this.renderMine(m);
+        else if (tab === 'barter') this.renderBarter(m);
+        else this.renderMazayen(m);
+      },
+    });
+  }
+
+  renderPen(m, focusId) {
+    const g = this.g;
+    const s = g.state;
+    const day = s.time.day;
+    if (!s.built.stable) {
+      m.body.innerHTML = `<p>ما عندك مراح للحين. تعلّم <b>مراح الإبل</b> من المعرفة وابنه جنب المزرعة، والراعي بيهديك ناقة وفحل! 🐪</p><p class="muted">تقدر تتفرج على سوق الحلال من الحين.</p>`;
+      return;
+    }
+    const cap = camels.capacity(s);
+    const blessAvail = !s.blessNext && s.blessDay !== day;
+    const list = [...s.camels].sort((a, b) => (b.id === focusId) - (a.id === focusId) || (b.rare ? 1 : 0) - (a.rare ? 1 : 0));
+    m.body.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:6px">
+        <span><b>${s.camels.length}/${cap}</b> بالمراح • 🏺 الحوض ${s.built.trough ? `${s.trough.water}/${TROUGH_CAP}` : '(ما انبنى)'} • 🌿 برسيم ${count(s, 'alfalfa')}</span>
+        ${s.blessNext ? '<span class="ctag gold">🙏 البركة مفعّلة: 4% للولادة الجاية</span>' : blessAvail ? '<button class="btn ad" data-a="bless">بركة: فرصة النادرة ×2</button>' : ''}
+      </div>
+      <p class="muted">كل يوم: اسقِ وأطعم كل ناقة (اقرب منها واضغط زر الفعل). التلقيح يحتاج فحل وناقة بالغين شابعين وشاربين، والحمل ${GESTATION_DAYS} أيام، وفيه فرصة <b>2%</b> تطلع نادرة!</p>
+      <div class="camels">${list.map(c => {
+        const listed = s.market.myListings.find(l => l.camelId === c.id);
+        const st = [];
+        st.push(camels.isWatered(c, day) ? '💧✔' : '💧✖');
+        st.push(camels.isFed(c, day) ? '🌿✔' : '🌿✖');
+        if (c.pregnant) st.push(`🤰 باقي ${GESTATION_DAYS - c.pregnant.days} يوم`);
+        if (camels.canMilk(c, day)) st.push('🥛 جاهزة للحلب');
+        const canBreed = c.sex === 'f' && camels.isAdult(c) && !c.pregnant;
+        return `<div class="ccard ${c.rare ? 'rare' : ''} ${c.id === focusId ? 'focus' : ''}">
+          <div class="cpic">${this.camelImg(c)}</div>
+          <div class="cinfo"><h3>${esc(c.name)} <button class="mini" data-a="rename" data-v="${c.id}">✏️</button></h3>
+            <div class="ctags">${this.camelTag(c)}</div>
+            <div class="muted">${st.join(' • ')}</div>
+            <div class="row">${canBreed ? `<button class="btn green" data-a="breed" data-v="${c.id}">لقّح 💞</button>` : ''}
+              ${listed ? `<span class="ctag">معروضة بـ 🪙${market.fmt(listed.ask)}</span><button class="btn" data-a="unlist" data-v="${listed.id}">اسحبها</button>` : `<button class="btn" data-a="list" data-v="${c.id}">اعرضها بالسوق 🏷️</button>`}
+            </div></div></div>`;
+      }).join('') || '<p class="muted">المراح فاضي. اشترِ من سوق الحلال!</p>'}</div>`;
+    m.handlers.bless = async () => {
+      const ok = await g.watchAd('bless');
+      if (!ok) return;
+      s.blessNext = true;
+      s.blessDay = day;
+      this.toast('🙏 البركة! فرصة النادرة صارت 4% للولادة الجاية', 'ach', 3);
+      m.rerender();
+    };
+    m.handlers.breed = (fid) => this.pickMale(fid, () => m.rerender());
+    m.handlers.list = (id) => this.listPrompt(id, () => m.rerender());
+    m.handlers.unlist = (id) => { market.unlist(s, id); m.rerender(); };
+    m.handlers.rename = (id) => this.renamePrompt(id, () => m.rerender());
+  }
+
+  pickMale(fid, done) {
+    const g = this.g;
+    const s = g.state;
+    const day = s.time.day;
+    const males = s.camels.filter(c => c.sex === 'm' && camels.isAdult(c));
+    this.modal({
+      title: '💞 اختر الفحل', cls: 'small',
+      render: (mm) => {
+        mm.body.innerHTML = males.length ? males.map(c => {
+          const why = camels.breedBlocker(s, c.id, fid, day);
+          return `<div class="shop-row">${this.camelImg(c, 40)}<span class="nm">${esc(c.name)}<br><small class="muted">${camelBreedName(c)} • جمال ${c.beauty}</small></span>
+            ${why ? `<small class="muted">${why}</small>` : `<button class="btn green" data-a="go" data-v="${c.id}">لقّح</button>`}</div>`;
+        }).join('') : '<p class="muted">ما عندك فحل بالغ. اشترِ واحد من السوق.</p>';
+        mm.handlers.go = (mid) => {
+          if (!camels.breed(s, mid, fid, day, s.blessNext)) { this.audio.play('deny'); return; }
+          s.blessNext = false;
+          this.audio.play('camel');
+          g.fx.burst(s.player.x, s.player.y - 20, ['#ff6a8a', '#ffd24a'], 14, 60, 0.8);
+          this.toast(`💞 تم التلقيح! الحوار يوصل بعد ${GESTATION_DAYS} أيام`, 'gain', 3);
+          g.save();
+          mm.close();
+          done();
+        };
+      },
+    });
+  }
+
+  listPrompt(camelId, done) {
+    const g = this.g;
+    const s = g.state;
+    const c = camels.camelById(s, camelId);
+    const v = market.valueOf(s, c);
+    this.numberPrompt({
+      title: `🏷️ اعرض ${c.name} بالسوق`,
+      text: `القيمة التقديرية حسب السوق اليوم: <b>🪙${market.fmt(v)}</b>. إذا طلبت أعلى بكثير، العروض بتجي أقل وتحتاج مساومة.`,
+      value: Math.round(v * 1.15), presets: [Math.round(v), Math.round(v * 1.2), Math.round(v * 1.5)],
+      ok: 'اعرض',
+      onOk: (price) => {
+        market.listCamel(s, camelId, price, g.now());
+        this.toast('🏷️ انعرضت! المشترين بيراسلونك بعد شوي', 'gain', 3);
+        g.save();
+        done();
+      },
+    });
+  }
+
+  renamePrompt(id, done) {
+    const c = camels.camelById(this.g.state, id);
+    this.modal({
+      title: '✏️ سمّها', cls: 'small',
+      render: (mm) => {
+        mm.body.innerHTML = `<input id="nameIn" class="numin" maxlength="16" value="${esc(c.name)}"><div class="row center" style="margin-top:8px"><button class="btn green" data-a="ok">حفظ</button></div>`;
+        mm.handlers.ok = () => { const v = mm.body.querySelector('#nameIn').value.trim(); if (v) c.name = v; this.g.save(); mm.close(); done(); };
+      },
+    });
+  }
+
+  numberPrompt({ title, text, value, presets = [], ok, onOk }) {
+    this.modal({
+      title, cls: 'small',
+      render: (mm) => {
+        mm.body.innerHTML = `<p>${text}</p><div class="row center"><button class="btn" data-a="dec">−10%</button><input id="numIn" class="numin" type="number" inputmode="numeric" value="${value}"><button class="btn" data-a="inc">+10%</button></div>
+          <div class="row center" style="margin-top:6px">${presets.map(p => `<button class="btn mini2" data-a="set" data-v="${p}">${market.fmt(p)}</button>`).join('')}</div>
+          <div class="row center" style="margin-top:8px"><button class="btn green big" data-a="ok">${ok}</button></div>`;
+        const inp = mm.body.querySelector('#numIn');
+        inp.addEventListener('keydown', e => e.stopPropagation());
+        mm.handlers.dec = () => { inp.value = Math.max(1, Math.round(Number(inp.value) * 0.9)); };
+        mm.handlers.inc = () => { inp.value = Math.round(Number(inp.value) * 1.1); };
+        mm.handlers.set = (v) => { inp.value = v; };
+        mm.handlers.ok = () => { const n = Math.round(Number(inp.value)); if (!(n > 0)) return; mm.close(); onOk(n); };
+      },
+    });
+  }
+
+  renderMarket(m) {
+    const g = this.g;
+    const s = g.state;
+    const mk = s.market;
+    const idxRow = Object.entries(BREEDS).map(([b, d]) => {
+      const now = mk.index[b] || 1, prev = (mk.prevIndex && mk.prevIndex[b]) || now;
+      const up = now >= prev;
+      return `<span class="ctag"><b>${d.name}</b> ${Math.round(now * 100)}% <span style="color:${up ? '#2a8a2a' : '#c0302a'}">${up ? '▲' : '▼'}</span></span>`;
+    }).join('');
+    const open = mk.listings.filter(l => !l.closed);
+    m.body.innerHTML = `<div class="ctags" style="margin-bottom:6px">📈 مؤشر السوق: ${idxRow}</div>
+      <p class="muted">العروض تتجدد كل يوم باللعبة. كل بياع له طبعه: فيه الكريم وفيه المفاصل وفيه النصّاب. ساوم بذكاء!</p>
+      <div class="camels">${open.map(l => `<div class="ccard ${l.camel.rare ? 'rare' : ''}"><div class="cpic">${this.camelImg(l.camel)}</div>
+        <div class="cinfo"><h3>${esc(l.camel.name)} <small class="muted">— البياع: ${esc(l.seller)}</small></h3><div class="ctags">${this.camelTag(l.camel)}</div>
+        <div class="row"><b class="price">🪙 ${market.fmt(l.ask)}</b>${l.angry ? '<span class="muted">😤 زعلان منك</span>' : `<button class="btn green" data-a="buy" data-v="${l.id}" ${s.player.coins >= l.ask ? '' : 'disabled'}>اشترِ</button><button class="btn" data-a="haggle" data-v="${l.id}">ساوم 💬</button>`}</div></div></div>`).join('') || '<p class="muted">خلصت عروض اليوم. ارجع بكرة!</p>'}</div>`;
+    const after = (res) => {
+      if (res.result === 'bought') {
+        this.audio.play('deal');
+        g.fx.confetti(s.player.x, s.player.y - 20);
+        this.toast(`🤝 اشتريت ${res.camel.name} بـ ${market.fmt(res.price)}! تلقاها بالمراح`, 'gain', 4);
+        g.save();
+      } else if (res.result === 'poor') this.toast('ما عندك دراهم تكفي 💸');
+      else if (res.result === 'full') this.toast('المراح مليان! وسّعه أو بيع');
+      else if (res.result === 'nostable') this.toast('ابنِ المراح أول 🐪');
+      m.rerender();
+      this.refresh();
+    };
+    m.handlers.buy = (id) => after(market.buyAtAsk(s, id));
+    m.handlers.haggle = (id) => {
+      const l = mk.listings.find(x => x.id === id);
+      if (!l.log.length) l.log.push({ who: 'them', text: market.LINES.sellerOpen[0].replace('{x}', market.fmt(l.ask)) });
+      this.haggleChat({
+        title: `💬 ${l.seller}`, sub: `${l.camel.name} — ${camelBreedName(l.camel)}`,
+        log: () => l.log, current: () => l.ask, start: Math.round(l.ask * 0.75), acceptLabel: () => `اشترِ بـ ${market.fmt(l.ask)}`,
+        send: (n) => market.haggleBuy(s, id, n, g.rng),
+        accept: () => market.buyAtAsk(s, id),
+        onResult: (res) => { if (res.result === 'bought' || res.result === 'poor' || res.result === 'full' || res.result === 'nostable') { after(res); return true; } return res.result === 'leave'; },
+        done: () => m.rerender(),
+      });
+    };
+  }
+
+  renderMine(m) {
+    const g = this.g;
+    const s = g.state;
+    const mk = s.market;
+    m.body.innerHTML = mk.myListings.length ? mk.myListings.map(l => {
+      const c = camels.camelById(s, l.camelId);
+      if (!c) return '';
+      const offers = mk.offers.filter(o => o.listingId === l.id && !o.closed).sort((a, b) => b.amount - a.amount);
+      return `<div class="ccard ${c.rare ? 'rare' : ''}"><div class="cpic">${this.camelImg(c)}</div><div class="cinfo">
+        <h3>${esc(c.name)} <small class="muted">— طالب 🪙${market.fmt(l.ask)}</small></h3>
+        ${offers.length ? offers.map(o => `<div class="offer"><span>📩 <b>${esc(o.buyer)}</b>: 🪙 <b class="price">${market.fmt(o.amount)}</b></span>
+          <button class="btn green" data-a="accept" data-v="${o.id}">بيع 🤝</button><button class="btn" data-a="counter" data-v="${o.id}">ساوم 💬</button><button class="btn mini2" data-a="reject" data-v="${o.id}">✖</button></div>`).join('') : '<p class="muted">⏳ ننتظر المشترين... العروض تجي مع الوقت.</p>'}
+        <button class="btn mini2" data-a="unlist" data-v="${l.id}">اسحب العرض</button></div></div>`;
+    }).join('') + (mk.history.length ? `<h3>📜 آخر الصفقات</h3>${mk.history.slice(0, 6).map(h => `<div class="muted">${h.type === 'sell' ? '💰 بعت' : h.type === 'buy' ? '🛒 شريت' : '🔁 قايضت'} ${esc(h.name)}${h.got ? ' بـ ' + esc(h.got) : ''} ${h.price ? '🪙' + market.fmt(h.price) : ''} — ${esc(h.to)}</div>`).join('')}` : '')
+      : '<p class="muted">ما عرضت شي. روح لـ "مراحي" واضغط "اعرضها بالسوق" 🏷️</p>';
+    m.handlers.accept = (id) => this.sellDone(market.acceptOffer(s, id), m);
+    m.handlers.reject = (id) => { market.rejectOffer(s, id); m.rerender(); this.refresh(); };
+    m.handlers.unlist = (id) => { market.unlist(s, id); m.rerender(); this.refresh(); };
+    m.handlers.counter = (id) => {
+      const o = mk.offers.find(x => x.id === id);
+      const l = mk.myListings.find(x => x.id === o.listingId);
+      this.haggleChat({
+        title: `💬 ${o.buyer}`, sub: 'يبي يشتري ناقتك',
+        log: () => o.log, current: () => o.amount, start: Math.round(Math.max(o.amount * 1.25, l ? l.ask : 0)), acceptLabel: () => `بيع بـ ${market.fmt(o.amount)}`, sendLabel: 'اطلب',
+        send: (n) => market.counterOffer(s, id, n, g.rng),
+        accept: () => market.acceptOffer(s, id),
+        onResult: (res) => {
+          if (res && res.price !== undefined) { this.sellDone(res, m); return true; }
+          if (res && res.result === 'accept') { this.sellDone(market.acceptOffer(s, id), m); return true; }
+          return !res || res.result === 'leave';
+        },
+        done: () => { m.rerender(); this.refresh(); },
+      });
+    };
+  }
+
+  sellDone(res, m) {
+    const g = this.g;
+    if (!res) return;
+    const s = g.state;
+    this.audio.play(res.camel && res.camel.rare ? 'rare' : 'deal');
+    g.fx.confetti(s.player.x, s.player.y - 20);
+    if (res.price >= 20000) g.fx.goldRain(s.player.x, s.player.y - 60, 200);
+    this.toast(`🤝 بعت ${res.camel ? res.camel.name : ''} على ${res.buyer} بـ ${market.fmt(res.price)} درهم!`, res.price >= 20000 ? 'ach' : 'gain', 4);
+    g.save();
+    if (m) m.rerender();
+    this.refresh();
+  }
+
+  renderBarter(m) {
+    const g = this.g;
+    const s = g.state;
+    const list = s.market.barters.filter(b => !b.closed);
+    m.body.innerHTML = `<p class="muted">مقايضة: تاجر يبي وحدة من نياقك، ويعطيك ناقته مع فرق دراهم. تقدر تطلب فرق أكثر.</p>` + (list.map(b => {
+      const mine = camels.camelById(s, b.wantId);
+      if (!mine) return '';
+      return `<div class="barter"><div class="bside">${this.camelImg(mine, 50)}<b>${esc(mine.name)}</b><small>${camelBreedName(mine)} • جمال ${mine.beauty}</small><small>≈🪙${market.fmt(market.valueOf(s, mine))}</small></div>
+        <div class="barrow">⇄<br><b>${b.coins ? '+ 🪙' + market.fmt(b.coins) : 'بدون فرق'}</b><br><small>${esc(b.trader)}</small></div>
+        <div class="bside">${this.camelImg(b.give, 50)}<b>${esc(b.give.name)}</b><small>${camelBreedName(b.give)} • جمال ${b.give.beauty}</small><small>≈🪙${market.fmt(market.valueOf(s, b.give))}</small></div>
+        <div class="bact"><button class="btn green" data-a="acc" data-v="${b.id}">قايض 🔁</button><button class="btn" data-a="hag" data-v="${b.id}">زِد الفرق 💬</button></div></div>`;
+    }).join('') || '<p class="muted">ما فيه عروض مقايضة اليوم. (تحتاج يكون عندك نياق)</p>');
+    m.handlers.acc = (id) => {
+      const r = market.acceptBarter(s, id);
+      if (!r) return;
+      this.audio.play('deal');
+      this.toast(`🔁 قايضت ${r.gave.name} بـ ${r.got.name}${r.coins ? ' + ' + market.fmt(r.coins) + ' درهم' : ''}`, 'gain', 4);
+      g.save();
+      m.rerender();
+    };
+    m.handlers.hag = (id) => {
+      const b = s.market.barters.find(x => x.id === id);
+      this.haggleChat({
+        title: `💬 ${b.trader}`, sub: 'مقايضة: كم الفرق؟',
+        log: () => b.log, current: () => b.coins, start: Math.round(Math.max(100, b.coins * 1.5)), acceptLabel: () => `قايض + ${market.fmt(b.coins)}`, sendLabel: 'اطلب فرق',
+        send: (n) => market.haggleBarter(s, id, n, g.rng),
+        accept: () => market.acceptBarter(s, id),
+        onResult: (res) => {
+          if (res && res.got) { this.audio.play('deal'); this.toast(`🔁 تمت المقايضة! جتك ${res.got.name}`, 'gain', 3); g.save(); return true; }
+          if (res && res.result === 'accept') { const r2 = market.acceptBarter(s, id); if (r2) { this.audio.play('deal'); this.toast(`🔁 تمت المقايضة + ${market.fmt(r2.coins)}`, 'gain', 3); g.save(); } return true; }
+          return !res || res.result === 'leave';
+        },
+        done: () => m.rerender(),
+      });
+    };
+  }
+
+  // نافذة مساومة على شكل محادثة
+  haggleChat({ title, sub, log, current, start, acceptLabel, sendLabel = 'أرسل عرضي', send, accept, onResult, done }) {
+    let value = start;
+    let finished = false;
+    this.modal({
+      title, cls: 'small', onClose: done,
+      render: (mm) => {
+        mm.body.innerHTML = `<p class="muted">${esc(sub)}</p><div class="chat">${log().map(x => `<div class="msg ${x.who}">${esc(x.text)}</div>`).join('')}</div>
+          ${finished ? '<div class="row center"><button class="btn big" data-a="close">تمام</button></div>' : `<div class="row center"><button class="btn" data-a="dec">−10%</button><input id="hagIn" class="numin" type="number" inputmode="numeric" value="${value}"><button class="btn" data-a="inc">+10%</button></div>
+          <div class="row center" style="margin-top:6px"><button class="btn blue" data-a="send">${sendLabel} 💬</button><button class="btn green" data-a="acc">${acceptLabel()} 🤝</button></div>`}`;
+        const chat = mm.body.querySelector('.chat');
+        chat.scrollTop = chat.scrollHeight;
+        const inp = mm.body.querySelector('#hagIn');
+        if (inp) inp.addEventListener('keydown', e => e.stopPropagation());
+        mm.handlers.dec = () => { inp.value = Math.max(1, Math.round(Number(inp.value) * 0.9)); };
+        mm.handlers.inc = () => { inp.value = Math.round(Number(inp.value) * 1.1); };
+        mm.handlers.send = () => {
+          value = Math.round(Number(inp.value));
+          if (!(value > 0)) return;
+          this.audio.play('talk');
+          const res = send(value);
+          if (onResult(res)) finished = true;
+          if (res && res.result === 'leave') this.audio.play('deny');
+          mm.rerender();
+        };
+        mm.handlers.acc = () => {
+          const res = accept();
+          if (onResult(res)) { finished = true; mm.close(); return; }
+          mm.rerender();
+        };
+      },
+    });
+  }
+
+  renderMazayen(m) {
+    const g = this.g;
+    const s = g.state;
+    const friday = time.weekday(s) === 6;
+    const week = Math.floor((s.time.day - 1) / 7);
+    const adults = s.camels.filter(c => camels.isAdult(c));
+    if (!friday) { m.body.innerHTML = '<p>🏆 مزاين الإبل تنقام <b>كل جمعة</b> باللعبة. جهّز أجمل ناقة عندك! الجمال يتورّث من الأبوين، والنادرة لها بونص كبير.</p>'; return; }
+    if (s.mazayenWeek === week) { m.body.innerHTML = '<p>شاركت بمزاين هالأسبوع ✔ ارجع الجمعة الجاية.</p>'; return; }
+    m.body.innerHTML = `<p>🏆 اختر ناقة تشارك فيها بمزاين الجمعة:</p>` + (adults.map(c => `<div class="shop-row">${this.camelImg(c, 44)}<span class="nm">${esc(c.name)}<br><small class="muted">${camelBreedName(c)} • جمال ${c.beauty}</small></span><button class="btn green" data-a="enter" data-v="${c.id}">شارك</button></div>`).join('') || '<p class="muted">ما عندك نياق بالغة.</p>');
+    m.handlers.enter = (id) => {
+      const c = camels.camelById(s, id);
+      s.mazayenWeek = week;
+      const rng = g.rng;
+      const my = c.beauty + (c.rare ? 40 : 0) + Math.round(rng() * 25);
+      const rivals = market.TRADER_NAMES.slice().sort(() => rng() - 0.5).slice(0, 5).map(n => ({ n, sc: 30 + Math.round(rng() * 70) }));
+      const board = [...rivals, { n: 'أنت: ' + c.name, sc: my, me: true }].sort((a, b) => b.sc - a.sc);
+      const rank = board.findIndex(x => x.me) + 1;
+      const prize = [null, { coins: 800, chest: 'rare', xp: 50 }, { coins: 400, xp: 30 }, { coins: 200, xp: 20 }][rank] || { coins: 50, xp: 10 };
+      if (rank === 1) addStat(s, 'mazayenWins', 1);
+      m.body.innerHTML = `<h3>${rank === 1 ? '🥇 فزت بالمركز الأول!' : `المركز ${rank}`}</h3><ol class="board">${board.map(x => `<li class="${x.me ? 'me' : ''}">${esc(x.n)} — ${x.sc}</li>`).join('')}</ol><div class="row center"><button class="btn green big" data-a="close">استلم الجائزة</button></div>`;
+      g.claimReward(prize, null, true);
+      if (rank === 1) g.fx.confetti(s.player.x, s.player.y - 20);
+    };
+  }
+
+  rareBirth(calf) {
+    const g = this.g;
+    const s = g.state;
+    const v = market.valueOf(s, calf);
+    g.fx.goldRain(s.player.x, s.player.y - 80, 260);
+    g.shake = 6;
+    this.modal({
+      title: '✨ ناقة نادرة! ✨', cls: 'small rarebirth',
+      render: (m) => {
+        m.body.innerHTML = `<div class="reveal shine rarity-legendary"><div class="rare-pic">${this.camelImg(calf, 100)}</div>
+          <h2 class="rare-title">مبروك! ${esc(RARES[calf.rare].name)}</h2>
+          <p>ولدت لك <b>${esc(calf.name)}</b> — نادرة <b>1 من 50</b>!</p>
+          <p class="rare-value">قيمتها التقديرية: 🪙 ${market.fmt(v)}</p></div>
+          <div class="row center"><button class="btn big" data-a="close">خلها بالمراح</button><button class="btn green big" data-a="sell">اعرضها بالسوق 🏷️</button></div>`;
+        m.handlers.sell = () => { m.close(); this.listPrompt(calf.id, () => {}); };
+      },
+    });
   }
 
   // ---------- نوافذ المكافأة ----------

@@ -24,7 +24,7 @@ export const TECH = [
   { id: 't_crypt2',   name: 'طلاسم الطابق الثاني', desc: 'تفتح الطابق الثاني من السرداب.',   cost: { s: 6 },              req: ['t_staff'] },
   { id: 't_crypt3',   name: 'طلاسم الطابق الثالث', desc: 'تفتح أعمق طابق... على مسؤوليتك.', cost: { s: 10, c: 2 },       req: ['t_crypt2'] },
   { id: 't_armor',    name: 'درع جلد',         desc: 'الصحة القصوى +4.',                      cost: { c: 4, s: 4 },        req: ['t_staff'] },
-  { id: 't_stable',   name: 'مراح الإبل',      desc: 'تبني مراح للإبل.',                      cost: { c: 5, n: 5 },        req: ['t_farm2'] },
+  { id: 't_stable',   name: 'مراح الإبل',      desc: 'تبني مراح وتربي نياق. فيه نادرة 1 من 50!', cost: { c: 3, n: 3 },     req: [] },
   { id: 't_hospitality', name: 'الكرم العربي', desc: 'تبني المجلس. الضيوف +25% دراهم.',       cost: { c: 6, n: 4, s: 2 },  req: ['t_carpet', 't_coffee2'] },
 ];
 

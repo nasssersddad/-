@@ -17,6 +17,7 @@ export const WALL_N = { x0: 26, x1: 37, y: 12 };
 export const WALL_S = [{ x0: 23, x1: 29 }, { x0: 34, x1: 40 }];
 export const GATE = { x0: 31, x1: 32, y: 27 };
 export const OASIS = { cx: 53, cy: 20, r: 3.6, grass: 8 };
+export const PEN = { x0: 53, y0: 31, x1: 60, y1: 38 };
 
 function px(tx) {
   return tx * TILE + TILE / 2;
@@ -111,7 +112,10 @@ export function buildWorld() {
   add({ id: 'spot:wall_s', kind: 'spot', spot: 'wall_s', tx: 26, ty: 26 });
   add({ id: 'spot:gate', kind: 'spot', spot: 'gate', tx: 34, ty: 26 });
   // برا الخان
-  add({ id: 'spot:stable', kind: 'spot', spot: 'stable', tx: 45, ty: 24 });
+  add({ id: 'spot:stable', kind: 'spot', spot: 'stable', tx: 56, ty: 31 });
+  add({ id: 'spot:trough', kind: 'spot', spot: 'trough', tx: 54, ty: 33 });
+  add({ id: 'spot:pen2', kind: 'spot', spot: 'pen2', tx: 52, ty: 36 });
+  add({ id: 'spot:pen3', kind: 'spot', spot: 'pen3', tx: 52, ty: 38 });
   add({ id: 'spot:farm2', kind: 'spot', spot: 'farm2', tx: 41, ty: 34 });
   add({ id: 'tent', kind: 'tent', tx: 15, ty: 20, solid: true });
   add({ id: 'stall', kind: 'stall', tx: 10, ty: 21, solid: true });
@@ -168,6 +172,7 @@ export function buildWorld() {
     const t = get(tx, ty);
     if ((t !== T.SAND && t !== T.SAND2) || !free(tx, ty)) continue;
     if (tx >= KHAN.x0 - 1 && tx <= KHAN.x1 + 1 && ty >= KHAN.y0 - 1 && ty <= KHAN.y1 + 2) continue;
+    if (tx >= PEN.x0 - 2 && tx <= PEN.x1 + 1 && ty >= PEN.y0 - 1 && ty <= PEN.y1 + 1) continue;
     add({ id: 'deco' + n, kind: 'deco', variant: Math.floor(rng() * 4), tx, ty });
     mark(tx, ty);
   }

@@ -35,6 +35,9 @@ export const ITEMS = {
   melon:     { name: 'بطيخ',         icon: '🍉', price: 14, food: 15 },
   cardamom:  { name: 'هيل',          icon: '🫛', price: 8 },
 
+  milk:      { name: 'حليب ناقة',    icon: '🥛', price: 12, food: 14 },
+  alfalfa:   { name: 'برسيم',        icon: '🌿', price: 3 },
+  seed_alfalfa: { name: 'بذور برسيم', icon: '🌰', price: 1 },
   oldcoin:   { name: 'درهم قديم',    icon: '🪙', price: 25 },
   bone:      { name: 'ناب غول',      icon: '🦴', price: 12 },
   stinger:   { name: 'إبرة عقرب',    icon: '🦂', price: 9 },
@@ -45,6 +48,7 @@ export const SEEDS = {
   seed_wheat: { crop: 'wheat', days: 3, yield: [3, 4], name: 'قمح' },
   seed_melon: { crop: 'melon', days: 4, yield: [1, 2], name: 'بطيخ' },
   seed_cardamom: { crop: 'cardamom', days: 3, yield: [2, 3], name: 'هيل' },
+  seed_alfalfa: { crop: 'alfalfa', days: 2, yield: [3, 5], name: 'برسيم' },
 };
 
 // التحف الأثرية (الألبوم)

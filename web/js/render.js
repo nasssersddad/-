@@ -1,6 +1,8 @@
 // الرسم: طبقة العالم (بكسلات مكبّرة) + طبقة عالية الدقة للنصوص والفقاعات
 import * as art from './engine/art.js';
-import { TILE, MAP_W, MAP_H, T, KHAN, GATE } from './data/map.js';
+import { TILE, MAP_W, MAP_H, T, KHAN, GATE, PEN } from './data/map.js';
+import { camelColors } from './data/camels.js';
+import * as camelSys from './systems/camels.js';
 import { DW, DH, dTile, D } from './systems/dungeon.js';
 import { NPCS, GUEST_LOOKS } from './data/npcs.js';
 import { ITEMS, SEEDS } from './data/items.js';
@@ -184,7 +186,13 @@ export class Renderer {
           list.push({ y: o.y - 14, draw: (ctx, cam) => ctx.drawImage(art.soilPlot(!!(p && p.watered)), Math.round(o.x - 9 - cam.x), Math.round(o.y - 13 - cam.y)) });
           if (p) {
             const def = SEEDS[p.seed];
-            this.sprite(list, art.crop(def.crop, p.stage, def.days), o.x, o.y + 1, o.y - 2, { ox: sh });
+            const img = art.crop(def.crop, p.stage, def.days);
+            const pk = o.popT ? Math.min(1, (t - o.popT) / 0.35) : 1;
+            const sc = pk < 1 ? 0.3 + pk * 0.9 - Math.max(0, pk - 0.75) * 0.8 : 1;
+            list.push({ y: o.y - 2, draw: (ctx, cam) => {
+              const w = img.width * sc, h = img.height * sc;
+              ctx.drawImage(img, Math.round(o.x - w / 2 - cam.x + sh), Math.round(o.y + 1 - h - cam.y), Math.round(w), Math.round(h));
+            } });
           }
           break;
         }
@@ -218,10 +226,7 @@ export class Renderer {
       this.sprite(list, art.camel(0), e.x - 30, e.y + 22, e.y + 22);
       this.sprite(list, art.camel(1), e.x + 36, e.y + 26, e.y + 26);
     }
-    if (s.built.stable) {
-      const st = game.worldObjById['spot:stable'];
-      this.sprite(list, art.camel(Math.floor(t) % 2), st.x - 8, st.y - 6, st.y - 6);
-    }
+    if (s.built.stable) this.collectPen(game, list, lights);
     for (const g of game.guestRt) {
       const frame = g.moving ? 1 + (Math.floor(t * 6) % 2) : 0;
       this.sprite(list, art.character(GUEST_LOOKS[g.look], g.dir || 'down', frame, 'guest' + g.look), g.x, g.y, g.y);
@@ -265,7 +270,9 @@ export class Renderer {
           for (let i = 0; i < 5; i++) this.sprite(list, art.cushion(), o.x - 26 + i * 13, o.y - 16, o.y - 25);
           break;
         }
-        case 'stable': this.sprite(list, art.stableArt(), o.x, o.y + 8, o.y - 30); break;
+        case 'stable': break;
+        case 'pen2': case 'pen3': break;
+        case 'trough': this.sprite(list, art.trough(s.trough.water), o.x, o.y + 4, o.y); break;
         default: break;
       }
       return;
@@ -277,6 +284,47 @@ export class Renderer {
     const bob = Math.round(Math.sin(t * 3 + o.tx) * 1);
     this.sprite(list, art.buildSign(), o.x, o.y + 2, o.y, { alpha: status.needTech ? 0.55 : 1, oy: 0 });
     list.push({ y: o.y + 1, draw: (ctx, cam) => { ctx.globalAlpha = 0.5 + Math.sin(t * 3) * 0.2; ctx.drawImage(art.ghostOutline(18, 12), Math.round(o.x - 9 - cam.x), Math.round(o.y - 10 - cam.y + bob * 0)); ctx.globalAlpha = 1; } });
+  }
+
+  collectPen(game, list, lights) {
+    const s = game.state;
+    const t = game.t;
+    const x0 = PEN.x0 * TILE, x1 = (PEN.x1 + 1) * TILE, y0 = PEN.y0 * TILE + 8, y1 = (PEN.y1 + 1) * TILE;
+    const post = art.fencePost();
+    const rail = (ax, ay, bx, by) => list.push({ y: Math.max(ay, by) - 1, draw: (ctx, cam) => {
+      ctx.fillStyle = '#8a5a33';
+      if (ay === by) { ctx.fillRect(Math.round(ax - cam.x), Math.round(ay - 8 - cam.y), bx - ax, 1); ctx.fillRect(Math.round(ax - cam.x), Math.round(ay - 4 - cam.y), bx - ax, 1); }
+      else { ctx.fillRect(Math.round(ax - cam.x), Math.round(ay - 8 - cam.y), 1, by - ay); }
+    } });
+    for (let x = x0; x <= x1; x += 12) { this.sprite(list, post, x, y0, y0 - 1); this.sprite(list, post, x, y1, y1); }
+    for (let y = y0 + 12; y < y1; y += 12) { this.sprite(list, post, x1, y, y); if (y < y0 + 30 || y > y0 + 62) this.sprite(list, post, x0, y, y); }
+    rail(x0, y0, x1, y0); rail(x0, y1, x1, y1); rail(x1, y0, x1, y1);
+    rail(x0, y0, x0, y0 + 30); rail(x0, y0 + 62, x0, y1);
+    // مظلة
+    list.push({ y: y0 + 2, draw: (ctx, cam) => {
+      const sx = Math.round(x1 - 50 - cam.x), sy = Math.round(y0 - 16 - cam.y);
+      ctx.fillStyle = '#c8b080'; ctx.fillRect(sx, sy, 46, 5);
+      ctx.fillStyle = '#a89060'; ctx.fillRect(sx, sy + 5, 46, 1);
+      ctx.fillStyle = '#5e3a1f'; ctx.fillRect(sx + 2, sy + 5, 2, 12); ctx.fillRect(sx + 42, sy + 5, 2, 12);
+    } });
+    const rts = game.camelRt || {};
+    for (const c of s.camels) {
+      const rt = rts[c.id];
+      if (!rt) continue;
+      const col = camelColors(c);
+      const frame = rt.moving ? 1 + (Math.floor(t * 4 + rt.x) % 2) : 0;
+      const img = art.camelSprite(col, frame, c.rare || c.breed);
+      const sc = camelSys.isAdult(c) ? 1 : 0.62;
+      list.push({ y: rt.y, draw: (ctx, cam) => {
+        const w = img.width * sc, h = img.height * sc;
+        ctx.save();
+        ctx.translate(Math.round(rt.x - cam.x), Math.round(rt.y - cam.y));
+        if (rt.dir < 0) ctx.scale(-1, 1);
+        ctx.drawImage(img, Math.round(-w / 2), Math.round(-h + 2), Math.round(w), Math.round(h));
+        ctx.restore();
+      } });
+      if (c.rare) lights.push({ x: rt.x, y: rt.y - 10, r: 34, c: col.glow });
+    }
   }
 
   spotStatusCache(game, id) {
@@ -329,7 +377,9 @@ export class Renderer {
     const t = game.t;
     const frame = game.moving ? 1 + (Math.floor(t * 8) % 2) : 0;
     const blink = game.hurtT > 0 && Math.floor(t * 20) % 2 === 0;
-    const img = art.character(art.PLAYER_LOOK, p.dir, frame, 'player');
+    const a = game.anim;
+    const crouch = a && ['plant', 'milk', 'harvest', 'feed'].includes(a.type);
+    const img = art.character(art.PLAYER_LOOK, a && (a.type === 'water' || a.type === 'pour' || crouch) ? (p.dir === 'up' || p.dir === 'down' ? p.dir : p.dir) : p.dir, frame, 'player');
     list.push({
       y: p.y,
       draw: (ctx, cam) => {
@@ -337,8 +387,15 @@ export class Renderer {
         ctx.fillStyle = 'rgba(0,0,0,0.22)';
         ctx.fillRect(x - 5, y, 10, 2);
         ctx.fillRect(x - 4, y - 1, 8, 1);
-        if (!blink) ctx.drawImage(img, x - 8, y - 22);
-        if (game.swing > 0) this.drawTool(ctx, game, x, y);
+        if (!blink) {
+          if (crouch) {
+            const k = a.t / a.dur;
+            const dip = Math.round(Math.sin(Math.min(1, k * 1.4) * Math.PI) * 3) + 2;
+            ctx.drawImage(img, x - 8, y - 22 + dip, 16, 24 - dip);
+          } else ctx.drawImage(img, x - 8, y - 22);
+        }
+        if (a) this.drawAction(ctx, game, x, y);
+        else if (game.swing > 0) this.drawTool(ctx, game, x, y);
       },
     });
     if (game.mode === 'dungeon') lights.push({ x: p.x, y: p.y - 10, r: 78, c: 'rgba(255,200,120,', flicker: true });
@@ -349,6 +406,69 @@ export class Renderer {
       const dj = art.character(art.DJINN_LOOK, 'down', 0, 'djinn');
       list.push({ y: lamp.y + 1, draw: (ctx, cam) => { ctx.globalAlpha = 0.85; ctx.drawImage(dj, Math.round(lamp.x - 8 - cam.x), Math.round(lamp.y - 34 - cam.y + Math.sin(t * 3) * 2)); ctx.globalAlpha = 1; } });
     }
+  }
+
+  drawAction(ctx, game, x, y) {
+    const a = game.anim;
+    const p = game.state.player;
+    const k = Math.min(1, a.t / a.dur);
+    const side = p.dir === 'left' ? -1 : 1;
+    if (a.type === 'chop' || a.type === 'mine' || a.type === 'dig' || a.type === 'pick') {
+      if (a.type === 'pick') return;
+      const tool = { chop: 'axe', mine: 'pick', dig: 'shovel' }[a.type];
+      const ang = (-1.8 + Math.min(1, k * 1.8) * 2.6) * side;
+      this.toolAt(ctx, tool, x + side * 4, y - 12, ang);
+      return;
+    }
+    if (a.type === 'water' || a.type === 'pour') {
+      const tilt = Math.min(1, k / 0.3) * (k > 0.85 ? (1 - k) / 0.15 : 1);
+      ctx.save();
+      ctx.translate(x + side * 7, y - 15);
+      ctx.rotate(tilt * 1.7 * side);
+      ctx.drawImage(art.heldJar(), -6, -7, 12, 13);
+      ctx.restore();
+      return;
+    }
+    if (a.type === 'plant' || a.type === 'harvest') {
+      const ang = (a.type === 'plant' ? 2.2 + Math.sin(k * Math.PI * 4) * 0.6 : 0.4 - k * 1.2) * side;
+      ctx.save();
+      ctx.translate(x + side * 6, y - 8);
+      ctx.rotate(ang);
+      ctx.scale(0.7, 0.7);
+      ctx.fillStyle = '#6e4424'; ctx.fillRect(-1, -10, 2, 10);
+      ctx.fillStyle = '#b8b8c0'; ctx.fillRect(-2, -14, 4, 4);
+      ctx.restore();
+      return;
+    }
+    if (a.type === 'milk') {
+      const tx = a.target ? Math.round(a.target.x - this.cam.x) : x + side * 10;
+      ctx.drawImage(art.bowl(k), Math.round((x + tx) / 2) - 5, y - 5);
+      if (Math.floor(game.t * 12) % 2 && k < 0.8) { ctx.fillStyle = '#fff'; ctx.fillRect(Math.round((x + tx) / 2), y - 9, 1, 3); }
+      return;
+    }
+    if (a.type === 'draw') {
+      const w = a.target;
+      const wx = Math.round(w.x - this.cam.x), wy = Math.round(w.y - this.cam.y);
+      const up = k < 0.5 ? k * 2 : 1 - (k - 0.5) * 2;
+      const by = wy - 20 + Math.round((1 - up) * 10);
+      ctx.fillStyle = '#caa46c';
+      ctx.fillRect(wx, wy - 24, 1, by - (wy - 24));
+      ctx.drawImage(art.bucket(), wx - 3, by);
+    }
+  }
+
+  toolAt(ctx, tool, x, y, ang) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(ang);
+    ctx.fillStyle = '#6e4424';
+    ctx.fillRect(-1, -12, 2, 12);
+    ctx.fillStyle = tool === 'staff' ? '#c9a060' : '#b8b8c0';
+    if (tool === 'axe') ctx.fillRect(-1, -13, 5, 4);
+    else if (tool === 'pick') ctx.fillRect(-5, -13, 10, 2);
+    else if (tool === 'shovel') ctx.fillRect(-2, -15, 4, 4);
+    else ctx.fillRect(-1, -16, 2, 5);
+    ctx.restore();
   }
 
   drawTool(ctx, game, x, y) {
@@ -446,6 +566,17 @@ export class Renderer {
         const [x, y] = toScreen(g.x, g.y - 30);
         this.bubble(f, x, y + Math.sin(t * 3 + g.x) * 2 * this.dpr, g.served ? '❤️' : ITEMS[g.want].icon, g.golden);
       }
+      if (s.built.stable && game.camelRt) {
+        for (const c of s.camels) {
+          const rt = game.camelRt[c.id];
+          if (!rt || !this.visible(rt.x, rt.y, cam, 0)) continue;
+          const [x, y] = toScreen(rt.x, rt.y - 26);
+          if (c.rare) this.label(f, x, y - 14 * this.dpr, '✨ ' + c.name, '#ffe07a');
+          const needs = camelSys.camelNeeds(c, s.time.day).filter(n => n !== 'milk');
+          if (needs.length) { f.globalAlpha = 0.85; this.bubble(f, x + 10 * this.dpr, y + 4 * this.dpr, needs[0] === 'water' ? '💧' : '🌿', false, 0.7); f.globalAlpha = 1; }
+          else if (c.pregnant) { f.font = `${12 * this.dpr}px sans-serif`; f.fillText('🤰', x + 10 * this.dpr, y); }
+        }
+      }
       for (const [id, pos] of Object.entries(game.world.npcSpots)) {
         if (!game.npcPresent(id)) continue;
         const [x, y] = toScreen(pos.x, pos.y - 28);
@@ -495,6 +626,9 @@ export class Renderer {
         const d = Math.hypot(o.x - p.x, o.y - p.y);
         if (d < bd) { bd = d; pos = o; }
       }
+    } else if (q.target === 'camel') {
+      const c = s.camels[0];
+      pos = c && game.camelRt && game.camelRt[c.id] ? game.camelRt[c.id] : game.worldObjById['spot:stable'];
     } else if (q.target === 'guest') {
       pos = game.guestRt.find(g => !g.served && !g.moving) || (game.guestRt.length ? null : game.worldObjById.hearth);
     }
@@ -528,8 +662,8 @@ export class Renderer {
     f.restore();
   }
 
-  bubble(f, x, y, icon, golden) {
-    const r = 14 * this.dpr;
+  bubble(f, x, y, icon, golden, scale = 1) {
+    const r = 14 * this.dpr * scale;
     f.fillStyle = golden ? '#ffe9a0' : '#fffaf0';
     f.strokeStyle = golden ? '#c08a10' : 'rgba(70,40,15,0.8)';
     f.lineWidth = 2 * this.dpr;
@@ -537,7 +671,7 @@ export class Renderer {
     f.arc(x, y, r, 0, Math.PI * 2);
     f.moveTo(x - 4 * this.dpr, y + r - 2); f.lineTo(x, y + r + 6 * this.dpr); f.lineTo(x + 4 * this.dpr, y + r - 2);
     f.fill(); f.stroke();
-    f.font = `${16 * this.dpr}px sans-serif`;
+    f.font = `${16 * this.dpr * scale}px sans-serif`;
     f.fillStyle = '#000';
     f.fillText(icon, x, y + 1);
   }

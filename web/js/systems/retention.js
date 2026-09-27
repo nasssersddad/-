@@ -30,7 +30,7 @@ export function ensureDailyQuests(state, now) {
   const today = dateKey(now);
   if (state.daily.dqDate === today && state.daily.dq.length) return false;
   const rng = mulberry32(hashString(today + ':' + state.seed));
-  const pool = DAILY_QUEST_POOL.filter(q => q.id !== 'enemy' || state.built.crypt_door);
+  const pool = DAILY_QUEST_POOL.filter(q => (q.id !== 'enemy' || state.built.crypt_door) && (!q.needs || state.built[q.needs]));
   const chosen = [];
   while (chosen.length < 3 && pool.length) {
     const i = Math.floor(rng() * pool.length);

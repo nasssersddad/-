@@ -373,3 +373,30 @@ canvas.bigmap { width: 100%; display: block; border: 3px solid var(--wood); bord
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; margin-left: 3px; }
 
 .hud-left .hbtn.small { width: 38px; height: 38px; border-radius: 50%; }
+
+/* الإعدادات الجديدة */
+.setgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
+.setcard { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; border-radius: 14px; border: 2px solid rgba(107,63,31,.45); background: rgba(255,255,255,.5); font: 700 13px Cairo; color: var(--ink); box-shadow: 0 3px 0 rgba(107,63,31,.35); }
+.setcard .si { font-size: 26px; line-height: 1.1; }
+.setcard .sv { font-size: 11px; color: #8a2a10; }
+.setcard.on { background: linear-gradient(#e6ffd6, #bfe8a0); border-color: var(--green); }
+.setcard.on .sv { color: #1a6a10; }
+.setcard:active { transform: translateY(2px); box-shadow: none; }
+.btn.wide { display: block; width: 100%; margin: 4px 0 6px; }
+.btn.tiny { font-size: 12px; padding: 3px 10px; }
+
+/* كيف ألعب */
+.helpnav { display: flex; gap: 5px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 6px; }
+.hbtn2 { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; min-width: 72px; padding: 4px 6px; border-radius: 12px; border: 2px solid rgba(107,63,31,.4); background: rgba(255,255,255,.45); font-size: 22px; }
+.hbtn2 small { font: 700 10.5px Cairo; color: var(--ink); white-space: nowrap; }
+.hbtn2.on { background: linear-gradient(#f5c451, #d9901a); border-color: var(--wood); }
+.helpcard { background: rgba(255,255,255,.55); border: 2px solid rgba(107,63,31,.4); border-radius: 16px; padding: 10px 14px; text-align: center; }
+.helpcard .hbig { font-size: 44px; line-height: 1.1; }
+.helpcard h3 { margin: 2px 0 6px; font: 700 20px Kufi, Cairo; color: var(--wood); }
+.helpcard ol { text-align: right; margin: 0 0 10px; padding-right: 22px; font-size: 14px; line-height: 1.8; }
+.helpcard ol li::marker { color: #d9901a; font-weight: 700; }
+.sbtn.help { background: radial-gradient(circle at 40% 35%, #6ab0ff, #2f78b8); }
+
+/* حجم كلام كبير */
+#game.bigtext .panel { zoom: 1.15; width: calc(min(820px, 96vw) / 1.15); max-height: calc(92vh / 1.15); }
+#game.bigtext #quest, #game.bigtext #dqMini, #game.bigtext #toasts, #game.bigtext #dialog { zoom: 1.15; }

@@ -347,6 +347,48 @@ export function rock(variant, cracks) {
   });
 }
 
+// صخرة كبيرة (تعطي حجر أكثر)
+export function bigRock(variant, cracks) {
+  return cached(`bigrock:${variant}:${cracks}`, 30, 22, (ctx) => {
+    ellipse(ctx, 15, 19, 13, 3, 'rgba(0,0,0,0.22)');
+    ellipse(ctx, 15, 12, 12, 8, PAL.stoneDark);
+    ellipse(ctx, 14, 11, 11, 7, PAL.stone);
+    ellipse(ctx, 22, 14, 5, 4, PAL.stoneDark);
+    ellipse(ctx, 21, 13, 4, 3, PAL.stone);
+    ellipse(ctx, 11, 7, 5, 3, PAL.stoneLight);
+    P(ctx, 18, 9, PAL.stoneLight); P(ctx, 7, 14, PAL.stoneDark); P(ctx, 16, 16, PAL.stoneDark);
+    if (variant % 2) { R(ctx, 6, 12, 2, 1, '#8a9a4a'); R(ctx, 19, 7, 2, 1, '#8a9a4a'); } // أشنة
+    if (cracks >= 1) line(ctx, 12, 5, 15, 15, '#4a443e');
+    if (cracks >= 2) line(ctx, 19, 8, 17, 17, '#4a443e');
+    if (cracks >= 3) line(ctx, 8, 9, 13, 12, '#4a443e');
+  });
+}
+
+// شجرة سدر: تاج أخضر عريض وجذع قصير ملتوي
+export function sidr(variant, sway, stump) {
+  return cached(`sidr:${variant}:${sway}:${stump}`, 40, 40, (ctx) => {
+    const bx = 20, by = 38;
+    ellipse(ctx, bx, by, 12, 3, 'rgba(0,0,0,0.2)');
+    if (stump) {
+      R(ctx, bx - 3, by - 5, 6, 5, PAL.woodDark);
+      R(ctx, bx - 3, by - 5, 6, 1, PAL.woodLight);
+      return;
+    }
+    // الجذع والأغصان
+    line(ctx, bx, by, bx - 1, by - 10, PAL.woodDark, 3);
+    line(ctx, bx - 1, by - 10, bx - 7, by - 16, PAL.wood, 2);
+    line(ctx, bx - 1, by - 10, bx + 6, by - 17, PAL.wood, 2);
+    P(ctx, bx, by - 4, PAL.woodLight); P(ctx, bx - 1, by - 8, PAL.woodLight);
+    // التاج
+    const blobs = [[-9, -19, 8, 6], [7, -20, 9, 6], [-1, -25, 10, 7], [-13, -14, 5, 4], [12, -14, 6, 4]];
+    for (const [dx, dy, rx, ry] of blobs) ellipse(ctx, bx + dx + (sway * (dx > 0 ? 1 : -1)) * 0.5, by + dy + 1, rx, ry, '#3f6a24');
+    for (const [dx, dy, rx, ry] of blobs) ellipse(ctx, bx + dx + (sway * (dx > 0 ? 1 : -1)) * 0.5, by + dy, rx - 1, ry - 1, '#5a8a32');
+    for (const [dx, dy, rx] of blobs) { ellipse(ctx, bx + dx - rx * 0.3, by + dy - 2, Math.max(1, rx * 0.4), 1.5, '#7fb046'); }
+    // ثمر النبق
+    if (variant % 2 === 0) for (const [dx, dy] of [[-8, -18], [4, -22], [9, -16], [-3, -26], [-12, -13]]) { P(ctx, bx + dx, by + dy, '#d9a030'); P(ctx, bx + dx + 1, by + dy, '#b87a1a'); }
+  });
+}
+
 export function clayPit(empty) {
   return cached('clay:' + empty, 18, 12, (ctx) => {
     ellipse(ctx, 9, 7, 8, 4, '#5a3620');
@@ -789,7 +831,14 @@ export function camelSprite(col, frame, key) {
     ellipse(ctx, 12, 8, 3, 2, h);
     R(ctx, 6, 14, 17, 2, d);
     R(ctx, 5, 11, 2, 4, c); P(ctx, 4, 12, d); // الذيل
-    // الرقبة والراس
+    // الرقبة والراس (frame 3 و4 = راسها نازل تاكل، والفك يتحرك)
+    if (frame >= 3) {
+      line(ctx, 22, 13, 25, 19, c, 3);
+      R(ctx, 24, 19, 5, 3, c); R(ctx, 28, 21 - (frame === 4 ? 1 : 0), 2, 1 + (frame === 4 ? 1 : 0), d);
+      P(ctx, 25, 19, '#1a1010');
+      R(ctx, 24, 18, 2, 1, d);
+      return;
+    }
     line(ctx, 22, 12, 24, 6, c, 3);
     R(ctx, 23, 3, 6, 4, c); R(ctx, 27, 5, 2, 2, d);
     P(ctx, 26, 4, '#1a1010');

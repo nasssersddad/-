@@ -496,6 +496,33 @@ await tick(300);
 await shot('47-map');
 await closeModals();
 
+// 18) المطر ونياق الجيران والإعدادات وكيف ألعب
+await settle();
+const wx = await ev(async () => {
+  const g = window.__game, s = g.state;
+  const herd0 = g.wildRt.herd.map(r => [r.x, r.y]);
+  const free = g.world.objects.find(o => o.kind === 'plot' && !s.plots[o.id] && (o.group === 1 || s.built.farm2));
+  if (free) s.plots[free.id] = { seed: 'seed_wheat', stage: 0, watered: false };
+  g.wxOverride = { rain: true, start: Math.floor(s.time.minute / 60), end: Math.floor(s.time.minute / 60) + 2, heavy: true };
+  s.rainDay = null;
+  await new Promise(r => setTimeout(r, 1500));
+  const watered = free ? s.plots[free.id].watered : true;
+  const moved = g.wildRt.herd.some((r, i) => Math.hypot(r.x - herd0[i][0], r.y - herd0[i][1]) > 2);
+  return { watered, moved, rain: g.rainLevel() > 0, trees: g.world.objects.filter(o => o.kind === 'sidr').length };
+});
+console.log('weather:', wx);
+await shot('48-rain');
+await ev(() => { window.__game.wxOverride = { rain: false }; });
+await closeModals();
+await ev(() => window.__game.ui.openSettings());
+await tick(300);
+await shot('49-settings');
+await closeModals();
+await ev(() => window.__game.ui.openHelp(2));
+await tick(300);
+await shot('50-help');
+await closeModals();
+
 // حفظ وتحميل
 await settle();
 const saved = await ev(() => { window.__game.save(); return JSON.parse(localStorage.getItem('almuzare_save')).player.coins; });
@@ -517,6 +544,10 @@ server.close();
 const fatal = errors.filter(e => !/favicon/.test(e));
 if (fatal.length) {
   console.error('❌ أخطاء بالمتصفح:\n' + fatal.join('\n'));
+  process.exit(1);
+}
+if (!wx.watered || !wx.moved || !wx.rain || wx.trees < 10) {
+  console.error('❌ المطر أو الرعي فيه مشكلة', wx);
   process.exit(1);
 }
 if (hub.seed !== 'seed_carrot' || hub.carrots !== 5 || hub.sold <= 0 || !hub.advN || !hub.guided || hub.traits.some(n => n < 1)) {

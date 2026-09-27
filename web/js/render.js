@@ -7,7 +7,7 @@ import * as sheepSys from './systems/sheep.js';
 import { OW_W, OW_H, FARMS, owTile } from './data/openworld.js';
 import * as farmsSys from './systems/farms.js';
 import { camelColors as camelCol } from './data/camels.js';
-import { camelColors } from './data/camels.js';
+import { camelColors, BREEDS } from './data/camels.js';
 import * as camelSys from './systems/camels.js';
 import { DW, DH, dTile, D } from './systems/dungeon.js';
 import { NPCS, GUEST_LOOKS } from './data/npcs.js';
@@ -148,9 +148,10 @@ export class Renderer {
     const dusk = dungeon ? 0 : Math.max(band(16, 18, 18.8, 20.5), band(4.5, 6, 6.5, 8) * 0.7);
     const night = dungeon ? 0 : darkness(game.state.time.minute);
     const storm = game.eventMod && game.eventMod('storm') && game.mode === 'world' ? 1 : 0;
+    const rain = game.rainLevel ? game.rainLevel() : 0;
     this.post.render(this.wc, {
-      time: game.t, warm, dusk, night, dungeon,
-      haze: Math.min(1, warm * 0.9 + storm * 0.8),
+      time: game.t, warm: warm * (1 - rain * 0.8), dusk, night, dungeon, rain,
+      haze: Math.min(1, warm * 0.9 * (1 - rain) + storm * 0.8),
       bloom: 0.5 + night * 0.15 + dungeon * 0.2,
     });
   }
@@ -257,8 +258,14 @@ export class Renderer {
           this.sprite(list, art.palm(o.tx % 5, sway, dep), o.x, o.y + 2, o.y, { ox: sh + (hitsDone ? 0 : 0) });
           break;
         }
+        case 'sidr': {
+          const dep = game.depleted(o);
+          const sway = dep ? 0 : Math.round(Math.sin(t * 1.1 + o.ty) * 1.2);
+          this.sprite(list, art.sidr(o.tx % 3, sway, dep), o.x, o.y + 2, o.y, { ox: sh });
+          break;
+        }
         case 'rock':
-          if (!game.depleted(o)) this.sprite(list, art.rock(o.tx % 2, game.nodeHits(o)), o.x, o.y + 2, o.y, { ox: sh });
+          if (!game.depleted(o)) this.sprite(list, o.variant === 'big' ? art.bigRock(o.tx % 2, game.nodeHits(o)) : art.rock(o.tx % 2, game.nodeHits(o)), o.x, o.y + 2, o.y, { ox: sh });
           else this.sprite(list, art.deco(1), o.x, o.y + 2, o.y - 8);
           break;
         case 'clay': this.sprite(list, art.clayPit(game.depleted(o)), o.x, o.y + 2, o.y - 8, { ox: sh }); break;
@@ -345,10 +352,21 @@ export class Renderer {
       }
     }
     // القافلة
-    if (game.guestRt.length) {
-      const e = game.world.caravanEntry;
-      this.sprite(list, art.camel(0), e.x - 30, e.y + 22, e.y + 22);
-      this.sprite(list, art.camel(1), e.x + 36, e.y + 26, e.y + 26);
+    // نياق القافلة ونياق الجيران اللي ترعى حول الواحة
+    if (game.wildRt) {
+      const herds = game.guestRt.length ? game.wildRt.caravan.concat(game.wildRt.herd) : game.wildRt.herd;
+      for (const rt of herds) {
+        if (!this.visible(rt.x, rt.y, cam)) continue;
+        const frame = rt.eating ? 3 + (Math.floor(t * 3 + rt.home.x) % 2) : rt.moving ? 1 + (Math.floor(t * 4 + rt.x) % 2) : 0;
+        const img = art.outlined(art.camelSprite(BREEDS[rt.breed], frame, rt.breed));
+        list.push({ y: rt.y, draw: (ctx, cam2) => {
+          ctx.save();
+          ctx.translate(Math.round(rt.x - cam2.x), Math.round(rt.y - cam2.y));
+          if (rt.dir < 0) ctx.scale(-1, 1);
+          ctx.drawImage(img, Math.round(-img.width / 2), Math.round(-img.height + 2));
+          ctx.restore();
+        } });
+      }
     }
     if (s.built.stable) this.collectPen(game, list, lights);
     if (s.built.sheepfold) this.collectFold(game, list);
@@ -499,7 +517,7 @@ export class Renderer {
       const rt = rts[c.id];
       if (!rt) continue;
       const col = camelColors(c);
-      const frame = rt.moving ? 1 + (Math.floor(t * 4 + rt.x) % 2) : 0;
+      const frame = rt.eating ? 3 + (Math.floor(t * 3 + rt.x) % 2) : rt.moving ? 1 + (Math.floor(t * 4 + rt.x) % 2) : 0;
       const img = art.outlined(art.camelSprite(col, frame, c.rare || c.breed));
       const sc = camelSys.isAdult(c) ? 1 : 0.62;
       list.push({ y: rt.y, draw: (ctx, cam) => {
@@ -662,7 +680,7 @@ export class Renderer {
     const p = game.state.player;
     const k = 1 - game.swing / 0.25;
     const t = game.target;
-    const tool = game.mode === 'dungeon' ? 'staff' : t && t.kind === 'rock' ? 'pick' : t && t.kind === 'clay' ? 'shovel' : t && t.kind === 'palm' ? 'axe' : null;
+    const tool = game.mode === 'dungeon' ? 'staff' : t && t.kind === 'rock' ? 'pick' : t && t.kind === 'clay' ? 'shovel' : t && (t.kind === 'palm' || t.kind === 'sidr') ? 'axe' : null;
     if (!tool) return;
     const side = p.dir === 'left' ? -1 : 1;
     const ang = (-1.6 + k * 2.4) * side;
@@ -677,6 +695,52 @@ export class Renderer {
     else if (tool === 'shovel') ctx.fillRect(-2, -15, 4, 4);
     else ctx.fillRect(-1, -16, 2, 5);
     ctx.restore();
+  }
+
+  // المطر (خطوط بكسل مايلة ورشّات بالأرض) وقوس قزح بعده
+  drawRain(game) {
+    if (game.mode === 'dungeon' || !game.rainLevel) return;
+    const r = game.rainLevel(), rb = game.rainbowLevel();
+    const ctx = this.w;
+    const t = game.t;
+    const W = this.bw, H = this.bh;
+    if (r > 0) {
+      ctx.fillStyle = `rgba(30,50,80,${0.2 * r})`;
+      ctx.fillRect(0, 0, W, H);
+      const n = Math.round(220 * r);
+      ctx.fillStyle = 'rgba(200,222,255,0.6)';
+      for (let i = 0; i < n; i++) {
+        const sp = 230 + (i % 5) * 35;
+        const y = ((i * 41.7 + t * sp) % (H + 24)) - 12;
+        const x = ((i * 73.13 + t * 55 + y * 0.25) % (W + 20)) - 10;
+        ctx.fillRect(Math.round(x), Math.round(y), 1, 3);
+        ctx.fillRect(Math.round(x) - 1, Math.round(y) + 3, 1, 2);
+      }
+      // رشّات
+      ctx.fillStyle = 'rgba(215,232,255,0.7)';
+      for (let i = 0; i < n / 3; i++) {
+        const ph = (t * 3 + i * 0.37) % 1;
+        if (ph > 0.35) continue;
+        const cyc = Math.floor(t * 3 + i * 0.37);
+        const x = (i * 97.31 + cyc * 57.7) % W, y = (i * 53.9 + cyc * 31.3) % H;
+        const w = ph < 0.15 ? 1 : 3;
+        ctx.fillRect(Math.round(x - w / 2), Math.round(y), w, 1);
+        if (ph >= 0.15) { ctx.fillRect(Math.round(x - 2), Math.round(y - 1), 1, 1); ctx.fillRect(Math.round(x + 2), Math.round(y - 1), 1, 1); }
+      }
+    }
+    if (rb > 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.28 * rb;
+      ctx.lineWidth = 2;
+      const cols = ['#ff5a5a', '#ffa040', '#ffe060', '#6ad060', '#50a0ff', '#8a60e0'];
+      cols.forEach((c, k) => {
+        ctx.strokeStyle = c;
+        ctx.beginPath();
+        ctx.arc(W * 0.65, H * 1.15, H * 0.95 - k * 2, Math.PI * 1.08, Math.PI * 1.92);
+        ctx.stroke();
+      });
+      ctx.restore();
+    }
   }
 
   // غبار العاصفة الرملية
@@ -696,6 +760,7 @@ export class Renderer {
 
   drawLighting(game, cam, lights) {
     this.drawStorm(game);
+    this.drawRain(game);
     const s = game.state;
     const dark = game.mode === 'dungeon' ? 0.9 : darkness(s.time.minute) * 0.78;
     if (dark <= 0.01) return;
@@ -828,7 +893,7 @@ export class Renderer {
     // سهم الهدف
     const tg = game.target;
     if (tg) {
-      const [x, y] = toScreen(tg.x, tg.y - (tg.kind === 'palm' ? 50 : tg.kind === 'guest' || tg.kind === 'npc' ? 44 : 26));
+      const [x, y] = toScreen(tg.x, tg.y - (tg.kind === 'palm' ? 50 : tg.kind === 'sidr' ? 42 : tg.kind === 'guest' || tg.kind === 'npc' ? 44 : 26));
       const bob = Math.sin(t * 6) * 3 * this.dpr;
       f.fillStyle = '#ffffff';
       f.strokeStyle = 'rgba(40,20,5,0.9)';
@@ -846,11 +911,13 @@ export class Renderer {
       else if (game.mode === 'world') guide = game.worldObjById.exit_world;
       else guide = game.open.objects.find(o => o.kind === 'gohome');
     }
-    if (guide) this.pointArrow(game, guide, toScreen, '📍');
-    else if (game.mode === 'world') {
+    if (guide) {
+      const via = guide !== game.guide;
+      this.pointArrow(game, guide, toScreen, { label: via ? (game.mode === 'world' ? 'طريق القرية' : 'طريق مزرعتك') : (game.guide.label || 'هنا') });
+    } else if (game.mode === 'world') {
       const fresh = this.freshAnimal(game);
-      if (fresh) this.pointArrow(game, fresh, toScreen, null);
-      else this.questArrow(game, cam, toScreen);
+      if (fresh) this.pointArrow(game, fresh, toScreen, { label: 'حلالك الجديد', offOnly: true });
+      else if (s.settings.arrow !== false) this.questArrow(game, cam, toScreen);
     }
     if (game.mode === 'open') {
       for (const o of game.open.objects) {
@@ -900,7 +967,7 @@ export class Renderer {
     }
     if (!pos) return;
     if (game.target && Math.hypot(game.target.x - pos.x, game.target.y - pos.y) < 4) return;
-    this.pointArrow(game, pos, toScreen, '⭐');
+    this.pointArrow(game, pos, toScreen, { label: q.title });
   }
 
   // أقرب حيوان جديد لسه ماشي أو واصل توه
@@ -912,33 +979,93 @@ export class Renderer {
   }
 
   // سهم على طرف الشاشة يأشر على مكان، أو علامة فوقه إذا كان ظاهر
-  pointArrow(game, pos, toScreen, mark) {
+  // سهم إرشاد واضح: برا الشاشة سهم ذهبي كبير على الطرف مع الاسم والمسافة ونقاط أثر،
+  // وإذا المكان ظاهر سهم ينطط فوقه وحلقة تنبض بالأرض
+  pointArrow(game, pos, toScreen, opts = {}) {
     const p = game.state.player;
     const f = this.f;
     const t = game.t;
-    const [sx, sy] = toScreen(pos.x, pos.y - 34);
-    const W = this.fc.width, H = this.fc.height, m = 50 * this.dpr;
-    const inside = sx > m && sx < W - m && sy > m && sy < H - m;
+    const dpr = this.dpr;
+    const [sx, sy] = toScreen(pos.x, pos.y - 30);
+    const [gx, gy] = toScreen(pos.x, pos.y);
+    const W = this.fc.width, H = this.fc.height;
+    const mx = 60 * dpr, myTop = 110 * dpr, myBot = 100 * dpr;
+    const inside = sx > mx && sx < W - mx && sy > myTop * 0.6 && sy < H - myBot * 0.6;
+    const dist = Math.round(Math.hypot(pos.x - p.x, pos.y - p.y) / TILE);
+    const text = `${opts.label || ''}${opts.label ? ' • ' : ''}${dist} خطوة`;
+    const pulse = 1 + Math.sin(t * 6) * 0.08;
+    const arrowPath = (a) => {
+      f.beginPath();
+      f.moveTo(a, 0);
+      f.lineTo(a * 0.05, -a * 0.72);
+      f.lineTo(a * 0.05, -a * 0.3);
+      f.lineTo(-a * 0.85, -a * 0.3);
+      f.lineTo(-a * 0.85, a * 0.3);
+      f.lineTo(a * 0.05, a * 0.3);
+      f.lineTo(a * 0.05, a * 0.72);
+      f.closePath();
+    };
+    const paint = (a) => {
+      const gr = f.createLinearGradient(0, -a, 0, a);
+      gr.addColorStop(0, '#fff3a0'); gr.addColorStop(0.5, '#ffc83a'); gr.addColorStop(1, '#e0801a');
+      f.shadowColor = 'rgba(255,200,60,0.9)'; f.shadowBlur = 14 * dpr;
+      arrowPath(a); f.fillStyle = gr; f.fill();
+      f.shadowBlur = 0;
+      f.lineWidth = 3.5 * dpr; f.strokeStyle = '#3a1a06'; f.lineJoin = 'round'; arrowPath(a); f.stroke();
+      f.lineWidth = 1.2 * dpr; f.strokeStyle = 'rgba(255,255,255,0.7)'; arrowPath(a * 0.8); f.stroke();
+    };
+    const pill = (x, y, str) => {
+      f.font = `700 ${12 * dpr}px Cairo, sans-serif`;
+      const w = f.measureText(str).width + 16 * dpr, h = 20 * dpr;
+      f.fillStyle = 'rgba(43,26,14,0.88)';
+      f.strokeStyle = '#e8b53a'; f.lineWidth = 2 * dpr;
+      const r = h / 2, x0 = x - w / 2, y0 = y - h / 2;
+      f.beginPath(); f.moveTo(x0 + r, y0); f.arcTo(x0 + w, y0, x0 + w, y0 + h, r); f.arcTo(x0 + w, y0 + h, x0, y0 + h, r); f.arcTo(x0, y0 + h, x0, y0, r); f.arcTo(x0, y0, x0 + w, y0, r); f.closePath();
+      f.fill(); f.stroke();
+      f.fillStyle = '#fff3c4'; f.textAlign = 'center'; f.textBaseline = 'middle';
+      f.fillText(str, x, y + 1 * dpr);
+    };
     f.save();
-    if (inside && !mark) { f.restore(); return; }
     if (inside) {
-      const bob = Math.sin(t * 5) * 4 * this.dpr;
-      f.font = `${22 * this.dpr}px sans-serif`;
-      f.fillText(mark, sx, sy - 10 * this.dpr + bob);
+      if (opts.offOnly) { f.restore(); return; }
+      // حلقة بالأرض
+      const rr = 15 * dpr * (1 + ((t * 1.5) % 1) * 0.6);
+      f.globalAlpha = 1 - ((t * 1.5) % 1);
+      f.strokeStyle = '#ffd84a'; f.lineWidth = 3 * dpr;
+      f.beginPath(); f.ellipse(gx, gy, rr, rr * 0.45, 0, 0, Math.PI * 2); f.stroke();
+      f.globalAlpha = 1;
+      // سهم ينطط ويأشر لتحت
+      const bob = Math.abs(Math.sin(t * 4)) * 8 * dpr;
+      f.save();
+      f.translate(sx, sy - 18 * dpr - bob);
+      f.rotate(Math.PI / 2);
+      paint(20 * dpr * pulse);
+      f.restore();
+      if (opts.label) pill(sx, sy - 52 * dpr - bob, opts.label);
     } else {
       const [px, py] = toScreen(p.x, p.y - 10);
       const ang = Math.atan2(sy - py, sx - px);
-      const cx = Math.max(m, Math.min(W - m, px + Math.cos(ang) * W));
-      const cy = Math.max(m * 1.6, Math.min(H - m * 1.6, py + Math.sin(ang) * H));
+      // نقاط أثر من اللاعب باتجاه الهدف
+      for (let i = 0; i < 5; i++) {
+        const k = ((t * 1.4) % 1 + i) / 5;
+        const d = 24 * dpr + k * 110 * dpr;
+        f.globalAlpha = 0.85 * (1 - k);
+        f.fillStyle = '#ffe07a';
+        f.beginPath(); f.arc(px + Math.cos(ang) * d, py + Math.sin(ang) * d, 3.2 * dpr, 0, Math.PI * 2); f.fill();
+      }
+      f.globalAlpha = 1;
+      // السهم على طرف الشاشة
+      const cos = Math.cos(ang), sin = Math.sin(ang);
+      const tx = cos > 0 ? (W - mx - px) / cos : cos < 0 ? (mx - px) / cos : Infinity;
+      const ty = sin > 0 ? (H - myBot - py) / sin : sin < 0 ? (myTop - py) / sin : Infinity;
+      const k = Math.min(tx, ty);
+      const cx = px + cos * k, cy = py + sin * k;
+      f.save();
       f.translate(cx, cy);
       f.rotate(ang);
-      f.fillStyle = '#ffd24a';
-      f.strokeStyle = 'rgba(60,30,0,0.9)';
-      f.lineWidth = 3 * this.dpr;
-      const a = 12 * this.dpr;
-      f.beginPath();
-      f.moveTo(a, 0); f.lineTo(-a * 0.6, -a * 0.7); f.lineTo(-a * 0.3, 0); f.lineTo(-a * 0.6, a * 0.7);
-      f.closePath(); f.stroke(); f.fill();
+      paint(26 * dpr * pulse);
+      f.restore();
+      pill(cx - cos * 42 * dpr, cy - sin * 30 * dpr + (sin > 0.5 ? -8 : 14) * dpr, text);
     }
     f.restore();
   }

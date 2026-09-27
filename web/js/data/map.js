@@ -174,6 +174,44 @@ export function buildWorld() {
     add({ id: 'herb' + hi++, kind: 'herb', tx, ty });
     mark(tx, ty);
   }
+  // ---------- موارد زيادة: سدر ونخل وصخور وطين وأعشاب ----------
+  // بمولّد عشوائي ثاني عشان مواقع الموارد القديمة ما تتغير
+  const rng2 = mulberry32(4242);
+  const reserved = (tx, ty) => {
+    const t = get(tx, ty);
+    if (t === T.ROAD || t === T.WATER || t === T.SOIL || t === T.WALL || t === T.FLOOR || t === T.ROOMFLOOR || t === T.DUNE) return true;
+    if (tx >= KHAN.x0 - 1 && tx <= KHAN.x1 + 1 && ty >= KHAN.y0 - 1 && ty <= KHAN.y1 + 2) return true;
+    if (tx >= PEN.x0 - 2 && tx <= PEN.x1 + 1 && ty >= PEN.y0 - 1 && ty <= PEN.y1 + 1) return true;
+    if (tx >= FOLD.x0 - 1 && tx <= FOLD.x1 + 1 && ty >= FOLD.y0 - 2 && ty <= FOLD.y1 + 1) return true;
+    if (tx >= 40 && tx <= 52 && ty >= 28 && ty <= 36) return true; // الأحواض وأبو سالم
+    if (ty >= 27 && ty <= 33 && tx >= 24 && tx <= 38) return true; // البسطة والطلبات والقافلة
+    if (tx <= 7 && ty >= 25 && ty <= 32) return true; // طريق القرية
+    if (tx >= 8 && tx <= 22 && ty >= 19 && ty <= 27) return true; // التجار وبيت العمّال
+    if (tx >= 17 && tx <= 24 && ty >= 33 && ty <= 37) return true; // الراعي
+    return false;
+  };
+  const near = (tx, ty) => occupied.has((tx + 1) + ',' + ty) || occupied.has((tx - 1) + ',' + ty) || occupied.has(tx + ',' + (ty + 1)) || occupied.has(tx + ',' + (ty - 1));
+  const place = (kind, want, areas, opts = {}) => {
+    let i = objects.filter(o => o.kind === kind).length;
+    let placed = 0;
+    for (let n = 0; n < want * 60 && placed < want; n++) {
+      const [x0, x1, y0, y1] = areas[n % areas.length];
+      const tx = x0 + Math.floor(rng2() * (x1 - x0 + 1)), ty = y0 + Math.floor(rng2() * (y1 - y0 + 1));
+      if (tx < 3 || ty < 3 || tx > MAP_W - 4 || ty > MAP_H - 4) continue;
+      if (!free(tx, ty) || reserved(tx, ty) || (opts.solid && near(tx, ty))) continue;
+      if (opts.tiles && !opts.tiles.includes(get(tx, ty))) continue;
+      const o = add({ id: kind + i++, kind, tx, ty, ...(opts.solid ? { solid: true } : {}) });
+      if (opts.big && rng2() < opts.big) o.variant = 'big';
+      mark(tx, ty);
+      placed++;
+    }
+  };
+  place('sidr', 14, [[4, 20, 4, 17], [3, 18, 31, 44], [44, 61, 39, 45], [42, 50, 4, 10], [20, 40, 38, 45], [9, 21, 11, 18]], { solid: true });
+  place('palm', 6, [[38, 62, 24, 27], [4, 22, 30, 32], [44, 52, 37, 42]], { solid: true });
+  place('rock', 12, [[4, 14, 4, 10], [56, 61, 40, 45], [56, 61, 5, 12], [22, 43, 9, 10], [42, 52, 40, 45]], { solid: true, big: 0.35 });
+  place('clay', 7, [[5, 19, 33, 43], [44, 61, 12, 28], [21, 32, 38, 45]]);
+  place('herb', 7, [[6, 18, 33, 42], [45, 60, 13, 27], [4, 20, 4, 18]]);
+
   // ديكور الصحراء
   for (let n = 0; n < 70; n++) {
     const tx = 3 + Math.floor(rng() * (MAP_W - 6)), ty = 3 + Math.floor(rng() * (MAP_H - 6));

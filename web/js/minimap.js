@@ -78,6 +78,11 @@ export function drawMap(cv, game, opts = {}) {
         const [px, py] = P(o.x - 7, o.y - 14);
         ctx.fillStyle = !p ? '#5e3a1f' : isReady(p) ? '#6cf24a' : p.watered ? '#3f7d2a' : '#c8a040';
         ctx.fillRect(px, py, Math.max(2, 14 * sx), Math.max(2, 12 * sy));
+      } else if (o.kind === 'palm' || o.kind === 'sidr' || o.kind === 'rock' || o.kind === 'clay') {
+        const [px, py] = P(o.x, o.y - 6);
+        const z = Math.max(1.5, k * (o.kind === 'rock' && o.variant === 'big' ? 1.1 : 0.8));
+        ctx.fillStyle = o.kind === 'rock' ? '#7a7268' : o.kind === 'clay' ? '#8a4a28' : o.kind === 'sidr' ? '#3f6a24' : '#2f5a1c';
+        ctx.fillRect(px - z / 2, py - z / 2, z, z);
       } else if (o.kind === 'worldexit') {
         dot(o.x, o.y, '#e8b53a', k * 1.3);
         label(o.x + 40, o.y - 30, 'طريق القرية', '#ffe07a');
@@ -91,6 +96,7 @@ export function drawMap(cv, game, opts = {}) {
     }
     if (s.built.stable) for (const c of s.camels) { const rt = game.camelRt && game.camelRt[c.id]; if (rt) dot(rt.x, rt.y, c.rare ? '#ffe04a' : '#ffb03a', k * 0.9); }
     if (s.built.sheepfold) for (const x of s.sheep) { const rt = game.sheepRt && game.sheepRt[x.id]; if (rt) dot(rt.x, rt.y, '#f4f0e6', k * 0.8); }
+    if (game.wildRt) for (const rt of (game.guestRt.length ? game.wildRt.caravan.concat(game.wildRt.herd) : game.wildRt.herd)) dot(rt.x, rt.y, '#c89a5a', k * 0.75);
     for (const w of s.workers) { const rt = game.workerRt && game.workerRt[w.id]; if (rt) dot(rt.x, rt.y, w.status === 'strike' ? '#ff5a3a' : '#ffe04a', k * 0.8); }
   } else {
     for (const [id, def] of Object.entries(FARMS)) {
@@ -106,6 +112,8 @@ export function drawMap(cv, game, opts = {}) {
     const home = game.open.objects.find(o => o.kind === 'gohome');
     if (home) { dot(home.x, home.y, '#e8b53a', k * 1.3); label(home.x, home.y - 26, 'مزرعتي', '#ffe07a'); }
   }
+  const rain = game.rainLevel ? game.rainLevel() : 0;
+  if (rain > 0) { ctx.fillStyle = `rgba(40,60,100,${0.25 * rain})`; ctx.fillRect(0, 0, cv.width, cv.height); }
   const gd = game.guide && game.guide.mode === game.mode ? game.guide : null;
   if (gd) dot(gd.x, gd.y, '#ff4a4a', k * 1.4, '#fff');
   const p = s.player;

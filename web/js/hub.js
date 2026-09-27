@@ -20,6 +20,7 @@ import * as events from './systems/events.js';
 import * as market from './systems/market.js';
 import * as time from './systems/time.js';
 import { drawMap } from './minimap.js';
+import { dayWeather } from './systems/weather.js';
 import { TILE } from './data/map.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -66,7 +67,13 @@ export function advice(g) {
   const dry = plots.filter(o => s.plots[o.id] && !farming.isReady(s.plots[o.id]) && !s.plots[o.id].watered);
   const empty = plots.filter(o => !s.plots[o.id]);
   if (ripe.length) out.push({ icon: '🧺', text: `عندك ${ripe.length} محصول جاهز للحصاد!`, btn: '📍 وديني', go: { guide: ripe[0], label: 'احصد' } });
-  if (dry.length) out.push({ icon: '💧', text: `${dry.length} حوض عطشان، اسقه عشان يكبر بكرة.`, btn: '📍 وديني', go: { guide: dry[0], label: 'اسق' } });
+  const w = g.weatherNow ? g.weatherNow() : null;
+  const hr = s.time.minute / 60;
+  const rainLater = w && w.rain && hr < w.start;
+  if (dry.length) {
+    if (rainLater) out.push({ icon: '🌦️', text: `${dry.length} حوض عطشان، بس المطر جاي الساعة ${w.start}:00 ويسقيها عنك!`, btn: '🌱 ازرع أكثر', go: { store: 'seeds' } });
+    else out.push({ icon: '💧', text: `${dry.length} حوض عطشان، اسقه عشان يكبر بكرة.`, btn: '📍 وديني', go: { guide: dry[0], label: 'اسق' } });
+  }
   if (empty.length) {
     const seed = farming.firstSeed(s);
     if (seed) out.push({ icon: '🌱', text: `${empty.length} حوض فاضي. ازرع ${SEEDS[seed].name} (عندك ${count(s, seed)}).`, btn: '📍 وديني', go: { guide: empty[0], label: 'ازرع' } });
@@ -88,6 +95,7 @@ export function advice(g) {
   if (s.workers.some(w => w.status === 'strike' || w.late >= 2)) out.push({ icon: '✊', text: 'عمّالك زعلانين! ادفع رواتبهم.', btn: '👷 العمّال', go: { workers: true } });
   events.ensureEvent(s, g.now());
   if (events.canClaimTier(s)) out.push({ icon: '🎪', text: 'فيه جايزة فعالية جاهزة!', btn: '🎁 استلم', go: { events: true } });
+  if (g.weatherNow && dayWeather(s.seed, day + 1).rain && !rainLater) out.push({ icon: '☁️', text: 'بكرة فيه مطر 🌧️! ازرع أحواضك وخلّ المطر يسقيها عنك.', btn: '🌱 بذور', go: { store: 'seeds' } });
   if (!out.length) out.push({ icon: '🗺️', text: 'كل شي تمام! اطلع للقرية: اشترِ نياق وغنم، وساوم على مزارع الجيران.', btn: '🗺️ القرية', go: { travel: true } });
   return out;
 }
@@ -439,6 +447,39 @@ export function installHub(UI) {
       return `<div class="acard ${w.status === 'strike' ? 'dim' : ''}"><span class="sbig">${t.icon}</span><div class="ainfo"><b>${esc(w.name)}</b> <small class="muted">${t.name} • 🪙${w.wage}/ساعة</small><small>${st}${w.owed ? ` • عليك 🪙${w.owed}` : ''}</small></div></div>`;
     }).join('');
     return `<div class="row center"><button class="btn green" data-a="wpay" ${owed ? '' : 'disabled'}>💵 ادفع الرواتب 🪙${fmt(owed)}</button><button class="btn blue" data-a="wopen">👷 وظّف / تفاصيل</button></div>${rows || '<p class="muted center">ما عندك عمّال. وظّف حطّاب أو مزارع أو بنّاء أو راعي.</p>'}`;
+  };
+
+  // ---------- كيف ألعب ----------
+  P.openHelp = function (topic = 0) {
+    const g = this.g;
+    const TOPICS = [
+      { icon: '🕹️', title: 'الحركة والفعل', steps: ['حرّك إصبعك يسار الشاشة عشان تمشي.', 'اقرب من أي شي (نخلة، حوض، ناقة، شخص) وزر ✋ يتغير لاسمه.', 'اضغط ✋ وسوّ الفعل. تقدر تضغط مطوّل للجمع والزراعة.', 'السهم الذهبي 🧭 يدلّك على مهمتك، والرقم جنبه هو المسافة.'], go: null },
+      { icon: '🌱', title: 'الزراعة', steps: ['اشترِ بذور من أبو سالم 🥕 (جنب الأحواض) أو من 🛒 المتجر.', 'اوقف جنب حوض فاضي واضغط ✋ «ازرع». زر البذرة 🔄 يبدّل وش تزرع.', 'اسقِ الحوض كل يوم 💧 (الماء من البير بالخان)، أو خلّ 🌧️ المطر يسقيه عنك!', 'بعد الأيام يطلع المحصول: احصده 🧺 وبعه 💰.'], go: { store: 'seeds' }, btn: '🌱 اشترِ بذور' },
+      { icon: '🐪', title: 'الحلال', steps: ['ابنِ المراح 🏗️ وتجيك ناقتين هدية.', 'كل يوم اسقها وأطعمها (برسيم أو تمر)، أو اضغط «اسقِ وأطعم الكل» من 📋 إدارتي.', 'احلب النياق 🥛، ولقّح الفحل مع الناقة، وفيه فرصة يطلع لك حوار نادر!', 'كل ناقة لها خواص ✨، والحوار يورثها. النادرة تسوى ثروة.'], go: { manage: 'animals' }, btn: '🐪 حلالي' },
+      { icon: '💰', title: 'البيع والتجارة', steps: ['أسرع طريقة: 🛒 المتجر ← «💰 بيع»، وتبيع أي شي على طول.', 'تبي سعر أعلى؟ ابنِ البسطة 🏪 وحط أغراضك بسعرك، والمارّة يشترون.', 'لوحة الطلبات 📋 تجيك طلبات قوافل بجوايز حلوة.', 'بالحلال تقدر تساوم وتقايض من 🐪 الحلال ← السوق.'], go: { store: 'sell' }, btn: '💰 بيع الحين' },
+      { icon: '🏗️', title: 'البناء', steps: ['اجمع خشب 🪵 وحجر 🪨 وطين 🟫 من النخل والسدر والصخور.', 'اصنع ألواح وحبال وطوب من المنجرة والفرن.', 'افتح 🛒 المتجر ← «🏗️ مباني»: يبيّن لك الناقص، وتقدر تشتريه وتبني بضغطة.', 'كل مبنى يرفع سمعة الخان ⭐ لين توصل 5 نجوم.'], go: { store: 'build' }, btn: '🏗️ المباني' },
+      { icon: '👷', title: 'العمّال', steps: ['وظّف حطّاب، مزارع، بنّاء، أو راعي من 👷 العمّال.', 'يشتغلون لحالهم، وراتبهم بالساعة.', 'لا تتأخر بالراتب! إذا تأخرت يضربون ✊ ويبون غرامة.', 'فعّل الدفع التلقائي وارتاح.'], go: { workers: true }, btn: '👷 العمّال' },
+      { icon: '🗺️', title: 'القرية والعقارات', steps: ['اطلع من «طريق القرية» يسار مزرعتك.', 'فيها 5 مزارع جيران: تشتري منهم بضاعة ونياق وغنم وتساومهم.', 'تقدر تشتري مزرعة كاملة 🏡 وتصير تنتج لك كل يوم.', 'من 📋 إدارتي ← عقاراتي: طوّرها واستلم إنتاجها.'], go: { manage: 'property' }, btn: '🏡 عقاراتي' },
+      { icon: '🎁', title: 'المكافآت والفعاليات', steps: ['كل يوم ادخل وخذ مكافأتك اليومية 🎁، والسلسلة تكبر الجوايز.', '3 مهام يومية، وعجلة حظ، وإنجازات.', 'فعالية جديدة كل يومين 🎪: سباق هجن، صقور، مهرجان تمور، وغيرها.', 'الصعوبة تزيد مع كل مرحلة، فالجوايز تحتاج شغل!'], go: { events: true }, btn: '🎪 الفعاليات' },
+    ];
+    let cur = topic;
+    this.modal({
+      title: '📖 كيف ألعب؟',
+      cls: 'store',
+      render: (m) => {
+        const tp = TOPICS[cur];
+        m.body.innerHTML = `<div class="helpnav">${TOPICS.map((x, i) => `<button class="hbtn2 ${i === cur ? 'on' : ''}" data-a="tp" data-v="${i}"><span>${x.icon}</span><small>${x.title}</small></button>`).join('')}</div>
+          <div class="helpcard"><div class="hbig">${tp.icon}</div><h3>${tp.title}</h3>
+            <ol>${tp.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
+            <div class="row center">${cur > 0 ? '<button class="btn" data-a="prev">→ السابق</button>' : ''}${tp.go ? `<button class="btn green" data-a="go">${tp.btn}</button>` : ''}${cur < TOPICS.length - 1 ? '<button class="btn blue" data-a="next">التالي ←</button>' : '<button class="btn blue" data-a="close">يلا نلعب! 🎉</button>'}</div>
+          </div>`;
+        m.handlers.tp = (v) => { cur = Number(v); this.audio.play('ui'); m.rerender(); };
+        m.handlers.next = () => { cur = Math.min(TOPICS.length - 1, cur + 1); this.audio.play('ui'); m.rerender(); };
+        m.handlers.prev = () => { cur = Math.max(0, cur - 1); this.audio.play('ui'); m.rerender(); };
+        m.handlers.go = () => this.hubGo(tp.go, m);
+      },
+    });
+    g.state.flags.helpSeen = true;
   };
 
   // ---------- الخريطة الكبيرة ----------

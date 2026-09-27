@@ -63,6 +63,26 @@ export class Audio {
     s.start(t); s.stop(t + dur);
   }
 
+  // صوت المطر: ضجة مفلترة متكررة، علوّها حسب شدة المطر (0..1)
+  setRain(level) {
+    if (!this.ctx) return;
+    const target = this.sfx ? Math.max(0, Math.min(1, level)) * 0.16 : 0;
+    if (!this.rainSrc && target > 0) {
+      this.rainSrc = this.ctx.createBufferSource();
+      this.rainSrc.buffer = this.noiseBuf;
+      this.rainSrc.loop = true;
+      const hp = this.ctx.createBiquadFilter();
+      hp.type = 'highpass'; hp.frequency.value = 900;
+      const lp = this.ctx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 5200;
+      this.rainGain = this.ctx.createGain();
+      this.rainGain.gain.value = 0;
+      this.rainSrc.connect(hp); hp.connect(lp); lp.connect(this.rainGain); this.rainGain.connect(this.master);
+      this.rainSrc.start();
+    }
+    if (this.rainGain) this.rainGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.6);
+  }
+
   play(name) {
     switch (name) {
       case 'chop': this.noise(0.12, 700, 0.35); this.tone(140, 0.08, 'triangle', 0.2); break;
@@ -82,6 +102,7 @@ export class Audio {
       case 'deny': this.tone(200, 0.12, 'square', 0.08); this.tone(160, 0.15, 'square', 0.08, 0.1); break;
       case 'talk': this.tone(300 + Math.random() * 120, 0.04, 'triangle', 0.06); break;
       case 'spin': this.tone(700 + Math.random() * 300, 0.03, 'square', 0.05); break;
+      case 'thunder': this.noise(1.6, 120, 0.5, 0, 0.7); this.noise(0.9, 300, 0.25, 0.1, 0.8); break;
       case 'eat': this.noise(0.06, 900, 0.2); this.noise(0.06, 900, 0.2, 0.1); break;
       case 'plant': this.noise(0.1, 300, 0.25); this.tone(500, 0.1, 'sine', 0.08, 0.08); break;
       case 'camel': this.tone(180, 0.35, 'sawtooth', 0.08, 0, -60); this.tone(150, 0.4, 'sawtooth', 0.06, 0.2, -50); this.noise(0.3, 400, 0.08, 0.1); break;

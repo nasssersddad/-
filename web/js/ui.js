@@ -75,6 +75,7 @@ export class UI {
         else if (k === 'store-sell') this.openStore('seeds');
         else if (k === 'manage') this.openManage();
         else if (k === 'map') this.openMap();
+        else if (k === 'help') this.openHelp();
       });
       el.addEventListener('pointerdown', e => e.stopPropagation());
     });
@@ -91,6 +92,7 @@ export class UI {
       if (e.code === 'Escape' || e.code === 'Backspace') this.back();
     });
     setAdSimulator((p) => this.adSimulator(p));
+    this.applyTextSize();
     this.refresh();
   }
 
@@ -109,6 +111,7 @@ export class UI {
   refresh() { this.dirty = true; }
 
   vibrate(ms) {
+    if (this.g && this.g.state && this.g.state.settings.vibrate === false) return;
     try {
       if (window.MuzareNative && window.MuzareNative.vibrate) window.MuzareNative.vibrate(ms);
       else if (navigator.vibrate) navigator.vibrate(ms);
@@ -143,7 +146,9 @@ export class UI {
     }
     const wd = time.weekday(s);
     set('dayName', `${WEEKDAY_ICONS[wd]} ${WEEKDAYS[wd]}`);
-    set('clock', time.clockText(s));
+    const rainy = g.rainLevel && g.rainLevel() > 0;
+    const wxIcon = g.mode === 'dungeon' ? '' : rainy ? ' 🌧️' : g.rainbowLevel && g.rainbowLevel() > 0 ? ' 🌈' : time.isNight(s) ? ' 🌙' : ' ☀️';
+    set('clock', time.clockText(s) + wxIcon);
     const st = stars(s);
     const starsHtml = '★'.repeat(st) + `<span class="off">${'★'.repeat(5 - st)}</span>`;
     if (this.last.stars !== starsHtml) { this.last.stars = starsHtml; $('stars').innerHTML = starsHtml; }
@@ -202,6 +207,7 @@ export class UI {
       }).join('');
       const dqHtml = s.quest.index >= 3 ? dq : '';
       if (this.last.dq !== dqHtml) { this.last.dq = dqHtml; $('dqMini').innerHTML = dqHtml; $('dqMini').style.display = dqHtml ? '' : 'none'; }
+      if (s.quest.index >= 1 && !s.flags.helpSeen && !this.blocking() && g.mode === 'world') { s.flags.helpSeen = true; this.openHelp(); }
       const lowEnergy = p.energy < me * 0.25 && Object.keys(s.inv).some(id => ITEMS[id] && ITEMS[id].food);
       $('eatBtn').classList.toggle('show', lowEnergy && g.mode === 'world');
     }
@@ -581,14 +587,27 @@ export class UI {
     this.modal({
       title: '⚙️ الإعدادات', cls: 'small',
       render: (m) => {
-        m.body.innerHTML = `<div class="row" style="margin-bottom:8px"><button class="btn" data-a="music">${s.settings.music ? '🎵 الموسيقى: شغالة' : '🔇 الموسيقى: طافية'}</button>
-          <button class="btn" data-a="sfx">${s.settings.sfx ? '🔊 المؤثرات: شغالة' : '🔈 المؤثرات: طافية'}</button></div>
-          <div class="row" style="margin-bottom:8px"><button class="btn" data-a="hq">${s.settings.hq !== false ? '✨ جودة الرسم: عالية (شيدرز)' : '⚡ جودة الرسم: عادية (أخف)'}</button></div>
-          <p class="muted">المزارع — نسخة 1.0<br>إعلانات اليوم الباقية: ${retention.adsLeft(s, g.now())}</p>
-          <div class="row"><button class="btn" data-a="reset" style="background:#e8b0a0">🗑️ ابدأ من جديد</button></div>`;
-        m.handlers.music = () => { s.settings.music = !s.settings.music; this.audio.setMusic(s.settings.music); g.save(); m.rerender(); };
-        m.handlers.hq = () => { s.settings.hq = s.settings.hq === false; g.save(); m.rerender(); };
-        m.handlers.sfx = () => { s.settings.sfx = !s.settings.sfx; this.audio.sfx = s.settings.sfx; g.save(); m.rerender(); };
+        const st = s.settings;
+        const card = (id, icon, name, on, onTxt, offTxt) => `<button class="setcard ${on ? 'on' : ''}" data-a="${id}"><span class="si">${icon}</span><b>${name}</b><span class="sv">${on ? '✅ ' + onTxt : '⛔ ' + offTxt}</span></button>`;
+        m.body.innerHTML = `<div class="setgrid">
+            ${card('sfx', '🔊', 'الأصوات', st.sfx, 'شغالة', 'طافية')}
+            ${card('music', '🎵', 'الموسيقى', st.music, 'شغالة', 'طافية')}
+            ${card('hq', '✨', 'جودة الرسم', st.hq !== false, 'عالية', 'عادية (أخف)')}
+            ${card('big', '🔤', 'حجم الكلام', !!st.bigText, 'كبير', 'عادي')}
+            ${card('vib', '📳', 'الاهتزاز', st.vibrate !== false, 'شغال', 'طافي')}
+            ${card('arrow', '🧭', 'سهم المهام', st.arrow !== false, 'يطلع', 'مخفي')}
+          </div>
+          <button class="btn green big wide" data-a="help">📖 كيف ألعب؟</button>
+          <p class="muted center">المزارع — نسخة 1.1 • إعلانات اليوم الباقية: ${retention.adsLeft(s, g.now())}</p>
+          <div class="row center"><button class="btn tiny" data-a="reset" style="background:#e8b0a0">🗑️ ابدأ من جديد</button></div>`;
+        const flip = (fn) => () => { fn(); this.audio.play('ui'); g.save(); m.rerender(); };
+        m.handlers.music = flip(() => { st.music = !st.music; this.audio.setMusic(st.music); });
+        m.handlers.sfx = flip(() => { st.sfx = !st.sfx; this.audio.sfx = st.sfx; });
+        m.handlers.hq = flip(() => { st.hq = st.hq === false; });
+        m.handlers.big = flip(() => { st.bigText = !st.bigText; this.applyTextSize(); });
+        m.handlers.vib = flip(() => { st.vibrate = st.vibrate === false; });
+        m.handlers.arrow = flip(() => { st.arrow = st.arrow === false; });
+        m.handlers.help = () => { m.close(); this.openHelp(); };
         m.handlers.reset = async () => {
           const ok = await this.confirm('متأكد؟ كل تقدمك بينمسح ومايرجع!');
           if (!ok) return;
@@ -598,6 +617,11 @@ export class UI {
         };
       },
     });
+  }
+
+  applyTextSize() {
+    const big = !!(this.g && this.g.state && this.g.state.settings.bigText);
+    document.getElementById('game').classList.toggle('bigtext', big);
   }
 
   confirm(text) {

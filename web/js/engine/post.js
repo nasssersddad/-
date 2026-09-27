@@ -52,6 +52,7 @@ uniform float uNight;   // الليل
 uniform float uHaze;    // وهج الحرارة
 uniform float uDungeon;
 uniform float uBloomAmt;
+uniform float uRain;     // المطر: ألوان أبرد وأغمق
 
 // تكبير البكسل: حاد بالنص وناعم بالحواف (بدون تموّج مع الحركة)
 vec2 sharpUv(vec2 uv) {
@@ -87,6 +88,9 @@ void main() {
   g = mix(g, duskGrade, uDusk);
   g = mix(g, nightGrade, uNight);
   g = mix(g, dungeonGrade, uDungeon);
+  // المطر: تشبع أقل وجو أزرق رمادي
+  float rl = dot(g, vec3(0.299, 0.587, 0.114));
+  g = mix(g, mix(vec3(rl), g, 0.65) * vec3(0.84, 0.9, 1.02), uRain);
   // تباين وتشبع خفيف
   g = (g - 0.5) * 1.06 + 0.5;
   float gl = dot(g, vec3(0.299, 0.587, 0.114));
@@ -239,6 +243,7 @@ export class PostFX {
       gl.uniform1f(this.u(p, 'uHaze'), params.haze);
       gl.uniform1f(this.u(p, 'uDungeon'), params.dungeon);
       gl.uniform1f(this.u(p, 'uBloomAmt'), params.bloom);
+      gl.uniform1f(this.u(p, 'uRain'), params.rain || 0);
       gl.activeTexture(gl.TEXTURE0);
     });
     return true;

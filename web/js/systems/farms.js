@@ -2,6 +2,7 @@
 import { FARMS } from '../data/openworld.js';
 import { ITEMS } from '../data/items.js';
 import { SHEEP_BREEDS, SHEEP_CAP } from '../data/sheep.js';
+import { sheepCapBonus } from './placement.js';
 import { PERSONAS, LINES, fmt } from './market.js';
 import { makeCamel, camelValue, capacity } from './camels.js';
 import { add, addStat } from './inventory.js';
@@ -114,7 +115,7 @@ export function buyAnimal(state, farmId, dealId) {
     state.camels.push({ ...d.camel, id: 'c' + state.camelSeq + '_f', fedDay: null, wateredDay: null, milkedDay: null, pregnant: null });
   } else {
     if (!state.built.sheepfold) return { result: 'nofold' };
-    if (state.sheep.length >= SHEEP_CAP) return { result: 'full' };
+    if (state.sheep.length >= SHEEP_CAP + sheepCapBonus(state)) return { result: 'full' };
     state.player.coins -= d.ask;
     state.sheepSeq = (state.sheepSeq || 0) + 1;
     state.sheep.push({ ...d.sheep, id: 's' + state.sheepSeq + '_f' });

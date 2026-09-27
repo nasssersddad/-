@@ -1,13 +1,15 @@
 // الواجهة: الشريط العلوي، الحوار، النوافذ، المكافآت
 import { ITEMS, RELICS, RELIC_SETS, SEEDS, itemIcon, itemName } from './data/items.js';
 import * as farming from './systems/farming.js';
+import * as placement from './systems/placement.js';
+import { PLACEABLES } from './data/buildings.js';
 import { installHub, advice } from './hub.js';
 import { RECIPES, STATIONS, BUILD_SPOTS } from './data/recipes.js';
 import { TECH, TECH_BY_ID, KP_TYPES } from './data/tech.js';
 import { NPCS, WEEKDAYS, WEEKDAY_ICONS } from './data/npcs.js';
 import { MAIN_QUESTS } from './data/quests.js';
 import { DAILY_CALENDAR, WHEEL, CHESTS, ACHIEVEMENTS, ACH_TIER_NAMES, ACH_TIER_REWARDS, DAILY_QUEST_BONUS, AD_PLACEMENTS, AD_SECONDS } from './data/rewards.js';
-import { count, has, add, addStat } from './systems/inventory.js';
+import { count, has, add, addStat, bagUsed, bagCap, stored } from './systems/inventory.js';
 import { recipesFor, craft, spotStatus, techStatus, learnTech } from './systems/crafting.js';
 import { xpForLevel, maxEnergy, maxHp, stars, rating, nextStarAt, completedSets, offlineMultiplier } from './systems/progression.js';
 import { describeReward, applyReward } from './systems/rewards.js';
@@ -80,6 +82,12 @@ export class UI {
       el.addEventListener('pointerdown', e => e.stopPropagation());
     });
     $('eatBtn').addEventListener('pointerdown', (e) => { e.stopPropagation(); this.quickEat(); });
+    $('bldChip').addEventListener('pointerdown', (e) => { e.stopPropagation(); if (this.chipPid) this.openPlacedMenu(this.chipPid); });
+    const pb = (id, fn) => { $(id).addEventListener('pointerdown', e => e.stopPropagation()); $(id).addEventListener('click', (e) => { e.stopPropagation(); fn(); }); };
+    pb('pbOk', () => this.g.confirmPlacing());
+    pb('pbFlip', () => { this.audio.play('ui'); this.g.flipPlacing(); });
+    pb('pbCancel', () => { this.audio.play('ui'); this.g.stopPlacing(); });
+    $('placeBar').addEventListener('pointerdown', e => e.stopPropagation());
     $('seedChip').addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       const id = farming.cycleSeed(this.g.state);
@@ -158,6 +166,26 @@ export class UI {
     set('actIcon', info.icon);
     set('actLabel', info.label);
     $('actionBtn').classList.toggle('pulse', !!g.target);
+    if (g.placing) {
+      const pl = g.placing;
+      set('pbName', `${PLACEABLES[pl.type].icon} ${placement.info(pl.type).name}`);
+      const ok = pl.check && pl.check.ok;
+      set('pbReason', ok ? '✅ المكان يصلح' : '❌ ' + (pl.check ? pl.check.reason : ''));
+      $('pbReason').className = ok ? 'ok' : 'bad';
+    }
+    // زر 🔧 لإدارة المبنى أو الديكور اللي جنبك
+    let chip = null;
+    if (g.mode === 'world' && !g.placing) {
+      const tg = g.target;
+      if (tg && tg.ref && tg.ref.dynamic && (tg.kind !== 'spot')) chip = tg.ref.pid;
+      else {
+        const px = Math.floor(s.player.x / 16), py = Math.floor(s.player.y / 16);
+        const near = (s.placed || []).find(q => { const f = placement.footprint(q); return px >= f.x0 - 1 && px <= f.x1 + 1 && py >= f.y0 - 1 && py <= f.y1 + 1 && (placement.isBuilt(s, q)); });
+        if (near) chip = near.id;
+      }
+    }
+    this.chipPid = chip;
+    $('bldChip').classList.toggle('show', !!chip);
     const nearPlot = g.mode === 'world' && g.target && g.target.kind === 'plot' && !s.plots[g.target.ref.id];
     $('seedChip').classList.toggle('show', !!nearPlot);
     if (nearPlot) {
@@ -166,6 +194,9 @@ export class UI {
       set('seedName', sd ? `${SEEDS[sd].name} ×${count(s, sd)} 🔄` : 'اشترِ بذور');
     }
 
+    const bu = bagUsed(s), bc = bagCap(s);
+    set('bagTxt', `${bu}/${bc}`);
+    $('bagBtn').classList.toggle('full', bu >= bc * 0.9);
     if (this.dirty || (Math.floor(g.t * 2) !== this.last.halfSec)) {
       this.last.halfSec = Math.floor(g.t * 2);
       this.dirty = false;
@@ -346,10 +377,16 @@ export class UI {
     m.handlers.tab = (v) => { this.audio.play('ui'); onPick(v); };
   }
 
+  placingUI(on) {
+    document.getElementById('game').classList.toggle('placing', !!on);
+    $('placeBar').classList.toggle('hidden', !on);
+    this.refresh();
+  }
+
   costHtml(cost) {
     const s = this.g.state;
     return `<div class="cost">${Object.entries(cost).map(([id, n]) => {
-      const c = count(s, id);
+      const c = count(s, id) + stored(s, id);
       return `<span class="${c >= n ? 'have' : 'miss'}">${itemIcon(id)} ${itemName(id)} ${c}/${n}</span>`;
     }).join('')}</div>`;
   }
@@ -381,6 +418,11 @@ export class UI {
           if (!made) { this.audio.play('deny'); return; }
           const r = RECIPES.find(x => x.id === id);
           const [outId, outN] = Object.entries(r.out)[0];
+          // الورشة المرقّاة: فرصة ضعف الإنتاج
+          const dbl = placement.doubleChance(s, station);
+          let bonusN = 0;
+          for (let i = 0; i < made; i++) if (dbl && g.rng() < dbl) { add(s, outId, outN); bonusN += outN; }
+          if (bonusN) { this.toast(`✨ الورشة المرقّاة عطتك زيادة: ${itemIcon(outId)} +${bonusN}`, 'gain', 2.5); this.audio.play('chest'); }
           this.audio.play('craft');
           g.fx.burst(...g.fx.at(s.player.x, s.player.y, 20), ['#ffd24a', '#fff'], 10, 50, 0.6);
           g.fx.float(...g.fx.at(s.player.x, s.player.y, 30), `${itemIcon(outId)} +${outN * made}`, '#fff3c4', 14);
@@ -411,6 +453,24 @@ export class UI {
           ${st.needTech ? `<p>🔒 تحتاج تتعلم <b>${TECH_BY_ID[st.needTech].name}</b> من المعرفة</p><div class="row center"><button class="btn blue" data-a="tech">افتح المعرفة 🔮</button></div>` :
             `<div class="row center"><button class="btn green big" data-a="build" ${st.ok ? '' : 'disabled'}>ابنِ 🔨</button></div>`}
           ${!st.ok && !st.needTech ? `<p class="muted center">${esc(st.reason)}</p>` : ''}`;
+        const site = g.worldObjById['spot:' + spotId];
+        if (site && site.dynamic) {
+          const builder = s.workers.find(w => w.type === 'builder' && !w.job && w.status !== 'strike');
+          m.body.innerHTML += `<div class="row center" style="margin-top:6px">
+            ${builder && st.ok ? `<button class="btn blue" data-a="worker">👷 خلّ ${esc(builder.name)} يبنيه</button>` : ''}
+            <button class="btn" data-a="move">🔀 انقل الموقع</button>
+            <button class="btn" data-a="del" style="background:#e8b0a0">❌ شيل الموقع</button></div>
+            <p class="muted center">تقدر تخلي الموقع ينتظر لين تجمع المواد، وتبنيه بعدين من جنبه.</p>`;
+          m.handlers.worker = () => {
+            const r = workersSys.assignBuild(s, builder.id, spotId);
+            if (!r.ok) { this.toast(r.reason); return; }
+            this.audio.play('build');
+            this.toast(`🏗️ ${builder.name} بدأ يبني ${sp.name}`, 'gain', 3);
+            g.save(); m.close();
+          };
+          m.handlers.move = () => { m.close(); g.startPlacing(Object.keys(PLACEABLES).find(k => PLACEABLES[k].spot === spotId), site.pid); };
+          m.handlers.del = () => { if (g.removePlacedItem(site.pid)) { this.toast('شلت الموقع'); m.close(); } };
+        }
         m.handlers.build = () => { if (g.doBuild(spotId)) m.close(); };
         m.handlers.tech = () => { m.close(); this.openTech(); };
       },
@@ -1175,7 +1235,7 @@ export class UI {
   pickBuild(workerId, done) {
     const g = this.g;
     const s = g.state;
-    const spots = Object.keys(BUILD_SPOTS).filter(id => !s.built[id] && !spotStatus(s, id).hidden && !s.workers.some(w => w.job && w.job.spot === id));
+    const spots = Object.keys(BUILD_SPOTS).filter(id => g.worldObjById['spot:' + id] && !s.built[id] && (!spotStatus(s, id).hidden || g.worldObjById['spot:' + id].dynamic) && !s.workers.some(w => w.job && w.job.spot === id));
     this.modal({
       title: '🏗️ وش يبني؟', cls: 'small',
       render: (mm) => {
@@ -1289,6 +1349,8 @@ export class UI {
       if (!r) return;
       const bonus = events.mod(s, g.now(), 'ordersBonus');
       if (bonus) { r.coins = Math.round(r.coins * (1 + bonus)); events.addTokens(s, 3); }
+      const up = placement.ordersBonus(s);
+      if (up) r.coins = Math.round(r.coins * (1 + up));
       this.audio.play('deal');
       g.claimReward(r, null, true);
       m.rerender();
@@ -1311,7 +1373,7 @@ export class UI {
     const s = g.state;
     if (!s.built.sheepfold) { m.body.innerHTML = '<p>ابنِ <b>حظيرة الغنم</b> جنب المزرعة، وبعدها تشتري طليان تربيها وتجز صوفها وتبيعها بالبسطة. 🐑</p>'; return; }
     const day = s.time.day;
-    m.body.innerHTML = `<p>🐑 بالحظيرة ${s.sheep.length}/${SHEEP_CAP}. يطعمون برسيم أو قمح أو أعشاب، والصوف كل يومين.</p>
+    m.body.innerHTML = `<p>🐑 بالحظيرة ${s.sheep.length}/${SHEEP_CAP + placement.sheepCapBonus(s)}. يطعمون برسيم أو قمح أو أعشاب، والصوف كل يومين.</p>
       <div class="row">${Object.entries(SHEEP_BREEDS).map(([b, d]) => `<button class="btn" data-a="buy" data-v="${b}" ${s.player.coins >= sheepSys.lambPrice(b) ? '' : 'disabled'}>اشترِ طلي ${d.name} 🪙${sheepSys.lambPrice(b)}</button>`).join('')}</div>
       <div class="camels" style="margin-top:8px">${s.sheep.map(sh => `<div class="shop-row"><span class="ic">🐑</span><span class="nm">${SHEEP_BREEDS[sh.breed].name} — ${sh.ageDays >= 2 ? 'بالغ' : 'طلي'}<br><small class="muted">${sh.wateredDay === day ? '💧✔' : '💧✖'} ${sh.fedDay === day ? '🌿✔' : '🌿✖'} ${sheepSys.canShear(sh, day) ? '🧶 جاهز للجز' : ''} • ≈🪙${shop.sheepValue(sh)}</small></span></div>`).join('')}</div>`;
     m.handlers.buy = (b) => {

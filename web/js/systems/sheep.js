@@ -1,5 +1,6 @@
 // الغنم: شراء، إطعام، سقي، جز الصوف
 import { SHEEP_BREEDS, SHEEP_ADULT, WOOL_EVERY, SHEEP_CAP } from '../data/sheep.js';
+import { sheepCapBonus } from './placement.js';
 import { add, count, addStat } from './inventory.js';
 import { pick } from './util.js';
 
@@ -9,7 +10,7 @@ export function lambPrice(breed) {
 
 export function buyLamb(state, breed, rng) {
   if (!state.built.sheepfold) return { ok: false, reason: 'ابنِ الحظيرة أول' };
-  if (state.sheep.length >= SHEEP_CAP) return { ok: false, reason: 'الحظيرة مليانة' };
+  if (state.sheep.length >= SHEEP_CAP + sheepCapBonus(state)) return { ok: false, reason: 'الحظيرة مليانة' };
   const price = lambPrice(breed);
   if (state.player.coins < price) return { ok: false, reason: 'الدراهم ما تكفي' };
   state.player.coins -= price;

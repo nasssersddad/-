@@ -400,3 +400,27 @@ canvas.bigmap { width: 100%; display: block; border: 3px solid var(--wood); bord
 /* حجم كلام كبير */
 #game.bigtext .panel { zoom: 1.15; width: calc(min(820px, 96vw) / 1.15); max-height: calc(92vh / 1.15); }
 #game.bigtext #quest, #game.bigtext #dqMini, #game.bigtext #toasts, #game.bigtext #dialog { zoom: 1.15; }
+
+/* وضع البناء */
+#placeBar { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(8px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 12px; background: linear-gradient(rgba(43,26,14,.85), rgba(43,26,14,.95)); border: 2px solid var(--gold); border-radius: 16px; color: #fff3d6; min-width: min(460px, 92vw); z-index: 20; }
+#placeBar.hidden { display: none; }
+#placeBar .pbinfo { display: flex; gap: 10px; align-items: center; font: 700 14px Cairo; }
+#placeBar .pbinfo span { font-size: 12.5px; padding: 1px 8px; border-radius: 8px; }
+#placeBar .pbinfo span.ok { background: rgba(80,200,80,.3); color: #c8ffb0; }
+#placeBar .pbinfo span.bad { background: rgba(230,60,50,.35); color: #ffd0c8; }
+#placeBar .pbhint { font-size: 11px; opacity: .8; }
+#placeBar .pbbtns { display: flex; gap: 8px; }
+#game.placing #dock, #game.placing #actionBtn, #game.placing #seedChip, #game.placing #bldChip, #game.placing #eatBtn, #game.placing #sidebar, #game.placing #quest, #game.placing #dqMini { display: none !important; }
+#bldChip { position: absolute; bottom: calc(118px + env(safe-area-inset-bottom, 0px)); right: calc(124px + var(--safe-r)); width: 52px; height: 52px; border-radius: 50%; border: 2px solid var(--gold); background: radial-gradient(circle at 40% 35%, #6ab0ff, #2f78b8); color: #fff; display: none; flex-direction: column; align-items: center; justify-content: center; box-shadow: var(--shadow); font-size: 20px; padding: 0; }
+#bldChip small { font: 700 9px Cairo; }
+#bldChip.show { display: flex; }
+.dbtn.full { border-color: #ff6a5a; box-shadow: 0 3px 0 #3a1a08, 0 0 10px rgba(255,90,70,.8); }
+.dbtn.full small { color: #ffb0a0; }
+
+/* الصندوق */
+.chestwrap { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.chestcol h4 { margin: 0 0 4px; font: 700 14px Cairo; display: flex; justify-content: space-between; }
+.chestcol .bar { height: 8px; margin-bottom: 6px; }
+.chestcol .bar i { background: linear-gradient(#8fdc5a, #4f9a2f); display: block; height: 100%; }
+.chestcol .shop-row .btn { padding: 2px 8px; font-size: 12px; }
+.bmenu .big { font-size: 40px; text-align: center; }

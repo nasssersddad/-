@@ -98,9 +98,6 @@ export function buildWorld() {
   add({ id: 'spot:my_bed', kind: 'spot', spot: 'my_bed', tx: 26, ty: 14 });
   add({ id: 'hearth', kind: 'station', station: 'hearth', tx: 28, ty: 14 });
   add({ id: 'workbench', kind: 'station', station: 'workbench', tx: 24, ty: 19 });
-  add({ id: 'spot:kiln', kind: 'spot', spot: 'kiln', tx: 24, ty: 23 });
-  add({ id: 'spot:mill', kind: 'spot', spot: 'mill', tx: 27, ty: 25 });
-  add({ id: 'spot:loom', kind: 'spot', spot: 'loom', tx: 28, ty: 19 });
   add({ id: 'well', kind: 'well', tx: 31, ty: 19 });
   add({ id: 'spot:fountain', kind: 'spot', spot: 'fountain', tx: 31, ty: 23 });
   add({ id: 'spot:lamps', kind: 'spot', spot: 'lamps', tx: 34, ty: 17 });
@@ -112,16 +109,7 @@ export function buildWorld() {
   add({ id: 'spot:wall_n', kind: 'spot', spot: 'wall_n', tx: 30, ty: 13 });
   add({ id: 'spot:wall_s', kind: 'spot', spot: 'wall_s', tx: 26, ty: 26 });
   add({ id: 'spot:gate', kind: 'spot', spot: 'gate', tx: 34, ty: 26 });
-  // برا الخان
-  add({ id: 'spot:stable', kind: 'spot', spot: 'stable', tx: 56, ty: 31 });
-  add({ id: 'spot:trough', kind: 'spot', spot: 'trough', tx: 54, ty: 33 });
-  add({ id: 'spot:pen2', kind: 'spot', spot: 'pen2', tx: 52, ty: 36 });
-  add({ id: 'spot:pen3', kind: 'spot', spot: 'pen3', tx: 52, ty: 38 });
-  add({ id: 'spot:sheepfold', kind: 'spot', spot: 'sheepfold', tx: 37, ty: 33 });
-  add({ id: 'spot:stall_shop', kind: 'spot', spot: 'stall_shop', tx: 27, ty: 31 });
-  add({ id: 'spot:orders_board', kind: 'spot', spot: 'orders_board', tx: 35, ty: 31 });
-  add({ id: 'spot:workers_house', kind: 'spot', spot: 'workers_house', tx: 20, ty: 25 });
-  add({ id: 'spot:workers_house2', kind: 'spot', spot: 'workers_house2', tx: 18, ty: 25 });
+  // برا الخان (المباني تنحط باختيارك من المتجر، شوف systems/placement.js)
   add({ id: 'spot:farm2', kind: 'spot', spot: 'farm2', tx: 41, ty: 34 });
   add({ id: 'tent', kind: 'tent', tx: 15, ty: 20, solid: true });
   add({ id: 'stall', kind: 'stall', tx: 10, ty: 21, solid: true });

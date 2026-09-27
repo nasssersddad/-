@@ -1,6 +1,7 @@
 // الخبرة والمستوى والقيم المشتقة (الطاقة القصوى، النجوم...)
 import { BUILD_SPOTS, STAR_THRESHOLDS } from '../data/recipes.js';
 import { RELICS, RELIC_SETS } from '../data/items.js';
+import { comfort, beautyBonus } from './placement.js';
 
 // ---------- الصعوبة ----------
 // المرحلة ترتفع كل 5 مستويات ومع كل نجمة للخان، وكل شي يصعب معها
@@ -56,7 +57,7 @@ function setEffect(state, key) {
 }
 
 export function maxEnergy(state) {
-  return 100 + (state.tech.t_stamina ? 25 : 0) + setEffect(state, 'maxEnergy');
+  return 100 + (state.tech.t_stamina ? 25 : 0) + setEffect(state, 'maxEnergy') + comfort(state);
 }
 
 export function maxHp(state) {
@@ -68,7 +69,7 @@ export function attackPower(state) {
 }
 
 export function coinMultiplier(state) {
-  return 1 + (state.tech.t_hospitality ? 0.25 : 0) + (state.built.majlis ? 0.15 : 0) + setEffect(state, 'coinMul');
+  return 1 + (state.tech.t_hospitality ? 0.25 : 0) + (state.built.majlis ? 0.15 : 0) + setEffect(state, 'coinMul') + beautyBonus(state);
 }
 
 export function offlineMultiplier(state) {

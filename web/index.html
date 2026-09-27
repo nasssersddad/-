@@ -53,8 +53,18 @@
     <button id="actionBtn"><span id="actIcon">✋</span><small id="actLabel"></small></button>
     <button id="seedChip" title="بدّل البذرة"><span id="seedIcon">🌰</span><small id="seedName"></small></button>
     <button id="eatBtn" title="كل">🍽️</button>
+    <button id="bldChip" title="المبنى"><span>🔧</span><small>إدارة</small></button>
+    <div id="placeBar" class="hidden">
+      <div class="pbinfo"><b id="pbName"></b><span id="pbReason"></span></div>
+      <div class="pbhint">حرّك بالعصا أو اضغط على المكان بالخريطة</div>
+      <div class="pbbtns">
+        <button class="btn green big" id="pbOk">✅ ضعه هنا</button>
+        <button class="btn" id="pbFlip">🔄 اقلب</button>
+        <button class="btn" id="pbCancel" style="background:#e8b0a0">❌ إلغاء</button>
+      </div>
+    </div>
     <div id="dock">
-      <button class="dbtn" data-open="inventory">🎒<small>الحقيبة</small></button>
+      <button class="dbtn" data-open="inventory" id="bagBtn">🎒<small id="bagTxt">الحقيبة</small></button>
       <button class="dbtn" data-open="camels">🐪<span class="badge" id="badgeCamels"></span><small>الحلال</small></button>
       <button class="dbtn main" data-open="store">🛒<small>المتجر</small></button>
       <button class="dbtn" data-open="manage">📋<span class="badge" id="badgeManage"></span><small>إدارتي</small></button>

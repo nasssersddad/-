@@ -523,6 +523,69 @@ await tick(300);
 await shot('50-help');
 await closeModals();
 
+// 19) البناء باختيارك برا البيت، والصناديق والأثاث داخله
+await settle();
+const bld = await ev(async () => {
+  const g = window.__game, s = g.state;
+  const P = await import('./js/systems/placement.js');
+  s.player.coins += 30000; s.tech.t_loom = true; s.player.energy = 200;
+  Object.assign(s.inv, { plank: 40, rope: 20, stone: 40, wood: 40, brick: 20, carpet: 2, lantern: 2 });
+  g.placeAt({ x: 14 * 16, y: 34 * 16 });
+  // النول داخل البيت ينرفض
+  g.startPlacing('loom');
+  g.placeGhostAt(30 * 16, 20 * 16);
+  const insideOk = g.placing.check.ok;
+  g.stopPlacing(); g.startPlacing('loom');
+  const outsideOk = g.placing.check.ok;
+  g.confirmPlacing();
+  for (const x of [...g.ui.modals]) { if (x.handlers.build) x.handlers.build(); x.closable = true; x.close(); }
+  const loom = P.placedOf(s, 'loom')[0];
+  const loomOutside = loom && !P.insideKhan(loom.tx, loom.ty) && !!s.built.loom;
+  // انقل المراح والنياق تنتقل معه
+  const pen = P.placedOf(s, 'stable')[0];
+  let penMoved = false, camelsInside = false;
+  if (pen) {
+    const dest = [{ x: 10, y: 40 }, { x: 22, y: 40 }, { x: 8, y: 8 }, { x: 45, y: 41 }, { x: 14, y: 12 }].map(n => P.findFreeSpot(s, g.world, 'stable', n)).find(Boolean);
+    g.startPlacing('stable', pen.id); g.placing.tx = dest.tx; g.placing.ty = dest.ty; g.validatePlacing(); g.confirmPlacing();
+    penMoved = pen.tx === dest.tx && pen.ty === dest.ty;
+    await new Promise(r => setTimeout(r, 400));
+    const r = g.penRect();
+    camelsInside = s.camels.every(c => { const rt = g.camelRt[c.id]; return !rt || rt.arrive || (rt.x >= r.x0 - 2 && rt.x <= r.x1 + 2 && rt.y >= r.y0 - 2 && rt.y <= r.y1 + 2); });
+  }
+  // صندوق وأثاث داخل البيت
+  g.placeAt({ x: 30 * 16, y: 21 * 16 });
+  g.startPlacing('chest'); g.confirmPlacing();
+  g.startPlacing('f_carpet'); g.confirmPlacing();
+  const chest = P.placedOf(s, 'chest')[0];
+  const comfort = P.comfort(s);
+  // الحقيبة تمتلي والزيادة تروح للصندوق
+  s.inv.stone = 400;
+  const before = chest ? P.chestUsed(s, chest.id) : 0;
+  s.inv.stone = 150 - 1 - (Object.entries(s.inv).filter(([k]) => k !== 'stone' && !k.startsWith('seed_')).reduce((a, [, n]) => a + n, 0));
+  const got = g.gainItems({ wood: 5 }, s.player.x, s.player.y);
+  const toChest = got.chest.wood || 0;
+  // ترقية البسطة
+  const stall = P.placedOf(s, 'stall_shop')[0];
+  const upOk = stall ? g.upgradePlaced(stall.id) : false;
+  // ممرات
+  g.placeAt({ x: 12 * 16, y: 36 * 16 }); s.inv.stone = 5;
+  g.startPlacing('path'); for (let i = 0; i < 3; i++) g.confirmPlacing(); g.stopPlacing();
+  return { insideOk, outsideOk, loomOutside, penMoved, camelsInside, chest: !!chest, comfort, toChest, before, upOk, stallSpeed: P.stallSpeed(s), paths: P.placedOf(s, 'path').length };
+});
+console.log('build:', bld);
+await tick(500);
+await shot('51-placed-house');
+await ev(() => { const g = window.__game; g.startPlacing('fence'); g.placeGhostAt(30 * 16, 20 * 16); });
+await tick(300);
+await shot('52-ghost-bad');
+await ev(() => { const g = window.__game; g.stopPlacing(); const P = g.state.placed.find(p => p.type === 'loom'); g.placeAt({ x: (P.tx + 1) * 16, y: (P.ty + 3) * 16 }); });
+await tick(500);
+await shot('53-loom-outside');
+await ev(() => window.__game.ui.openStore('build:in'));
+await tick(300);
+await shot('54-store-inside');
+await closeModals();
+
 // حفظ وتحميل
 await settle();
 const saved = await ev(() => { window.__game.save(); return JSON.parse(localStorage.getItem('almuzare_save')).player.coins; });
@@ -544,6 +607,10 @@ server.close();
 const fatal = errors.filter(e => !/favicon/.test(e));
 if (fatal.length) {
   console.error('❌ أخطاء بالمتصفح:\n' + fatal.join('\n'));
+  process.exit(1);
+}
+if (bld.insideOk || !bld.outsideOk || !bld.loomOutside || !bld.penMoved || !bld.camelsInside || !bld.chest || bld.comfort < 3 || bld.toChest < 1 || !bld.upOk || bld.stallSpeed !== 1.25 || bld.paths < 2) {
+  console.error('❌ البناء أو التخزين فيه مشكلة', bld);
   process.exit(1);
 }
 if (!wx.watered || !wx.moved || !wx.rain || wx.trees < 10) {

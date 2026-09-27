@@ -17,6 +17,8 @@ import { darkness } from './systems/time.js';
 import * as farming from './systems/farming.js';
 import { currentQuest } from './systems/quests.js';
 import { PostFX } from './engine/post.js';
+import * as placement from './systems/placement.js';
+import { PLACEABLES } from './data/buildings.js';
 
 export class Renderer {
   constructor(worldCanvas, fxCanvas, postCanvas) {
@@ -86,8 +88,15 @@ export class Renderer {
     dg.layer = c;
   }
 
+  // من إحداثيات الشاشة لإحداثيات العالم
+  screenToWorld(cx, cy) {
+    const r = this.fc.getBoundingClientRect();
+    const cam = this.cam || { x: 0, y: 0 };
+    return [cam.x + (cx - r.left) / this.scale, cam.y + (cy - r.top) / this.scale];
+  }
+
   camera(game) {
-    const p = game.state.player;
+    const p = game.placing ? placement.anchor(game.placing) : game.state.player;
     const mw = (game.mode === 'dungeon' ? DW : game.mode === 'open' ? OW_W : MAP_W) * TILE;
     const mh = (game.mode === 'dungeon' ? DH : game.mode === 'open' ? OW_H : MAP_H) * TILE;
     let cx = Math.round(p.x - this.bw / 2);
@@ -236,7 +245,13 @@ export class Renderer {
         const dx = Math.round(x - img.width / 2 - cam.x + (opts.ox || 0));
         const dy = Math.round(y - img.height - cam.y + (opts.oy || 0) + oy);
         if (opts.alpha !== undefined) ctx.globalAlpha = opts.alpha;
-        ctx.drawImage(img, dx, dy);
+        if (opts.flip) {
+          ctx.save();
+          ctx.translate(dx + img.width, dy);
+          ctx.scale(-1, 1);
+          ctx.drawImage(img, 0, 0);
+          ctx.restore();
+        } else ctx.drawImage(img, dx, dy);
         ctx.globalAlpha = 1;
       },
     });
@@ -270,7 +285,8 @@ export class Renderer {
           break;
         case 'clay': this.sprite(list, art.clayPit(game.depleted(o)), o.x, o.y + 2, o.y - 8, { ox: sh }); break;
         case 'herb': this.sprite(list, art.herb(game.depleted(o)), o.x, o.y + 2, o.y - 4, { ox: sh }); break;
-        case 'deco': this.sprite(list, art.deco(o.variant), o.x, o.y + 2, o.y - 6); break;
+        case 'deco': if (!o.hidden) this.sprite(list, art.deco(o.variant), o.x, o.y + 2, o.y - 6); break;
+        case 'placed': this.collectPlaced(game, o, list, lights); break;
         case 'well': this.sprite(list, art.well(), o.x, o.y + 4, o.y, { ox: sh }); break;
         case 'tent': this.sprite(list, art.tent(), o.x, o.y + 4, o.y); break;
         case 'stall': this.sprite(list, art.stall(), o.x, o.y + 4, o.y); break;
@@ -370,6 +386,7 @@ export class Renderer {
     }
     if (s.built.stable) this.collectPen(game, list, lights);
     if (s.built.sheepfold) this.collectFold(game, list);
+    this.collectGhost(game, list);
     this.collectWorkers(game, list);
     for (const g of game.guestRt) {
       const frame = g.moving ? 1 + (Math.floor(t * 6) % 2) : 0;
@@ -390,9 +407,9 @@ export class Renderer {
     if (built) {
       switch (o.spot) {
         case 'my_bed': this.sprite(list, art.floorBed('#b8292a'), o.x, o.y + 2, o.y - 12); break;
-        case 'kiln': this.sprite(list, art.station('kiln', t), o.x, o.y + 4, o.y); lights.push({ x: o.x, y: o.y - 4, r: 50, c: 'rgba(255,140,50,', flicker: true }); break;
-        case 'mill': this.sprite(list, art.station('mill', t), o.x, o.y + 4, o.y); break;
-        case 'loom': this.sprite(list, art.station('loom', t), o.x, o.y + 4, o.y); break;
+        case 'kiln': this.sprite(list, art.station('kiln', t), o.x, o.y + 4, o.y, { flip: o.flip }); lights.push({ x: o.x, y: o.y - 4, r: 50, c: 'rgba(255,140,50,', flicker: true }); break;
+        case 'mill': this.sprite(list, art.station('mill', t), o.x, o.y + 4, o.y, { flip: o.flip }); break;
+        case 'loom': this.sprite(list, art.station('loom', t), o.x, o.y + 4, o.y, { flip: o.flip }); break;
         case 'fountain': this.sprite(list, art.fountain(t), o.x, o.y + 6, o.y); break;
         case 'lamps': {
           const pts = [[29, 16], [34, 16], [29, 25], [34, 25]];
@@ -417,28 +434,117 @@ export class Renderer {
         case 'stable': break;
         case 'pen2': case 'pen3': break;
         case 'trough': this.sprite(list, art.trough(s.trough.water), o.x, o.y + 4, o.y); break;
-        case 'workers_house': this.sprite(list, art.mudHouse(s.built.workers_house2 ? 2 : 1), o.x, o.y + 6, o.y); break;
-        case 'stall_shop': this.sprite(list, art.shopStall(), o.x, o.y + 6, o.y); break;
-        case 'orders_board': this.sprite(list, art.ordersBoard(), o.x, o.y + 4, o.y); break;
+        case 'workers_house': this.sprite(list, art.mudHouse(s.built.workers_house2 ? 2 : 1), o.x, o.y + 6, o.y, { flip: o.flip }); break;
+        case 'stall_shop': this.sprite(list, art.shopStall(), o.x, o.y + 6, o.y, { flip: o.flip }); break;
+        case 'orders_board': this.sprite(list, art.ordersBoard(), o.x, o.y + 4, o.y, { flip: o.flip }); break;
         default: break;
       }
       return;
+    }
+    if (o.dynamic) {
+      // موقع بناء منحط باختيارك: حدود المبنى بالأرض ولوحة
+      const f = o.fp;
+      list.push({ y: -1e8 + o.y, draw: (ctx, cam) => {
+        ctx.fillStyle = 'rgba(255,230,150,0.18)';
+        ctx.fillRect(f.x0 * TILE - cam.x, f.y0 * TILE - cam.y, (f.x1 - f.x0 + 1) * TILE, (f.y1 - f.y0 + 1) * TILE);
+        ctx.strokeStyle = 'rgba(140,90,40,0.9)';
+        ctx.setLineDash([3, 2]);
+        ctx.strokeRect(f.x0 * TILE - cam.x + 0.5, f.y0 * TILE - cam.y + 0.5, (f.x1 - f.x0 + 1) * TILE - 1, (f.y1 - f.y0 + 1) * TILE - 1);
+        ctx.setLineDash([]);
+      } });
     }
     const job = s.workers && s.workers.find(w => w.job && w.job.spot === o.spot);
     if (job) { this.sprite(list, art.scaffold(job.job.progress / job.job.need), o.x, o.y + 4, o.y); return; }
     const st = game.state && spot;
     if (!st) return;
     const status = this.spotStatusCache(game, o.spot);
-    if (status.hidden) return;
+    if (status.hidden && !o.dynamic) return;
     const bob = Math.round(Math.sin(t * 3 + o.tx) * 1);
     this.sprite(list, art.buildSign(), o.x, o.y + 2, o.y, { alpha: status.needTech ? 0.55 : 1, oy: 0 });
     list.push({ y: o.y + 1, draw: (ctx, cam) => { ctx.globalAlpha = 0.5 + Math.sin(t * 3) * 0.2; ctx.drawImage(art.ghostOutline(18, 12), Math.round(o.x - 9 - cam.x), Math.round(o.y - 10 - cam.y + bob * 0)); ctx.globalAlpha = 1; } });
   }
 
+  // رسمة كل نوع (للمنحط والشبح)
+  placedSprite(type, t, level = 1, seed = 0) {
+    switch (type) {
+      case 'kiln': case 'mill': case 'loom': return art.station(type, t);
+      case 'stall_shop': return art.shopStall();
+      case 'orders_board': return art.ordersBoard();
+      case 'workers_house': return art.mudHouse(level);
+      case 'trough': return art.trough(5);
+      case 'fence': return art.fencePost();
+      case 'flowers': return art.flowers(seed);
+      case 'potpalm': return art.potPalm();
+      case 'bench': return art.bench();
+      case 'torch': return art.yardTorch(t);
+      case 'chest': return art.storageChest(level);
+      case 'f_cushion': return art.cushion();
+      case 'f_lantern': return art.lanternPost(t);
+      case 'f_jar': return art.heldJar(0);
+      case 'f_bed': return art.guestBed();
+      case 'f_dallah': return art.dallahStand(t);
+      default: return null;
+    }
+  }
+
+  collectPlaced(game, o, list, lights) {
+    const s = game.state;
+    const t = game.t;
+    const f = o.fp;
+    const type = o.ptype;
+    if (type === 'path' || type === 'sandpath') {
+      const img = art.pathTile(type === 'path' ? 'stone' : 'sand', f.x0 + f.y0);
+      list.push({ y: -1e9 + o.y, draw: (ctx, cam) => ctx.drawImage(img, f.x0 * TILE - cam.x, f.y0 * TILE - cam.y) });
+      return;
+    }
+    if (type === 'f_carpet') {
+      const img = art.carpet((f.x1 - f.x0 + 1) * TILE - 2, (f.y1 - f.y0 + 1) * TILE - 4, '#8a2a3a');
+      list.push({ y: -1e9 + o.y, draw: (ctx, cam) => ctx.drawImage(img, f.x0 * TILE + 1 - cam.x, f.y0 * TILE + 2 - cam.y) });
+      return;
+    }
+    if (type === 'fence') {
+      const post = art.fencePost();
+      this.sprite(list, post, o.x - 6, o.y + 1, o.y);
+      this.sprite(list, post, o.x + 6, o.y + 1, o.y);
+      list.push({ y: o.y - 1, draw: (ctx, cam) => { ctx.fillStyle = '#8a5a33'; ctx.fillRect(Math.round(o.x - 8 - cam.x), Math.round(o.y - 8 - cam.y), 16, 1); ctx.fillRect(Math.round(o.x - 8 - cam.x), Math.round(o.y - 4 - cam.y), 16, 1); } });
+      return;
+    }
+    const p = placement.placedById(s, o.pid);
+    const img = this.placedSprite(type, t + o.x, placement.levelOf(s, p), f.x0 + f.y0);
+    if (!img) return;
+    this.sprite(list, img, o.x, o.y + 2, o.y, { flip: o.flip });
+    if (PLACEABLES[type].light) lights.push({ x: o.x, y: o.y - 18, r: type === 'torch' ? 52 : 34, c: 'rgba(255,170,70,', flicker: true });
+  }
+
+  // شبح المبنى وقت الوضع: مربعات خضرا أو حمرا تحته
+  collectGhost(game, list) {
+    const pl = game.placing;
+    if (!pl) return;
+    const t = game.t;
+    const ok = pl.check && pl.check.ok;
+    const fp = placement.footprint(pl);
+    const a = placement.anchor(pl);
+    const img = this.placedSprite(pl.type, t, 1, fp.x0 + fp.y0);
+    const pulse = 0.55 + Math.sin(t * 6) * 0.15;
+    list.push({ y: 1e9, draw: (ctx, cam) => {
+      ctx.fillStyle = ok ? `rgba(90,220,90,${pulse * 0.6})` : `rgba(230,60,50,${pulse * 0.7})`;
+      for (let y = fp.y0; y <= fp.y1; y++) for (let x = fp.x0; x <= fp.x1; x++) ctx.fillRect(x * TILE - cam.x + 1, y * TILE - cam.y + 1, TILE - 2, TILE - 2);
+      ctx.strokeStyle = ok ? '#b8ff9a' : '#ff8a80';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(fp.x0 * TILE - cam.x + 0.5, fp.y0 * TILE - cam.y + 0.5, (fp.x1 - fp.x0 + 1) * TILE - 1, (fp.y1 - fp.y0 + 1) * TILE - 1);
+      if (img) {
+        ctx.globalAlpha = 0.75;
+        const dx = Math.round(a.x - img.width / 2 - cam.x), dy = Math.round(a.y - img.height - cam.y + 2);
+        if (pl.flip) { ctx.save(); ctx.translate(dx + img.width, dy); ctx.scale(-1, 1); ctx.drawImage(img, 0, 0); ctx.restore(); } else ctx.drawImage(img, dx, dy);
+        ctx.globalAlpha = 1;
+      }
+    } });
+  }
+
   collectFold(game, list) {
     const s = game.state;
     const t = game.t;
-    this.fence(list, FOLD);
+    this.fence(list, game.foldTiles());
     const rts = game.sheepRt || {};
     for (const sh of s.sheep) {
       const rt = rts[sh.id];
@@ -494,7 +600,8 @@ export class Renderer {
   collectPen(game, list, lights) {
     const s = game.state;
     const t = game.t;
-    const x0 = PEN.x0 * TILE, x1 = (PEN.x1 + 1) * TILE, y0 = PEN.y0 * TILE + 8, y1 = (PEN.y1 + 1) * TILE;
+    const PR = game.penTiles();
+    const x0 = PR.x0 * TILE, x1 = (PR.x1 + 1) * TILE, y0 = PR.y0 * TILE + 8, y1 = (PR.y1 + 1) * TILE;
     const post = art.fencePost();
     const rail = (ax, ay, bx, by) => list.push({ y: Math.max(ay, by) - 1, draw: (ctx, cam) => {
       ctx.fillStyle = '#8a5a33';
@@ -965,7 +1072,23 @@ export class Renderer {
     } else if (q.target === 'guest') {
       pos = game.guestRt.find(g => !g.served && !g.moving) || (game.guestRt.length ? null : game.worldObjById.hearth);
     }
-    if (!pos) return;
+    if (!pos) {
+      // المبنى ما انحط للحين: نذكّرك تفتح المتجر
+      if (q.target.startsWith('spot:') && Object.values(PLACEABLES).some(d => d.spot === q.target.slice(5))) {
+        const f = this.f, dpr = this.dpr, W = this.fc.width, H = this.fc.height;
+        const bob = Math.sin(game.t * 4) * 3 * dpr;
+        f.save();
+        f.font = `700 ${13 * dpr}px Cairo, sans-serif`;
+        const txt = '👇 افتح 🛒 المتجر ← مباني ← «📍 ضعه»';
+        const w = f.measureText(txt).width + 20 * dpr;
+        f.fillStyle = 'rgba(43,26,14,0.9)'; f.strokeStyle = '#e8b53a'; f.lineWidth = 2 * dpr;
+        f.beginPath(); f.roundRect(W / 2 - w / 2, H - 118 * dpr + bob, w, 26 * dpr, 13 * dpr); f.fill(); f.stroke();
+        f.fillStyle = '#fff3c4'; f.textAlign = 'center'; f.textBaseline = 'middle';
+        f.fillText(txt, W / 2, H - 105 * dpr + bob);
+        f.restore();
+      }
+      return;
+    }
     if (game.target && Math.hypot(game.target.x - pos.x, game.target.y - pos.y) < 4) return;
     this.pointArrow(game, pos, toScreen, { label: q.title });
   }

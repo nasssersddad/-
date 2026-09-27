@@ -7,7 +7,9 @@ import { FARMS } from './data/openworld.js';
 import { WORKER_TYPES } from './data/workers.js';
 import { SHEEP_BREEDS } from './data/sheep.js';
 import { TRAITS, camelBreedName } from './data/camels.js';
-import { count, add, addStat } from './systems/inventory.js';
+import { count, add, addStat, has, bagUsed, bagCap, bagFree, counts } from './systems/inventory.js';
+import * as placement from './systems/placement.js';
+import { PLACEABLES, BAG_CAPS, BAG_UPGRADE_COINS } from './data/buildings.js';
 import { spotStatus } from './systems/crafting.js';
 import { applyReward } from './systems/rewards.js';
 import * as farming from './systems/farming.js';
@@ -84,6 +86,7 @@ export function advice(g) {
   if (thirsty.length + sheepNeed.length) out.push({ icon: '🐪', text: `${thirsty.length + sheepNeed.length} من حلالك يبي أكل أو ماي.`, btn: '🌿 اعتنِ بالكل', go: { tend: true } });
   const milkable = s.camels.filter(c => camels.canMilk(c, day));
   if (milkable.length) out.push({ icon: '🥛', text: `${milkable.length} ناقة جاهزة للحلب.`, btn: '📍 وديني', go: { guideRt: 'camel', id: milkable[0].id, label: 'احلب' } });
+  if (bagUsed(s) >= bagCap(s) * 0.85) out.push({ icon: '🎒', text: `حقيبتك قرّبت تتعبّى (${bagUsed(s)}/${bagCap(s)}). حط أغراضك بصندوق داخل بيتك أو بعها.`, btn: '📦 صندوق', go: { store: 'build:in' } });
   const cropsHave = Object.keys(s.inv).filter(id => CROPS.has(id) && s.inv[id] > 0).reduce((a, id) => a + s.inv[id], 0);
   if (cropsHave >= 6) out.push({ icon: '💰', text: `عندك ${cropsHave} خضار ومحصول. بعها وخذ دراهم!`, btn: '💰 بيع', go: { store: 'sell' } });
   const sold = s.stall.slots.filter(x => x && x.sold).length;
@@ -213,6 +216,8 @@ export function installHub(UI) {
   P.openStore = function (tab = 'seeds') {
     const g = this.g;
     const s = g.state;
+    let sub = null;
+    if (tab.includes(':')) [tab, sub] = tab.split(':');
     this.modal({
       title: '🛒 المتجر',
       cls: 'store',
@@ -230,7 +235,7 @@ export function installHub(UI) {
         if (tab === 'seeds') body = this.seedCards(m);
         else if (tab === 'sell') body = this.sellList(m, 'all');
         else if (tab === 'items') body = this.storeItems(m);
-        else if (tab === 'build') body = this.storeBuild(m);
+        else if (tab === 'build') { if (sub) { m.bcat = sub; sub = null; } body = this.storeBuild(m); }
         else body = this.storeAnimals(m);
         m.body.innerHTML = head + body;
       },
@@ -243,11 +248,24 @@ export function installHub(UI) {
       const [id, n] = v.split(':');
       const cost = this.buyPrice(id) * Number(n);
       if (s.player.coins < cost) { this.audio.play('deny'); return; }
+      if (counts(id) && bagFree(s) < Number(n)) { this.audio.play('deny'); this.toast('🎒 حقيبتك ما تشيل! حط أغراضك بصندوق أو كبّر حقيبتك'); return; }
       s.player.coins -= cost; add(s, id, Number(n));
       this.audio.play('coin'); m.rerender(); this.refresh();
     };
     const use = { water: 'تسقي فيه الزرع والحلال', alfalfa: 'أكل النياق والغنم', dates: 'أكل لك وللنياق', beans: 'تسوي منه قهوة للضيوف', wood: 'للبناء والصناعة', stone: 'للبناء', clay: 'للفخار والطوب', plank: 'للبناء', rope: 'للبناء', brick: 'للجدران', wool: 'تنسج منه سجاد', jar: 'ديكور وطلبات', lantern: 'إضاءة وسمعة' };
-    return `<div class="sgrid">${STORE_ITEMS.map(id => {
+    const lv = s.bagLevel || 0;
+    const upCost = BAG_UPGRADE_COINS[lv];
+    m.handlers.bagup = () => {
+      if (upCost == null || s.player.coins < upCost) { this.audio.play('deny'); return; }
+      s.player.coins -= upCost;
+      s.bagLevel = lv + 1;
+      this.audio.play('build');
+      this.toast(`🎒 حقيبتك صارت تشيل ${bagCap(s)}!`, 'gain', 3);
+      m.rerender(); this.refresh();
+    };
+    const bagCard = `<div class="scard ready"><div class="sbig">🎒</div><b>حقيبة أكبر</b><div class="sinfo">الحين تشيل ${bagCap(s)} غرض (مستعمل ${bagUsed(s)})</div>
+      ${upCost != null ? `<div class="sinfo">تصير ${BAG_CAPS[lv + 1]}</div><button class="btn green" data-a="bagup" ${s.player.coins >= upCost ? '' : 'disabled'}>🪙${fmt(upCost)}</button>` : '<div class="lock ok">أكبر حقيبة ✨</div>'}</div>`;
+    return `<div class="sgrid">${bagCard}${STORE_ITEMS.map(id => {
       const pr = this.buyPrice(id);
       return `<div class="scard"><div class="sbig">${itemIcon(id)}</div><b>${itemName(id)}</b><div class="sinfo">${esc(use[id] || '')}</div>
         <div class="row center"><button class="btn" data-a="bitem" data-v="${id}:1" ${s.player.coins >= pr ? '' : 'disabled'}>🪙${pr}</button><button class="btn" data-a="bitem" data-v="${id}:5" ${s.player.coins >= pr * 5 ? '' : 'disabled'}>×5</button></div>
@@ -258,31 +276,176 @@ export function installHub(UI) {
   P.storeBuild = function (m) {
     const g = this.g;
     const s = g.state;
-    const list = Object.entries(BUILD_SPOTS).filter(([id]) => g.worldObjById['spot:' + id] && !spotStatus(s, id).hidden);
-    list.sort((a, b) => (s.built[a[0]] ? 1 : 0) - (s.built[b[0]] ? 1 : 0));
-    m.handlers.bbuild = (id) => { if (g.doBuild(id)) { this.toast(`🔨 بنيت ${BUILD_SPOTS[id].name}!`, 'gain', 3); m.rerender(); } else this.audio.play('deny'); };
-    m.handlers.bmiss = (id) => {
-      const mc = missingCost(s, BUILD_SPOTS[id].cost, (x) => this.buyPrice(x));
+    m.bcat = m.bcat || 'out';
+    const cats = [['out', '🏗️ مباني برا'], ['deco', '🌺 ديكور وطرق'], ['in', '🛋️ داخل البيت'], ['home', '🏠 ترميم البيت']];
+    m.handlers.bcat = (v) => { m.bcat = v; this.audio.play('ui'); m.rerender(); };
+    const buyMissing = (cost) => {
+      const mc = missingCost(s, cost, (x) => this.buyPrice(x));
       if (s.player.coins < mc.coins) { this.audio.play('deny'); this.toast('الدراهم ما تكفي 💸'); return; }
       s.player.coins -= mc.coins;
       for (const [x, n] of Object.entries(mc.miss)) add(s, x, n);
       this.audio.play('coin');
       m.rerender(); this.refresh();
     };
+    m.handlers.bmiss = (id) => buyMissing(BUILD_SPOTS[id].cost);
+    m.handlers.pmiss = (type) => buyMissing(placement.info(type).cost);
+    m.handlers.bbuild = (id) => { if (g.doBuild(id)) { this.toast(`🔨 بنيت ${BUILD_SPOTS[id].name}!`, 'gain', 3); m.rerender(); } else this.audio.play('deny'); };
     m.handlers.bwhere = (id) => this.hubGo({ guide: g.worldObjById['spot:' + id], label: BUILD_SPOTS[id].name }, m);
     m.handlers.btech = () => { m.close(); this.openTech(); };
-    return `<p class="howto">🏗️ كل مبنى له مكان بمزرعتك. إذا المواد ناقصة تقدر تشتريها من هنا، وبعدين اضغط «ابنِ».</p><div class="sgrid">${list.map(([id, sp]) => {
-      const st = spotStatus(s, id);
-      const built = !!s.built[id];
-      const mc = missingCost(s, sp.cost, (x) => this.buyPrice(x));
-      let act;
-      if (built) act = '<div class="lock ok">✅ مبني</div>';
-      else if (st.needTech) act = `<button class="btn blue" data-a="btech">🔒 ${esc(TECH_BY_ID[st.needTech].name)}</button>`;
-      else if (st.ok) act = `<button class="btn green big" data-a="bbuild" data-v="${id}">ابنِ 🔨</button>`;
-      else act = `<button class="btn" data-a="bmiss" data-v="${id}" ${s.player.coins >= mc.coins ? '' : 'disabled'}>اشترِ الناقص 🪙${fmt(mc.coins)}</button>`;
-      return `<div class="scard ${built ? 'done' : st.ok ? 'ready' : ''}"><b>${esc(sp.name)}</b>${sp.rating ? `<div class="sinfo">⭐ سمعة +${sp.rating}</div>` : ''}<div class="sinfo">${esc(sp.desc)}</div>
-        ${built ? '' : this.costHtml(sp.cost)}<div class="row center">${act}${built ? '' : `<button class="link" data-a="bwhere" data-v="${id}">📍 وين؟</button>`}</div></div>`;
-    }).join('')}</div>`;
+    m.handlers.place = (type) => { m.close(); g.startPlacing(type); };
+    m.handlers.pbuild = (id) => { m.close(); this.openBuild(id); };
+    m.handlers.pmenu = (pid) => { m.close(); this.openPlacedMenu(pid); };
+    const chips = `<div class="helpnav">${cats.map(([id, label]) => `<button class="hbtn2 ${m.bcat === id ? 'on' : ''}" data-a="bcat" data-v="${id}"><small>${label}</small></button>`).join('')}</div>`;
+    const miss = (cost) => { const mc = missingCost(s, cost, (x) => this.buyPrice(x)); return mc.coins ? `<button class="btn" data-a="MISS" ${s.player.coins >= mc.coins ? '' : 'disabled'}>اشترِ الناقص 🪙${fmt(mc.coins)}</button>` : ''; };
+    let body = '';
+    if (m.bcat === 'home') {
+      const list = Object.entries(BUILD_SPOTS).filter(([id]) => g.worldObjById['spot:' + id] && !g.worldObjById['spot:' + id].dynamic && !spotStatus(s, id).hidden);
+      list.sort((x, y) => (s.built[x[0]] ? 1 : 0) - (s.built[y[0]] ? 1 : 0));
+      body = `<p class="howto">🏠 هذي تصليحات لبيتك نفسه (الجدران والغرف والمجلس...). مكانها ثابت داخل البيت.</p><div class="sgrid">${list.map(([id, sp]) => {
+        const st = spotStatus(s, id);
+        const built = !!s.built[id];
+        let act;
+        if (built) act = '<div class="lock ok">✅ مبني</div>';
+        else if (st.needTech) act = `<button class="btn blue" data-a="btech">🔒 ${esc(TECH_BY_ID[st.needTech].name)}</button>`;
+        else if (st.ok) act = `<button class="btn green big" data-a="bbuild" data-v="${id}">ابنِ 🔨</button>`;
+        else act = miss(sp.cost).replace('MISS', 'bmiss" data-v="' + id);
+        return `<div class="scard ${built ? 'done' : st.ok ? 'ready' : ''}"><b>${esc(sp.name)}</b>${sp.rating ? `<div class="sinfo">⭐ سمعة +${sp.rating}</div>` : ''}<div class="sinfo">${esc(sp.desc)}</div>
+          ${built ? '' : this.costHtml(sp.cost)}<div class="row center">${act}${built ? '' : `<button class="link" data-a="bwhere" data-v="${id}">📍 وين؟</button>`}</div></div>`;
+      }).join('')}</div>`;
+    } else if (m.bcat === 'out') {
+      const types = Object.keys(PLACEABLES).filter(t => PLACEABLES[t].cat === 'building');
+      body = `<p class="howto">🏗️ اختر المبنى واضغط <b>«📍 ضعه»</b>، وحرّكه لأي مكان تبيه <b>برا بيتك</b> (الأخضر = يصير). بعدين ابنه بنفسك أو خلّ البنّاء يبنيه.</p><div class="sgrid">${types.map(type => {
+        const d = PLACEABLES[type];
+        const inf = placement.info(type);
+        const st = spotStatus(s, d.spot);
+        const p = placement.placedOf(s, type)[0];
+        const built = placement.isBuilt(s, p);
+        let act;
+        if (built) act = `<div class="lock ok">✅ مستوى ${placement.levelOf(s, p)}</div><button class="btn blue" data-a="pmenu" data-v="${p.id}">🔧 إدارة</button>`;
+        else if (p) act = `<button class="btn green" data-a="pbuild" data-v="${d.spot}">🔨 ابنِه</button><button class="link" data-a="bwhere" data-v="${d.spot}">📍 وين؟</button>`;
+        else if (st.hidden && st.reason) act = `<div class="lock">🔒 ${esc(st.reason)}</div>`;
+        else if (st.needTech) act = `<button class="btn blue" data-a="btech">🔒 ${esc(TECH_BY_ID[st.needTech].name)}</button>`;
+        else if (d.inside && !placement.placedOf(s, d.inside).length) act = `<div class="lock">🔒 حط ${esc(placement.info(d.inside).name)} أول</div>`;
+        else act = `<button class="btn green big" data-a="place" data-v="${type}">📍 ضعه</button>${miss(inf.cost).replace('MISS', 'pmiss" data-v="' + type)}`;
+        return `<div class="scard ${built ? 'done' : !p && !st.hidden && !st.needTech ? 'ready' : ''}"><div class="sbig">${d.icon}</div><b>${esc(inf.name)}</b>
+          <div class="sinfo">${esc(inf.desc)}</div><div class="sinfo">📐 ${d.w}×${d.h}${inf.rating ? ` • ⭐ سمعة +${inf.rating}` : ''}${d.perk ? ` • ⬆️ ${esc(d.perk)}` : ''}</div>
+          ${built ? '' : this.costHtml(inf.cost)}<div class="row center">${act}</div></div>`;
+      }).join('')}</div>`;
+    } else {
+      const zone = m.bcat === 'deco' ? 'out' : 'in';
+      const types = Object.keys(PLACEABLES).filter(t => PLACEABLES[t].cat !== 'building' && PLACEABLES[t].zone === zone);
+      const head = zone === 'out'
+        ? `<p class="howto">🌺 زيّن مزرعتك: ممرات وسياج وورد. كل قطعة ترفع <b>جمال المزرعة</b> (الحين ${placement.beauty(s)} 🌸 = دراهم الضيوف +${Math.round(placement.beautyBonus(s) * 100)}%).</p>`
+        : `<p class="howto">🛋️ داخل بيتك: <b>صناديق 📦</b> تخزّن فيها أغراضك (حقيبتك تشيل ${bagCap(s)} بس)، و<b>أثاث</b> يرفع راحة البيت (الحين ${placement.comfort(s)} 🛋️ = طاقتك القصوى +${placement.comfort(s)}).</p>`;
+      body = head + `<div class="sgrid">${types.map(type => {
+        const d = PLACEABLES[type];
+        const inf = placement.info(type);
+        const item = placement.furnitureItem(type);
+        const n = placement.placedOf(s, type).length;
+        const can = item ? count(s, item) > 0 : (has(s, inf.cost) && s.player.coins >= inf.coins);
+        const full = !placement.canAddMore(s, type);
+        const price = item ? `<div class="sinfo">يحتاج ${ITEMS[item].icon} ${ITEMS[item].name} من حقيبتك (عندك ${count(s, item)})</div>` : `${Object.keys(inf.cost).length ? this.costHtml(inf.cost) : ''}${inf.coins ? `<div class="sinfo">🪙${inf.coins}</div>` : ''}`;
+        const perk = d.beauty ? `🌸 جمال +${d.beauty}` : d.comfort ? `🛋️ راحة +${d.comfort}` : type === 'chest' ? `📦 يشيل ${80} غرض (يترقّى)` : '';
+        return `<div class="scard ${can && !full ? 'ready' : ''}"><div class="sbig">${d.icon}</div><b>${esc(inf.name)}</b><div class="sinfo">${perk}${n ? ` • عندك ${n}` : ''}</div>${price}
+          <div class="row center">${full ? '<div class="lock">وصلت الحد</div>' : `<button class="btn green" data-a="place" data-v="${type}" ${can ? '' : 'disabled'}>📍 ضعه</button>${!item && !can ? miss(inf.cost).replace('MISS', 'pmiss" data-v="' + type) : ''}`}</div></div>`;
+      }).join('')}</div>`;
+    }
+    return chips + body;
+  };
+
+  // ---------- إدارة مبنى أو قطعة منحطة ----------
+  P.openPlacedMenu = function (pid) {
+    const g = this.g;
+    const s = g.state;
+    const p0 = placement.placedById(s, pid);
+    if (!p0) return;
+    const d = PLACEABLES[p0.type];
+    const inf = placement.info(p0.type);
+    this.modal({
+      title: `${d.icon} ${inf.name}`, cls: 'small',
+      render: (m) => {
+        const p = placement.placedById(s, pid);
+        if (!p) { m.close(); return; }
+        const built = placement.isBuilt(s, p);
+        const lv = placement.levelOf(s, p);
+        const u = placement.nextUpgrade(s, p);
+        const opener = { kiln: 1, mill: 1, loom: 1, stall_shop: 1, orders_board: 1, workers_house: 1, stable: 1, sheepfold: 1, chest: 1 }[p.type];
+        const extra = d.beauty ? `🌸 جمال +${d.beauty}` : d.comfort ? `🛋️ راحة +${d.comfort}` : p.type === 'chest' ? `📦 ${placement.chestUsed(s, pid)}/${placement.chestCap(s, pid)}` : '';
+        m.body.innerHTML = `<div class="bmenu"><div class="big">${d.icon}</div>
+          ${d.levels ? `<p class="center"><b>المستوى ${lv}/${d.levels.length}</b>${d.perk ? ` — ${esc(d.perk)}` : ''}</p>` : ''}
+          ${extra ? `<p class="center">${extra}</p>` : ''}
+          ${u ? `<div class="card"><b>⬆️ الترقية للمستوى ${u.level}</b>${this.costHtml(u.cost)}${u.coins ? `<div>🪙${fmt(u.coins)}</div>` : ''}<div class="row center"><button class="btn green" data-a="up" ${has(s, u.cost) && s.player.coins >= u.coins ? '' : 'disabled'}>⬆️ رقِّه</button>${missingCost(s, u.cost, (x) => this.buyPrice(x)).coins ? `<button class="btn" data-a="upmiss">اشترِ الناقص 🪙${fmt(missingCost(s, u.cost, (x) => this.buyPrice(x)).coins)}</button>` : ''}</div></div>` : d.levels && built ? '<p class="center muted">وصل أعلى مستوى ✨</p>' : ''}
+          <div class="row center" style="margin-top:8px">
+            ${opener && built ? '<button class="btn blue" data-a="open">📂 افتح</button>' : ''}
+            <button class="btn" data-a="move">🔀 انقل</button>
+            ${!placement.isBuilding(p.type) ? '<button class="btn" data-a="del" style="background:#e8b0a0">🗑️ شيله</button>' : ''}
+          </div></div>`;
+        m.handlers.up = () => { if (g.upgradePlaced(pid)) { this.toast(`⬆️ ${inf.name} صار مستوى ${placement.levelOf(s, placement.placedById(s, pid))}!`, 'gain', 3); m.rerender(); this.refresh(); } };
+        m.handlers.upmiss = () => {
+          const mc = missingCost(s, u.cost, (x) => this.buyPrice(x));
+          if (s.player.coins < mc.coins) { this.audio.play('deny'); return; }
+          s.player.coins -= mc.coins;
+          for (const [x, n] of Object.entries(mc.miss)) add(s, x, n);
+          this.audio.play('coin'); m.rerender(); this.refresh();
+        };
+        m.handlers.move = () => { m.close(); g.startPlacing(p.type, pid); };
+        m.handlers.del = () => { if (g.removePlacedItem(pid)) { this.toast('🗑️ شلته' + (placement.furnitureItem(p.type) ? '، ورجع لحقيبتك' : '')); m.close(); } };
+        m.handlers.open = () => {
+          m.close();
+          if (p.type === 'chest') this.openChest(pid);
+          else if (p.type === 'stall_shop') this.openTrade('stall');
+          else if (p.type === 'orders_board') this.openTrade('orders');
+          else if (p.type === 'workers_house') this.openWorkers();
+          else if (p.type === 'stable') this.openCamels(null, 'pen');
+          else if (p.type === 'sheepfold') this.openTrade('sheep');
+          else this.openCraft(BUILD_SPOTS[d.spot].station);
+        };
+      },
+    });
+  };
+
+  // ---------- الصندوق ----------
+  P.openChest = function (pid) {
+    const g = this.g;
+    const s = g.state;
+    const MATS = new Set(['wood', 'frond', 'stone', 'clay', 'plank', 'rope', 'brick', 'herb', 'oldcoin', 'bone', 'stinger', 'wool', 'water', 'beans', 'alfalfa', 'flour', 'jar', 'lantern']);
+    this.modal({
+      title: '📦 الصندوق',
+      cls: 'store',
+      render: (m) => {
+        const box = s.chests[pid];
+        if (!box) { m.close(); return; }
+        const cap = placement.chestCap(s, pid), used = placement.chestUsed(s, pid);
+        const bu = bagUsed(s), bc = bagCap(s);
+        const bagIds = Object.keys(s.inv).filter(id => ITEMS[id] && s.inv[id] > 0).sort();
+        const boxIds = Object.keys(box.items).filter(id => box.items[id] > 0).sort();
+        const row = (id, n, a) => `<div class="shop-row"><span class="ic">${itemIcon(id)}</span><span class="nm">${itemName(id)} <small class="muted">×${n}</small></span><button class="btn" data-a="${a}" data-v="${id}:1">1</button><button class="btn green" data-a="${a}" data-v="${id}:all">الكل</button></div>`;
+        m.body.innerHTML = `<div class="row center" style="margin-bottom:6px">
+            <button class="btn" data-a="depcat" data-v="mats">⬅️ حط كل المواد</button>
+            <button class="btn" data-a="depcat" data-v="crops">⬅️ حط كل المحاصيل</button>
+            <button class="btn" data-a="depcat" data-v="all">⬅️ حط الكل</button></div>
+          <div class="chestwrap">
+            <div class="chestcol"><h4><span>📦 الصندوق</span><span>${used}/${cap}</span></h4><div class="bar"><i style="width:${Math.min(100, used / cap * 100)}%"></i></div>
+              ${boxIds.map(id => row(id, box.items[id], 'wd')).join('') || '<p class="muted center">فاضي</p>'}</div>
+            <div class="chestcol"><h4><span>🎒 حقيبتك</span><span>${bu}/${bc}</span></h4><div class="bar"><i style="width:${Math.min(100, bu / bc * 100)}%"></i></div>
+              ${bagIds.map(id => row(id, s.inv[id], 'dep')).join('') || '<p class="muted center">فاضية</p>'}</div>
+          </div>`;
+        const moveIt = (fn, v) => { const [id, n] = v.split(':'); const k = fn(s, pid, id, n === 'all' ? 9999 : 1); if (!k) { this.audio.play('deny'); this.toast(fn === placement.deposit ? 'الصندوق مليان' : 'حقيبتك مليانة'); } else this.audio.play('ui'); m.rerender(); this.refresh(); };
+        m.handlers.dep = (v) => moveIt(placement.deposit, v);
+        m.handlers.wd = (v) => moveIt(placement.withdraw, v);
+        m.handlers.depcat = (v) => {
+          let k = 0;
+          for (const id of Object.keys(s.inv)) {
+            if (!ITEMS[id]) continue;
+            if (v === 'mats' && !MATS.has(id)) continue;
+            if (v === 'crops' && !CROPS.has(id)) continue;
+            k += placement.deposit(s, pid, id, 9999);
+          }
+          this.toast(k ? `📦 حطيت ${k} غرض بالصندوق` : 'ما فيه شي ينحط أو الصندوق مليان', k ? 'gain' : '', 2);
+          m.rerender(); this.refresh();
+        };
+      },
+    });
   };
 
   P.storeAnimals = function (m) {
@@ -319,6 +482,7 @@ export function installHub(UI) {
           { id: 'animals', label: '🐪 حلالي' },
           { id: 'property', label: `🏡 عقاراتي (${owned.length})` },
           { id: 'workers', label: `👷 عمّالي (${s.workers.length})` },
+          { id: 'storage', label: `📦 المخزن` },
         ], tab, (v) => { tab = v; m.rerender(); });
         m.handlers.go = (i) => this.hubGo(m.gos[Number(i)], m);
         m.gos = [];
@@ -329,6 +493,7 @@ export function installHub(UI) {
         } else if (tab === 'farm') html = this.manageFarm(m, btn);
         else if (tab === 'animals') html = this.manageAnimals(m, btn);
         else if (tab === 'property') html = this.manageProperty(m, btn);
+        else if (tab === 'storage') html = this.manageStorage(m, btn);
         else html = this.manageWorkers(m, btn);
         m.body.innerHTML = html;
       },
@@ -351,7 +516,14 @@ export function installHub(UI) {
     const built = Object.keys(BUILD_SPOTS).filter(id => s.built[id]);
     const seeds = farming.ownedSeeds(s);
     m.handlers.cyc = () => { farming.cycleSeed(s); m.rerender(); this.refresh(); };
+    m.handlers.pm = (pid) => { m.close(); this.openPlacedMenu(pid); };
+    const blds = (s.placed || []).filter(p => placement.isBuilding(p.type)).map(p => {
+      const d = PLACEABLES[p.type];
+      const b = placement.isBuilt(s, p);
+      return `<div class="acard"><span class="sbig">${d.icon}</span><div class="ainfo"><b>${esc(placement.info(p.type).name)}</b><small>${b ? `مستوى ${placement.levelOf(s, p)}` : '🚧 موقع بناء'}</small></div><div class="acol">${btn({ guide: { x: placement.anchor(p).x, y: placement.anchor(p).y }, label: placement.info(p.type).name }, '📍')}<button class="btn" data-a="pm" data-v="${p.id}">🔧</button></div></div>`;
+    }).join('');
     return `<h4 class="sub">🌾 الأحواض</h4><div class="pgrid">${cards}</div>
+      <h4 class="sub">🏗️ مبانيك برا (تنقلها وترقيها)</h4>${blds || '<p class="muted">ما حطيت مباني للحين. افتح 🛒 المتجر ← مباني.</p>'}
       <p>🌰 البذرة اللي تنزرع: <b>${farming.firstSeed(s) ? SEEDS[farming.firstSeed(s)].name : 'ما عندك بذور'}</b> ${seeds.length > 1 ? `<button class="link" data-a="cyc">🔄 بدّل</button>` : ''} ${btn({ store: 'seeds' }, '🌱 اشترِ بذور')}</p>
       <h4 class="sub">🏠 مبانيك (${built.length})</h4><div class="traits">${built.map(id => `<span class="ctag">✅ ${esc(BUILD_SPOTS[id].name)}</span>`).join('') || '<span class="muted">ما بنيت شي للحين</span>'}</div>
       <div class="row center" style="margin-top:6px">${btn({ store: 'build' }, '🏗️ ابنِ أكثر', 'blue')}</div>`;
@@ -436,6 +608,20 @@ export function installHub(UI) {
     return `<p class="howto">🏡 المزارع اللي تشتريها بالقرية تنتج كل يوم. استلم من هنا (المندوب ياخذ 10% من الدراهم) أو روح لمخزنها ببلاش. طوّرها عشان تنتج أكثر.</p>${cards}`;
   };
 
+  P.manageStorage = function (m, btn) {
+    const s = this.g.state;
+    const chests = placement.placedOf(s, 'chest');
+    const bu = bagUsed(s), bc = bagCap(s);
+    const rows = chests.map((p, i) => {
+      const used = placement.chestUsed(s, p.id), cap = placement.chestCap(s, p.id);
+      const top = Object.entries(s.chests[p.id].items).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => `${itemIcon(k)}${n}`).join(' ');
+      return `<div class="acard"><span class="sbig">📦</span><div class="ainfo"><b>صندوق ${i + 1}</b> <small class="muted">مستوى ${placement.levelOf(s, p)} • ${used}/${cap}</small><small>${top || 'فاضي'}</small></div><div class="acol">${btn({ guide: placement.anchor(p), label: 'الصندوق' }, '📍 وديني')}</div></div>`;
+    }).join('');
+    return `<p class="howto">🎒 حقيبتك: <b>${bu}/${bc}</b>. إذا امتلت، اللي تجمعه يروح للصناديق تلقائياً. البناء والصناعة ياخذون من الصناديق بعد.</p>
+      <div class="row center">${btn({ store: 'build:in' }, '📦 صندوق جديد', 'green')}${btn({ store: 'items' }, '🎒 كبّر حقيبتك')}</div>
+      ${rows || '<p class="muted center">ما عندك صناديق. ابنِ صندوق داخل بيتك من 🛒 المتجر ← مباني ← داخل البيت.</p>'}`;
+  };
+
   P.manageWorkers = function (m, btn) {
     const s = this.g.state;
     m.handlers.wopen = () => { m.close(); this.openWorkers(); };
@@ -457,7 +643,7 @@ export function installHub(UI) {
       { icon: '🌱', title: 'الزراعة', steps: ['اشترِ بذور من أبو سالم 🥕 (جنب الأحواض) أو من 🛒 المتجر.', 'اوقف جنب حوض فاضي واضغط ✋ «ازرع». زر البذرة 🔄 يبدّل وش تزرع.', 'اسقِ الحوض كل يوم 💧 (الماء من البير بالخان)، أو خلّ 🌧️ المطر يسقيه عنك!', 'بعد الأيام يطلع المحصول: احصده 🧺 وبعه 💰.'], go: { store: 'seeds' }, btn: '🌱 اشترِ بذور' },
       { icon: '🐪', title: 'الحلال', steps: ['ابنِ المراح 🏗️ وتجيك ناقتين هدية.', 'كل يوم اسقها وأطعمها (برسيم أو تمر)، أو اضغط «اسقِ وأطعم الكل» من 📋 إدارتي.', 'احلب النياق 🥛، ولقّح الفحل مع الناقة، وفيه فرصة يطلع لك حوار نادر!', 'كل ناقة لها خواص ✨، والحوار يورثها. النادرة تسوى ثروة.'], go: { manage: 'animals' }, btn: '🐪 حلالي' },
       { icon: '💰', title: 'البيع والتجارة', steps: ['أسرع طريقة: 🛒 المتجر ← «💰 بيع»، وتبيع أي شي على طول.', 'تبي سعر أعلى؟ ابنِ البسطة 🏪 وحط أغراضك بسعرك، والمارّة يشترون.', 'لوحة الطلبات 📋 تجيك طلبات قوافل بجوايز حلوة.', 'بالحلال تقدر تساوم وتقايض من 🐪 الحلال ← السوق.'], go: { store: 'sell' }, btn: '💰 بيع الحين' },
-      { icon: '🏗️', title: 'البناء', steps: ['اجمع خشب 🪵 وحجر 🪨 وطين 🟫 من النخل والسدر والصخور.', 'اصنع ألواح وحبال وطوب من المنجرة والفرن.', 'افتح 🛒 المتجر ← «🏗️ مباني»: يبيّن لك الناقص، وتقدر تشتريه وتبني بضغطة.', 'كل مبنى يرفع سمعة الخان ⭐ لين توصل 5 نجوم.'], go: { store: 'build' }, btn: '🏗️ المباني' },
+      { icon: '🏗️', title: 'البناء', steps: ['اجمع خشب 🪵 وحجر 🪨 وطين 🟫 من النخل والسدر والصخور.', '🛒 المتجر ← «🏗️ مباني» ← «📍 ضعه»: حرّك المبنى لأي مكان تبيه <b>برا بيتك</b> (الأخضر = يصير) واضغط «ضعه هنا».', 'ابنه بنفسك أو خلّ البنّاء 👷 يبنيه. بعدين تقدر 🔀 تنقله أو ⬆️ ترقّيه من زر 🔧.', 'داخل بيتك حط 📦 صناديق تخزّن فيها أغراضك (حقيبتك لها سعة)، وأثاث يرفع راحتك وطاقتك.', 'زيّن برا بممرات وسياج وورد 🌺، الجمال يزيد دراهم الضيوف.'], go: { store: 'build' }, btn: '🏗️ المباني' },
       { icon: '👷', title: 'العمّال', steps: ['وظّف حطّاب، مزارع، بنّاء، أو راعي من 👷 العمّال.', 'يشتغلون لحالهم، وراتبهم بالساعة.', 'لا تتأخر بالراتب! إذا تأخرت يضربون ✊ ويبون غرامة.', 'فعّل الدفع التلقائي وارتاح.'], go: { workers: true }, btn: '👷 العمّال' },
       { icon: '🗺️', title: 'القرية والعقارات', steps: ['اطلع من «طريق القرية» يسار مزرعتك.', 'فيها 5 مزارع جيران: تشتري منهم بضاعة ونياق وغنم وتساومهم.', 'تقدر تشتري مزرعة كاملة 🏡 وتصير تنتج لك كل يوم.', 'من 📋 إدارتي ← عقاراتي: طوّرها واستلم إنتاجها.'], go: { manage: 'property' }, btn: '🏡 عقاراتي' },
       { icon: '🎁', title: 'المكافآت والفعاليات', steps: ['كل يوم ادخل وخذ مكافأتك اليومية 🎁، والسلسلة تكبر الجوايز.', '3 مهام يومية، وعجلة حظ، وإنجازات.', 'فعالية جديدة كل يومين 🎪: سباق هجن، صقور، مهرجان تمور، وغيرها.', 'الصعوبة تزيد مع كل مرحلة، فالجوايز تحتاج شغل!'], go: { events: true }, btn: '🎪 الفعاليات' },
@@ -470,7 +656,7 @@ export function installHub(UI) {
         const tp = TOPICS[cur];
         m.body.innerHTML = `<div class="helpnav">${TOPICS.map((x, i) => `<button class="hbtn2 ${i === cur ? 'on' : ''}" data-a="tp" data-v="${i}"><span>${x.icon}</span><small>${x.title}</small></button>`).join('')}</div>
           <div class="helpcard"><div class="hbig">${tp.icon}</div><h3>${tp.title}</h3>
-            <ol>${tp.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
+            <ol>${tp.steps.map(x => `<li>${esc(x).replace(/&lt;(\/?)b&gt;/g, '<$1b>')}</li>`).join('')}</ol>
             <div class="row center">${cur > 0 ? '<button class="btn" data-a="prev">→ السابق</button>' : ''}${tp.go ? `<button class="btn green" data-a="go">${tp.btn}</button>` : ''}${cur < TOPICS.length - 1 ? '<button class="btn blue" data-a="next">التالي ←</button>' : '<button class="btn blue" data-a="close">يلا نلعب! 🎉</button>'}</div>
           </div>`;
         m.handlers.tp = (v) => { cur = Number(v); this.audio.play('ui'); m.rerender(); };

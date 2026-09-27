@@ -3,6 +3,8 @@ import { T, TILE, KHAN, PEN, FOLD, MAP_W, MAP_H } from './data/map.js';
 import { FARMS } from './data/openworld.js';
 import { NPCS } from './data/npcs.js';
 import { isReady } from './systems/farming.js';
+import { footprint, isBuilt, info } from './systems/placement.js';
+import { PLACEABLES } from './data/buildings.js';
 
 const COL = {
   [T.SAND]: '#d9b77a', [T.SAND2]: '#cfad70', [T.GRASS]: '#7fa84a', [T.WATER]: '#3f8fc0', [T.ROAD]: '#b8925a',
@@ -69,8 +71,16 @@ export function drawMap(cv, game, opts = {}) {
   if (game.mode === 'world') {
     box(KHAN.x0 * TILE, KHAN.y0 * TILE, (KHAN.x1 + 1) * TILE, (KHAN.y1 + 1) * TILE, 'rgba(60,30,10,.8)');
     label((KHAN.x0 + KHAN.x1) / 2 * TILE, (KHAN.y0 + 2) * TILE, 'الخان');
-    if (s.built.stable) { box(PEN.x0 * TILE, PEN.y0 * TILE, (PEN.x1 + 1) * TILE, (PEN.y1 + 1) * TILE, '#6b3f1f', 'rgba(255,200,120,.25)'); label((PEN.x0 + PEN.x1) / 2 * TILE, (PEN.y1 + 2) * TILE, 'المراح'); }
-    if (s.built.sheepfold) { box(FOLD.x0 * TILE, FOLD.y0 * TILE, (FOLD.x1 + 1) * TILE, (FOLD.y1 + 1) * TILE, '#6b3f1f', 'rgba(255,255,255,.2)'); label((FOLD.x0 + FOLD.x1) / 2 * TILE, (FOLD.y1 + 2) * TILE, 'الحظيرة'); }
+    // المباني والديكور المنحطة باختيارك
+    for (const p of s.placed || []) {
+      const d = PLACEABLES[p.type];
+      const f = footprint(p);
+      const built = isBuilt(s, p);
+      if (d.flat) { ctx.fillStyle = p.type === 'path' ? '#b8b0a2' : p.type === 'sandpath' ? '#d8b484' : '#9a2a3a'; const [a1, b1] = P(f.x0 * TILE, f.y0 * TILE), [c1, d1] = P((f.x1 + 1) * TILE, (f.y1 + 1) * TILE); ctx.fillRect(a1, b1, c1 - a1, d1 - b1); continue; }
+      const fill = d.area ? (p.type === 'stable' ? 'rgba(255,200,120,.25)' : 'rgba(255,255,255,.2)') : built ? '#8a5a33' : 'rgba(255,230,150,.4)';
+      box(f.x0 * TILE, f.y0 * TILE, (f.x1 + 1) * TILE, (f.y1 + 1) * TILE, '#5e3a1f', fill);
+      if (d.cat === 'building') label((f.x0 + f.x1 + 1) / 2 * TILE, (f.y1 + 1.8) * TILE, info(p.type).name);
+    }
     for (const o of game.world.objects) {
       if (o.kind === 'plot') {
         if (o.group === 2 && !s.built.farm2) continue;

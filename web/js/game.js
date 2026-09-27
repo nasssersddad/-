@@ -6,7 +6,7 @@ import { NPCS, GUEST_LOOKS, GUEST_NAMES, GUEST_WANTS, GUEST_LINES, WEEKDAYS } fr
 import { INTRO, LAMP_IDLE, MAIN_QUESTS } from './data/quests.js';
 import { GATHER_CHEST_CHANCE } from './data/rewards.js';
 import { newState, saveToStorage, loadFromStorage } from './systems/state.js';
-import { add, count, addStat } from './systems/inventory.js';
+import { add, count, addStat, has, remove, bagFree } from './systems/inventory.js';
 import { applyReward, rollChestRarity, rollChest, doubleReward } from './systems/rewards.js';
 import { maxEnergy, maxHp, attackPower, coinMultiplier, stars, roomsBuilt } from './systems/progression.js';
 import { build, spotStatus } from './systems/crafting.js';
@@ -30,6 +30,8 @@ import { buildOpenWorld, owTile, FARMS } from './data/openworld.js';
 import * as farmsSys from './systems/farms.js';
 import * as events from './systems/events.js';
 import * as weather from './systems/weather.js';
+import * as placement from './systems/placement.js';
+import { PLACEABLES } from './data/buildings.js';
 
 // اتجاه الحركة ← وجه الشخصية
 export function screenDir(dx, dy) {
@@ -87,6 +89,8 @@ export class Game {
     this.state = loaded || newState(this.now());
     for (const c of this.state.camels) camels.ensureTraits(c);
     const s = this.state;
+    this.migrated = placement.migrate(s, this.world).moved;
+    this.syncPlaced();
     if (!loaded) {
       s.player.x = this.world.spawn.x;
       s.player.y = this.world.spawn.y;
@@ -100,6 +104,7 @@ export class Game {
     retention.ensureDailyQuests(s, this.now());
     this.restoreGuests();
     this.ui.bind(this);
+    if (this.migrated && this.migrated.length) setTimeout(() => this.ui.toast('🔀 نقلنا الورش (' + this.migrated.map(t => placement.info(t).name).join('، ') + ') برا البيت. تقدر تنقلها لأي مكان من 📋 إدارتي', 'gain', 7), 1500);
     this.welcome(!loaded);
   }
 
@@ -155,7 +160,10 @@ export class Game {
     this.clockTick();
     this.audio.night = time.isNight(s) || this.mode === 'dungeon';
 
-    if (this.anim) this.updateAnim(dt);
+    // مبنى صار مبني بدون مكان (حفظ قديم): نحطه
+    if (this.mode === 'world' && placement.needsMigrate(s)) { placement.migrate(s, this.world); this.syncPlaced(); }
+    if (this.placing) this.updatePlacing(dt);
+    else if (this.anim) this.updateAnim(dt);
     else this.movePlayer(dt);
     this.actionCd = Math.max(0, this.actionCd - dt);
     this.swing = Math.max(0, this.swing - dt);
@@ -165,8 +173,8 @@ export class Game {
     else this.updateDungeon(dt);
 
     this.updateGuide();
-    this.target = this.findTarget();
-    if ((this.input.actionPressed || this.input.action) && this.actionCd <= 0 && !this.anim) {
+    this.target = this.placing ? null : this.findTarget();
+    if (!this.placing && (this.input.actionPressed || this.input.action) && this.actionCd <= 0 && !this.anim) {
       this.actionCd = ACTION_REPEAT;
       this.doAction(this.target, this.input.actionPressed);
       if (this.anim) this.actionCd = Math.max(ACTION_REPEAT, this.anim.dur);
@@ -260,7 +268,7 @@ export class Game {
     s.stallMin = s.stallMin || nowMin;
     if (nowMin - s.stallMin >= 10) {
       const fast = this.eventMod('stallFast');
-      const sold = shop.stallTick(s, (nowMin - s.stallMin) * (fast ? 2.5 : 1), this.rng);
+      const sold = shop.stallTick(s, (nowMin - s.stallMin) * (fast ? 2.5 : 1) * placement.stallSpeed(s), this.rng);
       if (fast && sold.length) events.addTokens(s, sold.length * 2);
       s.stallMin = nowMin;
       for (const x of sold) {
@@ -328,7 +336,7 @@ export class Game {
   // ---------- العمّال ----------
   workerHome() {
     const o = this.worldObjById['spot:workers_house'];
-    return this.state.built.workers_house ? { x: o.x, y: o.y + 14 } : { x: this.world.cryptExit.x - 60, y: this.world.cryptExit.y + 20 };
+    return this.state.built.workers_house && o ? { x: o.x, y: o.y + 14 } : { x: this.world.cryptExit.x - 60, y: this.world.cryptExit.y + 20 };
   }
 
   updateWorkers(dt) {
@@ -404,7 +412,8 @@ export class Game {
     const fetchWater = { kind: 'well', key: 'well:' + w.id, at: { x: well.x + 10, y: well.y + 10 }, dur: 1.2 };
     if (w.type === 'builder') {
       if (!w.job) return null;
-      const o = this.worldObjById['spot:' + w.job.spot];
+      const o = this.ensureSite(w.job.spot);
+      if (!o || o === true) return null;
       return { kind: 'build', key: 'build:' + w.job.spot, at: { x: o.x + 12, y: o.y + 8 }, dur: 999 };
     }
     if (w.type === 'woodcutter') {
@@ -575,7 +584,7 @@ export class Game {
   updateSheep(dt) {
     const s = this.state;
     this.sheepRt = this.sheepRt || {};
-    const r = { x0: FOLD.x0 * TILE + 10, x1: (FOLD.x1 + 1) * TILE - 10, y0: FOLD.y0 * TILE + 18, y1: (FOLD.y1 + 1) * TILE - 6 };
+    const r = this.foldRect();
     const ids = new Set(s.sheep.map(x => x.id));
     for (const id of Object.keys(this.sheepRt)) if (!ids.has(id)) delete this.sheepRt[id];
     for (const sh of s.sheep) {
@@ -660,7 +669,224 @@ export class Game {
 
   // ---------- النياق ----------
   penRect() {
+    const p = placement.placedOf(this.state, 'stable')[0];
+    if (p) return placement.pxRect(p);
     return { x0: PEN.x0 * TILE + 10, x1: (PEN.x1 + 1) * TILE - 10, y0: PEN.y0 * TILE + 18, y1: (PEN.y1 + 1) * TILE - 6 };
+  }
+
+  penTiles() {
+    const p = placement.placedOf(this.state, 'stable')[0];
+    return p ? placement.footprint(p) : PEN;
+  }
+
+  foldTiles() {
+    const p = placement.placedOf(this.state, 'sheepfold')[0];
+    return p ? placement.footprint(p) : FOLD;
+  }
+
+  foldRect() {
+    const p = placement.placedOf(this.state, 'sheepfold')[0];
+    if (p) return placement.pxRect(p);
+    return { x0: FOLD.x0 * TILE + 10, x1: (FOLD.x1 + 1) * TILE - 10, y0: FOLD.y0 * TILE + 18, y1: (FOLD.y1 + 1) * TILE - 6 };
+  }
+
+  // ---------- المباني المنحطة باختيارك ----------
+  // يسوي كائنات العالم من state.placed: المباني تصير spot:<type> عشان الكود القديم يلقاها
+  syncPlaced() {
+    const s = this.state;
+    this.world.objects = this.world.objects.filter(o => !o.dynamic);
+    const hide = new Set();
+    for (const p of s.placed || []) {
+      const d = PLACEABLES[p.type];
+      const a = placement.anchor(p);
+      const f = placement.footprint(p);
+      for (let y = f.y0; y <= f.y1; y++) for (let x = f.x0; x <= f.x1; x++) hide.add(x + ',' + y);
+      const common = { dynamic: true, pid: p.id, tx: Math.floor(a.x / TILE), ty: f.y1, x: a.x, y: a.y, fp: f, flip: p.flip };
+      if (d.cat === 'building') this.world.objects.push({ ...common, id: 'spot:' + p.type, kind: 'spot', spot: d.spot });
+      else this.world.objects.push({ ...common, id: 'pl:' + p.id, kind: 'placed', ptype: p.type });
+    }
+    for (const o of this.world.objects) if (o.kind === 'deco') o.hidden = hide.has(o.tx + ',' + o.ty);
+    this.worldObjById = Object.fromEntries(this.world.objects.map(o => [o.id, o]));
+    this.boxVersion = (this.boxVersion || 0) + 1;
+    this.grazeCache = null;
+    this.tileDirty = true;
+    this.ui.refresh();
+  }
+
+  // وضع الوضع (زي Hay Day): شبح المبنى تحركه بالعصا أو بالضغط على الخريطة
+  startPlacing(type, pid = null) {
+    const s = this.state;
+    const d = PLACEABLES[type];
+    if (this.mode !== 'world') { this.ui.toast('ارجع لمزرعتك عشان تبني 🏠'); return; }
+    let tx, ty, flip = false;
+    if (pid) {
+      const p = placement.placedById(s, pid);
+      ({ tx, ty, flip } = p);
+    } else {
+      const ptx = Math.floor(s.player.x / TILE), pty = Math.floor(s.player.y / TILE);
+      const inHouse = placement.insideKhan(ptx, pty);
+      const near = d.zone === 'in' ? (inHouse ? { x: ptx, y: pty } : { x: 30, y: 20 }) : (inHouse ? { x: 31, y: 31 } : { x: ptx - 1, y: pty + 1 });
+      const f = (d.inside && placement.placedOf(s, d.inside)[0]) ? { tx: placement.placedOf(s, d.inside)[0].tx + 1, ty: placement.placedOf(s, d.inside)[0].ty + 2 } : placement.findFreeSpot(s, this.world, type, near, false, { x: ptx, y: pty });
+      ({ tx, ty } = f || { tx: near.x, ty: near.y });
+    }
+    this.placing = { type, pid, tx, ty, flip, ax: 0, ay: 0 };
+    this.validatePlacing();
+    this.ui.placingUI(true);
+  }
+
+  validatePlacing() {
+    const pl = this.placing;
+    if (!pl) return;
+    pl.check = placement.canPlace(this.state, this.world, pl.type, pl.tx, pl.ty, pl.flip, pl.pid);
+    // الأشياء الصلبة ما تنحط فوقك
+    const d = PLACEABLES[pl.type];
+    if (pl.check.ok && (d.solid || d.cat === 'building') && !d.area) {
+      const p = this.state.player;
+      const f = placement.footprint(pl);
+      const px = Math.floor(p.x / TILE), py = Math.floor(p.y / TILE);
+      if (px >= f.x0 && px <= f.x1 && py >= f.y0 && py <= f.y1) pl.check = { ok: false, reason: 'أنت واقف هنا، تحرّك شوي' };
+    }
+  }
+
+  updatePlacing(dt) {
+    const pl = this.placing;
+    const m = this.input.move();
+    const k = Math.hypot(m.x, m.y) > 0.2 ? 9 : 0;
+    pl.ax += m.x * k * dt; pl.ay += m.y * k * dt;
+    let moved = false;
+    while (Math.abs(pl.ax) >= 1) { const d = Math.sign(pl.ax); pl.tx += d; pl.ax -= d; moved = true; }
+    while (Math.abs(pl.ay) >= 1) { const d = Math.sign(pl.ay); pl.ty += d; pl.ay -= d; moved = true; }
+    if (moved) { pl.tx = Math.max(1, Math.min(MAP_W - 2, pl.tx)); pl.ty = Math.max(1, Math.min(MAP_H - 2, pl.ty)); this.validatePlacing(); }
+  }
+
+  // الضغط على الخريطة: يودّي الشبح لمكان الإصبع
+  placeGhostAt(wx, wy) {
+    const pl = this.placing;
+    if (!pl) return;
+    const { w, h } = placement.dims(pl.type, pl.flip);
+    pl.tx = Math.floor(wx / TILE) - Math.floor((w - 1) / 2);
+    pl.ty = Math.floor(wy / TILE) - (h - 1);
+    this.validatePlacing();
+  }
+
+  flipPlacing() {
+    if (!this.placing) return;
+    this.placing.flip = !this.placing.flip;
+    this.validatePlacing();
+  }
+
+  stopPlacing() {
+    this.placing = null;
+    this.ui.placingUI(false);
+  }
+
+  confirmPlacing() {
+    const pl = this.placing;
+    if (!pl) return;
+    const s = this.state;
+    const d = PLACEABLES[pl.type];
+    const inf = placement.info(pl.type);
+    this.validatePlacing();
+    if (!pl.check.ok) { this.audio.play('deny'); this.ui.toast('❌ ' + pl.check.reason); return; }
+    if (pl.pid) {
+      const r = placement.move(s, this.world, pl.pid, pl.tx, pl.ty, pl.flip);
+      if (!r.ok) { this.ui.toast('❌ ' + r.reason); return; }
+      if (pl.type === 'stable') this.camelRt = {};
+      if (pl.type === 'sheepfold') this.sheepRt = {};
+      this.stopPlacing();
+      this.syncPlaced();
+      this.audio.play('build');
+      const a = placement.anchor(r.p);
+      this.fx.burst(...this.fx.at(a.x, a.y, 8), ['#d4a46b', '#fff3c4'], 16, 60, 0.6);
+      this.ui.toast(`🔀 نقلت ${inf.name}`, 'gain', 2);
+      this.save();
+      return;
+    }
+    if (d.cat === 'building') {
+      const r = placement.place(s, this.world, pl.type, pl.tx, pl.ty, pl.flip);
+      if (!r.ok) { this.ui.toast('❌ ' + r.reason); return; }
+      this.stopPlacing();
+      this.syncPlaced();
+      this.audio.play('ui');
+      this.save();
+      this.ui.openBuild(d.spot);
+      return;
+    }
+    // ديكور وأثاث وصناديق: تدفع وينحط على طول
+    const item = placement.furnitureItem(pl.type);
+    if (item ? count(s, item) < 1 : (!has(s, inf.cost) || s.player.coins < inf.coins)) {
+      this.audio.play('deny');
+      this.ui.toast(item ? `تحتاج ${ITEMS[item].icon} ${ITEMS[item].name} بحقيبتك` : 'المواد أو الدراهم ما تكفي 💸');
+      return;
+    }
+    const r = placement.place(s, this.world, pl.type, pl.tx, pl.ty, pl.flip);
+    if (!r.ok) { this.ui.toast('❌ ' + r.reason); return; }
+    if (item) add(s, item, -1);
+    else { remove(s, inf.cost); s.player.coins -= inf.coins; }
+    addStat(s, 'placedDeco', 1);
+    this.syncPlaced();
+    this.audio.play('build');
+    const a = placement.anchor(r.p);
+    this.fx.burst(...this.fx.at(a.x, a.y, 6), ['#d4a46b', '#fff3c4', '#8fdc5a'], 10, 40, 0.5);
+    if (d.beauty) this.fx.float(...this.fx.at(a.x, a.y, 20), `🌸 جمال +${d.beauty}`, '#ffd0f0', 11);
+    if (d.comfort) this.fx.float(...this.fx.at(a.x, a.y, 20), `🛋️ راحة +${d.comfort}`, '#ffe0a0', 11);
+    this.gainXp(1, a.x, a.y, 30);
+    this.save();
+    const more = d.repeat && (item ? count(s, item) > 0 : has(s, inf.cost) && s.player.coins >= inf.coins);
+    if (more) { const { w } = placement.dims(pl.type, pl.flip); pl.tx += w; this.validatePlacing(); }
+    else this.stopPlacing();
+  }
+
+  // مبنى برا ما انحط (من كود قديم أو عامل): نحطه بأقرب مكان يصلح. يرجع كائن الموقع
+  ensureSite(spotId) {
+    const s = this.state;
+    const ptype = Object.keys(PLACEABLES).find(k => PLACEABLES[k].spot === spotId);
+    if (!ptype || this.worldObjById['spot:' + spotId]) return this.worldObjById['spot:' + spotId] || true;
+    const ptx = Math.floor(s.player.x / TILE), pty = Math.floor(s.player.y / TILE);
+    const host = PLACEABLES[ptype].inside && placement.placedOf(s, PLACEABLES[ptype].inside)[0];
+    const f = host ? { tx: host.tx + 1, ty: host.ty + 2 } : placement.findFreeSpot(s, this.world, ptype, placement.insideKhan(ptx, pty) ? { x: 31, y: 33 } : { x: ptx, y: pty + 2 }, false, { x: ptx, y: pty });
+    if (!f || !placement.place(s, this.world, ptype, f.tx, f.ty).ok) return null;
+    this.syncPlaced();
+    return this.worldObjById['spot:' + spotId];
+  }
+
+  // ترقية مبنى
+  upgradePlaced(pid) {
+    const s = this.state;
+    const p = placement.placedById(s, pid);
+    const u = p && placement.nextUpgrade(s, p);
+    if (!u) return false;
+    if (u.spot) {
+      const b = build(s, u.spot);
+      if (!b) { this.audio.play('deny'); this.ui.toast('المواد ناقصة'); return false; }
+    } else {
+      if (!has(s, u.cost) || s.player.coins < u.coins) { this.audio.play('deny'); this.ui.toast('المواد أو الدراهم ما تكفي 💸'); return false; }
+      remove(s, u.cost);
+      s.player.coins -= u.coins;
+      placement.applyUpgrade(s, p);
+    }
+    addStat(s, 'upgrades', 1);
+    const a = placement.anchor(p);
+    this.audio.play('build');
+    this.shake = 4;
+    this.fx.burst(...this.fx.at(a.x, a.y, 10), ['#ffd24a', '#fff3c4'], 26, 80, 0.8);
+    this.fx.float(...this.fx.at(a.x, a.y, 36), `⬆️ مستوى ${u.level}`, '#ffd24a', 15);
+    this.gainXp(8, a.x, a.y, 44);
+    this.syncPlaced();
+    this.save();
+    return true;
+  }
+
+  removePlacedItem(pid) {
+    const s = this.state;
+    const p = placement.placedById(s, pid);
+    const r = placement.removePlaced(s, pid);
+    if (!r.ok) { this.ui.toast('❌ ' + r.reason); return false; }
+    const item = placement.furnitureItem(p.type);
+    if (item) add(s, item, 1); // الأثاث يرجع لحقيبتك
+    this.syncPlaced();
+    this.save();
+    return true;
   }
 
   updateCamels(dt) {
@@ -967,11 +1193,17 @@ export class Game {
         case 'tent': box(o, 40, 10); break;
         case 'stall': box(o, 26, 7); break;
         case 'spot':
-          if (s.built[o.spot] && ['kiln', 'mill', 'loom'].includes(o.spot)) box(o, 20, 7);
           if (s.built[o.spot] && o.spot === 'fountain') box(o, 30, 9);
           break;
         default: break;
       }
+    }
+    // المباني والديكور المنحطة
+    for (const p of s.placed || []) {
+      const d = PLACEABLES[p.type];
+      if (!d.solid || (d.cat === 'building' && !placement.isBuilt(s, p))) continue;
+      const f = placement.footprint(p);
+      boxes.push({ x0: f.x0 * TILE + 2, x1: (f.x1 + 1) * TILE - 2, y0: (d.cat === 'building' ? f.y0 * TILE + 8 : f.y1 * TILE + 6), y1: (f.y1 + 1) * TILE - 2 });
     }
     this._boxKey = key;
     this._boxes = boxes;
@@ -1025,6 +1257,9 @@ export class Game {
         case 'plot':
           if (o.group === 1 || s.built.farm2) list.push({ kind: 'plot', ref: o, x: o.x, y: o.y });
           break;
+        case 'placed':
+          if (!PLACEABLES[o.ptype].flat) list.push({ kind: o.ptype === 'chest' ? 'chest' : 'placed', ref: o, x: o.x, y: o.y });
+          break;
         case 'spot': {
           const built = s.built[o.spot];
           if (built && o.spot === 'my_bed') list.push({ kind: 'bed', ref: o, x: o.x, y: o.y });
@@ -1033,7 +1268,7 @@ export class Game {
           else if (!built) {
             const st = this.spotStatusFor(o.spot);
             if (o.spot === 'crypt_door' && st.hidden) list.push({ kind: 'sealed', ref: o, x: o.x, y: o.y });
-            else if (!st.hidden) list.push({ kind: 'spot', ref: o, x: o.x, y: o.y });
+            else if (!st.hidden || o.dynamic) list.push({ kind: 'spot', ref: o, x: o.x, y: o.y });
           }
           break;
         }
@@ -1042,9 +1277,10 @@ export class Game {
     }
     for (const c of s.groundChests || []) list.push({ kind: 'gchest', ref: c, x: c.x, y: c.y + 2 });
     for (const sp of this.eventSpots()) list.push({ kind: this.eventMod('buried') ? 'buried' : 'sparkle', ref: sp, x: sp.x, y: sp.y, r: 20 });
-    if (s.built.trough) { const o = this.worldObjById['spot:trough']; list.push({ kind: 'trough', ref: o, x: o.x, y: o.y }); }
+    if (s.built.trough && this.worldObjById['spot:trough']) { const o = this.worldObjById['spot:trough']; list.push({ kind: 'trough', ref: o, x: o.x, y: o.y }); }
     for (const [spot, kind] of [['stall_shop', 'shop'], ['orders_board', 'orders'], ['workers_house', 'whouse']]) {
-      if (s.built[spot]) { const o = this.worldObjById['spot:' + spot]; list.push({ kind, ref: o, x: o.x, y: o.y }); }
+      const o = this.worldObjById['spot:' + spot];
+      if (s.built[spot] && o) list.push({ kind, ref: o, x: o.x, y: o.y });
     }
     if (s.built.sheepfold && this.sheepRt) {
       for (const sh of s.sheep) { const rt = this.sheepRt[sh.id]; if (rt) list.push({ kind: 'sheep', ref: sh, rt, x: rt.x, y: rt.y, r: 18 }); }
@@ -1100,6 +1336,8 @@ export class Game {
       case 'crypt': return { icon: '⬇️', label: 'انزل' };
       case 'npc': return { icon: '🛒', label: 'بيع وشراء' };
       case 'wildcamel': return { icon: '🐪', label: 'ناقة الجيران' };
+      case 'chest': return { icon: '📦', label: 'الصندوق' };
+      case 'placed': return { icon: PLACEABLES[t.ref.ptype].icon, label: placement.info(t.ref.ptype).name };
       case 'guest': return { icon: t.ref.served ? '💬' : '☕', label: 'قدّم' };
       case 'gchest': case 'dchest': return { icon: '📦', label: 'افتح' };
       case 'enemy': return { icon: '⚔️', label: 'اضرب' };
@@ -1169,6 +1407,8 @@ export class Game {
       case 'bed': this.input.action = false; this.trySleep(); break;
       case 'crypt': this.input.action = false; this.enterCrypt(); break;
       case 'npc': this.input.action = false; this.talkNpc(t.id); break;
+      case 'chest': this.input.action = false; this.ui.openChest(t.ref.pid); break;
+      case 'placed': this.input.action = false; this.ui.openPlacedMenu(t.ref.pid); break;
       case 'wildcamel': this.input.action = false; this.audio.play('camel'); this.ui.toast(t.ref.eating ? '🐪 ناقة الجيران ترعى… تبي نياق لك؟ اشترِ من 🛒 المتجر أو من القرية' : '🐪 هذي نياق الجيران. نياقك تشتريها من 🛒 المتجر أو من مزارع القرية', '', 3); break;
       case 'guest': this.input.action = false; this.serveGuest(t.ref); break;
       case 'gchest': this.input.action = false; this.openGroundChest(t.ref); break;
@@ -1210,6 +1450,7 @@ export class Game {
       clay: { hits: 1, cost: 3, sound: 'dig', color: ['#9a5a35', '#5a3620'], respawn: 1, stat: 'clay', kp: {}, xp: 2 },
       herb: { hits: 1, cost: 1, sound: 'pick', color: ['#4f8a2f', '#e8e0f0'], respawn: 1, stat: 'herbs', kp: { n: 1 }, xp: 1 },
     }[o.kind];
+    if (!this.hasRoom(2)) return;
     if (!this.spendEnergy(specs.cost)) return;
     const type = { palm: 'chop', sidr: 'chop', rock: 'mine', clay: 'dig', herb: 'pick' }[o.kind];
     this.startAnim(type, o, 0.32, 0.16, () => this.gatherHit(o, specs));
@@ -1243,14 +1484,47 @@ export class Game {
     }
   }
 
+  // الغنايم تروح للحقيبة لين تمتلي، والباقي للصناديق، واللي ما له مكان يضيع
   gainItems(loot, x, y, lift = 14) {
+    const r = placement.stow(this.state, loot);
     let i = 0;
     for (const [id, n] of Object.entries(loot)) {
-      add(this.state, id, n);
-      this.fx.float(...this.fx.at(x, y, lift + i * 9), `${ITEMS[id].icon} +${n}`, '#fff3c4', 13);
+      const lost = r.lost[id] || 0, chest = r.chest[id] || 0;
+      if (n - lost > 0) this.fx.float(...this.fx.at(x, y, lift + i * 9), `${ITEMS[id].icon} +${n - lost}${chest ? ' 📦' : ''}`, chest ? '#ffe0a0' : '#fff3c4', 13);
       i++;
     }
+    if (Object.keys(r.chest).length && this.t - (this.chestToastT || -99) > 20) { this.chestToastT = this.t; this.ui.toast('🎒 حقيبتك مليانة، الزيادة انحطت بالصندوق 📦', '', 3); }
+    if (Object.keys(r.lost).length) this.bagFullWarn();
     this.ui.refresh();
+    return r;
+  }
+
+  // لو الحقيبة تعدّت سعتها (الحصاد مثلاً)، الزيادة تنتقل للصناديق إذا فيه مكان
+  overflowToChest(id) {
+    const s = this.state;
+    const over = placement.bagOver(s);
+    if (over <= 0) return;
+    const k = Math.min(over, count(s, id));
+    if (k <= 0) return;
+    add(s, id, -k);
+    const r = placement.stow(s, { [id]: k });
+    if (r.lost[id]) add(s, id, r.lost[id]);
+    if (r.chest[id]) this.ui.toast(`📦 ${ITEMS[id].icon} ×${r.chest[id]} انحطت بالصندوق`, '', 2.5);
+  }
+
+  bagFullWarn() {
+    if (this.t - (this.bagWarnT || -99) < 8) return;
+    this.bagWarnT = this.t;
+    this.audio.play('deny');
+    this.ui.toast('🎒 حقيبتك مليانة! حط أغراضك بصندوق 📦 داخل بيتك أو بعها 💰', 'ach', 4);
+  }
+
+  // قبل الجمع: فيه مكان؟
+  hasRoom(n = 1) {
+    if (placement.roomFor(this.state, n)) return true;
+    this.bagFullWarn();
+    this.input.action = false;
+    return false;
   }
 
   gainXp(n, x, y, lift = 24) {
@@ -1269,6 +1543,7 @@ export class Game {
   }
 
   drawWater(o) {
+    if (!this.hasRoom(1)) return;
     if (!this.spendEnergy(1)) return;
     this.startAnim('draw', o, 0.7, 0.55, () => {
       this.audio.play('water');
@@ -1299,10 +1574,12 @@ export class Game {
       return;
     }
     if (farming.isReady(p)) {
+      if (!this.hasRoom(2)) return;
       if (!this.spendEnergy(1)) return;
       this.startAnim('harvest', o, 0.55, 0.35, () => {
         const h = farming.harvest(s, o.id, this.rng);
         if (!h) return;
+        this.overflowToChest(h.crop);
         this.audio.play('pick');
         this.hitFx(o, ['#e6c050', '#d9401a', '#6cc24a'], 10);
         this.fx.float(...this.fx.at(o.x, o.y, 16), `${ITEMS[h.crop].icon} +${h.n}`, '#fff3c4', 13);
@@ -1573,6 +1850,7 @@ export class Game {
   // ---------- البناء ----------
   doBuild(spotId) {
     const s = this.state;
+    if (!this.ensureSite(spotId)) return false;
     if (!this.spendEnergy(5)) return false;
     const b = build(s, spotId);
     if (!b) { s.player.energy += 5; return false; }

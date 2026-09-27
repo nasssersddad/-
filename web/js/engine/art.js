@@ -988,3 +988,84 @@ export function outlined(img) {
   outlineCache.set(img, c);
   return c;
 }
+
+// ---------- أشياء تنحط باختيارك ----------
+export function storageChest(level = 1) {
+  return cached('schest:' + level, 16, 16, (ctx) => {
+    ellipse(ctx, 8, 14, 7, 2, 'rgba(0,0,0,0.25)');
+    const band = level >= 3 ? '#e8c050' : level === 2 ? '#c0c4c8' : '#6a4a2a';
+    R(ctx, 1, 5, 14, 9, PAL.wood);
+    R(ctx, 1, 2, 14, 4, PAL.woodLight);
+    R(ctx, 1, 5, 14, 1, PAL.woodDark);
+    R(ctx, 1, 9, 14, 1, PAL.woodDark);
+    R(ctx, 1, 2, 1, 12, band); R(ctx, 14, 2, 1, 12, band);
+    R(ctx, 6, 5, 4, 3, band); P(ctx, 7, 6, '#2a1a0a'); P(ctx, 8, 6, '#2a1a0a');
+    R(ctx, 3, 11, 10, 1, PAL.woodLight);
+  });
+}
+
+export function flowers(v = 0) {
+  return cached('flowers:' + v, 16, 14, (ctx) => {
+    ellipse(ctx, 8, 11, 7, 3, '#6a4a2a');
+    ellipse(ctx, 8, 10, 6, 2, '#4a2e18');
+    const cols = [['#ff5a7a', '#ffe060'], ['#ffa040', '#fff0f0'], ['#b070f0', '#ffe060']][v % 3];
+    for (const [x, y] of [[4, 7], [8, 5], [12, 7], [6, 9], [10, 9]]) {
+      R(ctx, x, y + 1, 1, 3, '#3f7d2a');
+      P(ctx, x - 1, y, cols[0]); P(ctx, x + 1, y, cols[0]); P(ctx, x, y - 1, cols[0]); P(ctx, x, y + 1, cols[0]); P(ctx, x, y, cols[1]);
+    }
+  });
+}
+
+export function potPalm() {
+  return cached('potpalm', 20, 30, (ctx) => {
+    ellipse(ctx, 10, 28, 6, 2, 'rgba(0,0,0,0.25)');
+    R(ctx, 6, 20, 8, 8, '#a8583a'); R(ctx, 5, 20, 10, 2, '#c87a4a'); R(ctx, 7, 24, 6, 1, '#e0b050');
+    R(ctx, 9, 11, 2, 10, PAL.wood);
+    for (const [dx, dy] of [[-8, 3], [-6, -2], [0, -5], [6, -2], [8, 3], [-3, 5], [3, 5]]) line(ctx, 10, 11, 10 + dx, 11 + dy, PAL.leaf, 1);
+    for (const [dx, dy] of [[-7, 4], [7, 4], [0, -4]]) P(ctx, 10 + dx, 11 + dy, PAL.leafDark);
+  });
+}
+
+export function bench() {
+  return cached('bench', 30, 16, (ctx) => {
+    ellipse(ctx, 15, 14, 13, 2, 'rgba(0,0,0,0.22)');
+    R(ctx, 2, 6, 26, 3, PAL.woodLight); R(ctx, 2, 9, 26, 1, PAL.woodDark);
+    R(ctx, 2, 2, 26, 2, PAL.wood);
+    R(ctx, 4, 4, 2, 2, PAL.woodDark); R(ctx, 24, 4, 2, 2, PAL.woodDark);
+    R(ctx, 4, 10, 2, 4, PAL.woodDark); R(ctx, 24, 10, 2, 4, PAL.woodDark);
+  });
+}
+
+export function yardTorch(t = 0) {
+  const f = Math.floor(t * 8) % 3;
+  return cached('torch:' + f, 10, 26, (ctx) => {
+    ellipse(ctx, 5, 24, 3, 1, 'rgba(0,0,0,0.25)');
+    R(ctx, 4, 9, 2, 16, PAL.woodDark);
+    R(ctx, 3, 8, 4, 2, '#5a5048');
+    const h = 5 + f;
+    R(ctx, 3, 8 - h, 4, h, '#f08a2a'); R(ctx, 4, 7 - h, 2, h - 1, '#ffd24a'); P(ctx, 4 + (f % 2), 5 - h, '#fff3c4');
+  });
+}
+
+export function dallahStand(t = 0) {
+  const f = Math.floor(t * 6) % 2;
+  return cached('dallah:' + f, 14, 18, (ctx) => {
+    ellipse(ctx, 7, 16, 6, 2, 'rgba(0,0,0,0.25)');
+    R(ctx, 2, 12, 10, 3, '#3a3030'); R(ctx, 3, 11, 8, 1, f ? '#ff8a2a' : '#ffb04a');
+    R(ctx, 5, 5, 5, 6, '#d8a040'); R(ctx, 6, 3, 3, 2, '#e8c060'); R(ctx, 7, 1, 1, 2, '#e8c060');
+    line(ctx, 10, 6, 12, 3, '#d8a040'); R(ctx, 3, 6, 2, 3, '#b8862a');
+  });
+}
+
+export function pathTile(kind = 'stone', v = 0) {
+  return cached(`path:${kind}:${v}`, 16, 16, (ctx) => {
+    if (kind === 'stone') {
+      R(ctx, 0, 0, 16, 16, '#a89c8a');
+      const stones = [[1, 1, 6, 5], [8, 1, 7, 4], [1, 7, 4, 4], [6, 6, 5, 5], [12, 6, 3, 5], [1, 12, 7, 3], [9, 12, 6, 3]];
+      for (const [x, y, w, h] of stones) { R(ctx, x, y, w, h, v % 2 ? '#c4bcb0' : '#bab2a4'); R(ctx, x, y, w, 1, '#d8d0c4'); R(ctx, x, y + h - 1, w, 1, '#8a8274'); }
+    } else {
+      R(ctx, 0, 0, 16, 16, '#c8a070');
+      for (let y = 0; y < 16; y += 4) for (let x = (y / 4) % 2 ? 2 : 0; x < 16; x += 4) { R(ctx, x, y, 3, 3, '#d8b484'); P(ctx, x, y, '#e8c898'); }
+    }
+  });
+}

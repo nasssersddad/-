@@ -46,6 +46,7 @@ export function newState(now = Date.now()) {
     orders: [],
     orderSeq: 0,
     sheep: [],
+    arrivals: [],
     sheepSeq: 0,
     paper: null,
     settings: { music: true, sfx: true },

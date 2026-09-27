@@ -251,6 +251,7 @@ export class Game {
       s.location = 'world';
       const ex = this.worldObjById.exit_world;
       this.placeAt({ x: ex.x + 18, y: ex.y });
+      if (s.arrivals && s.arrivals.length) this.ui.toast(`🐾 حلالك الجديد (${s.arrivals.length}) وصل معك وماشي للمراح، اتبع السهم`, 'gain', 5);
     }
     s.player.dir = to === 'open' ? 'up' : 'right';
     this.ui.refresh();
@@ -503,6 +504,24 @@ export class Game {
   }
 
   // ---------- الغنم ----------
+  // مكان حيوان جديد: عادي يطلع بمكان عشوائي بالحظيرة، والمشترى من القرية يدخل من طريق القرية ويمشي لها
+  newAnimalRt(id, r) {
+    const s = this.state;
+    const i = s.arrivals ? s.arrivals.indexOf(id) : -1;
+    if (i >= 0) {
+      if (this.mode !== 'world') return null;
+      s.arrivals.splice(i, 1);
+      const ex = this.worldObjById.exit_world;
+      const rt = { x: ex.x + 20, y: ex.y + (this.rng() - 0.5) * 16, wait: 1, dir: 1, arrive: true, fresh: 40 };
+      rt.tx = r.x0 + (0.3 + this.rng() * 0.4) * (r.x1 - r.x0);
+      rt.ty = r.y0 + (0.3 + this.rng() * 0.4) * (r.y1 - r.y0);
+      return rt;
+    }
+    const rt = { x: r.x0 + this.rng() * (r.x1 - r.x0), y: r.y0 + this.rng() * (r.y1 - r.y0), wait: this.rng() * 3, dir: 1 };
+    rt.tx = rt.x; rt.ty = rt.y;
+    return rt;
+  }
+
   updateSheep(dt) {
     const s = this.state;
     this.sheepRt = this.sheepRt || {};
@@ -511,10 +530,12 @@ export class Game {
     for (const id of Object.keys(this.sheepRt)) if (!ids.has(id)) delete this.sheepRt[id];
     for (const sh of s.sheep) {
       let rt = this.sheepRt[sh.id];
-      if (!rt) { rt = this.sheepRt[sh.id] = { x: r.x0 + this.rng() * (r.x1 - r.x0), y: r.y0 + this.rng() * (r.y1 - r.y0), wait: this.rng() * 3, dir: 1 }; rt.tx = rt.x; rt.ty = rt.y; }
+      if (!rt) { rt = this.newAnimalRt(sh.id, r); if (!rt) continue; this.sheepRt[sh.id] = rt; }
+      if (rt.fresh > 0) rt.fresh -= dt;
       const dx = rt.tx - rt.x, dy = rt.ty - rt.y, d = Math.hypot(dx, dy);
       rt.moving = d > 1;
-      if (rt.moving) { const sp = 14 * dt; rt.x += (dx / d) * Math.min(sp, d); rt.y += (dy / d) * Math.min(sp, d); if (Math.abs(dx) > 0.5) rt.dir = dx > 0 ? 1 : -1; }
+      if (!rt.moving) rt.arrive = false;
+      if (rt.moving) { const sp = (rt.arrive ? 65 : 14) * dt; rt.x += (dx / d) * Math.min(sp, d); rt.y += (dy / d) * Math.min(sp, d); if (Math.abs(dx) > 0.5) rt.dir = dx > 0 ? 1 : -1; }
       else if ((rt.wait -= dt) <= 0) { rt.wait = 2 + this.rng() * 4; rt.tx = r.x0 + this.rng() * (r.x1 - r.x0); rt.ty = r.y0 + this.rng() * (r.y1 - r.y0); }
     }
   }
@@ -600,18 +621,21 @@ export class Game {
     for (const c of s.camels) {
       let rt = this.camelRt[c.id];
       if (!rt) {
-        rt = this.camelRt[c.id] = { x: r.x0 + this.rng() * (r.x1 - r.x0), y: r.y0 + this.rng() * (r.y1 - r.y0), wait: this.rng() * 3, dir: 1 };
-        rt.tx = rt.x; rt.ty = rt.y;
+        rt = this.newAnimalRt(c.id, r);
+        if (!rt) continue;
+        this.camelRt[c.id] = rt;
       }
+      if (rt.fresh > 0) rt.fresh -= dt;
       const dx = rt.tx - rt.x, dy = rt.ty - rt.y;
       const d = Math.hypot(dx, dy);
       rt.moving = d > 1;
       if (rt.moving) {
-        const sp = (camels.isAdult(c) ? 10 : 16) * dt;
+        const sp = (rt.arrive ? 75 : camels.isAdult(c) ? 10 : 16) * dt;
         rt.x += (dx / d) * Math.min(sp, d);
         rt.y += (dy / d) * Math.min(sp, d);
         if (Math.abs(dx) > 0.5) rt.dir = dx > 0 ? 1 : -1;
       } else {
+        rt.arrive = false;
         rt.wait -= dt;
         if (rt.wait <= 0) {
           rt.wait = 2 + this.rng() * 5;

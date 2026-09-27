@@ -761,6 +761,7 @@ export class Renderer {
           if (!rt || !this.visible(rt.x, rt.y, cam, 0)) continue;
           const [x, y] = toScreen(rt.x, rt.y - 26);
           if (c.rare) this.label(f, x, y - 14 * this.dpr, '✨ ' + c.name, '#ffe07a');
+          else if (rt.fresh > 0) this.label(f, x, y - 14 * this.dpr, c.name + ' — جديدة', '#bff5a0');
           const needs = camelSys.camelNeeds(c, s.time.day).filter(n => n !== 'milk');
           if (needs.length) { f.globalAlpha = 0.85; this.bubble(f, x + 10 * this.dpr, y + 4 * this.dpr, needs[0] === 'water' ? '💧' : '🌿', false, 0.7); f.globalAlpha = 1; }
           else if (c.pregnant) { f.font = `${12 * this.dpr}px sans-serif`; f.fillText('🤰', x + 10 * this.dpr, y); }
@@ -771,8 +772,9 @@ export class Renderer {
           const rt = game.sheepRt[sh.id];
           if (!rt || !this.visible(rt.x, rt.y, cam, 0)) continue;
           const needs = sheepSys.sheepNeeds(sh, s.time.day);
-          if (!needs.length) continue;
           const [x, y] = toScreen(rt.x, rt.y - 16);
+          if (rt.fresh > 0) this.label(f, x, y - 12 * this.dpr, 'غنمة جديدة', '#bff5a0');
+          if (!needs.length) continue;
           f.globalAlpha = 0.85;
           this.bubble(f, x + 6 * this.dpr, y, needs[0] === 'water' ? '💧' : needs[0] === 'food' ? '🌿' : '🧶', false, 0.6);
           f.globalAlpha = 1;
@@ -823,7 +825,11 @@ export class Renderer {
       f.closePath(); f.fill(); f.stroke();
     }
     // سهم المهمة
-    if (game.mode === 'world') this.questArrow(game, cam, toScreen);
+    if (game.mode === 'world') {
+      const fresh = this.freshAnimal(game);
+      if (fresh) this.pointArrow(game, fresh, toScreen, null);
+      else this.questArrow(game, cam, toScreen);
+    }
     if (game.mode === 'open') {
       for (const o of game.open.objects) {
         if (!this.visible(o.x, o.y, cam, 0)) continue;
@@ -872,16 +878,31 @@ export class Renderer {
     }
     if (!pos) return;
     if (game.target && Math.hypot(game.target.x - pos.x, game.target.y - pos.y) < 4) return;
+    this.pointArrow(game, pos, toScreen, '⭐');
+  }
+
+  // أقرب حيوان جديد لسه ماشي أو واصل توه
+  freshAnimal(game) {
+    const s = game.state;
+    for (const c of s.camels) { const rt = game.camelRt && game.camelRt[c.id]; if (rt && rt.fresh > 0 && s.built.stable) return rt; }
+    for (const sh of s.sheep) { const rt = game.sheepRt && game.sheepRt[sh.id]; if (rt && rt.fresh > 0 && s.built.sheepfold) return rt; }
+    return null;
+  }
+
+  // سهم على طرف الشاشة يأشر على مكان، أو علامة فوقه إذا كان ظاهر
+  pointArrow(game, pos, toScreen, mark) {
+    const p = game.state.player;
     const f = this.f;
     const t = game.t;
     const [sx, sy] = toScreen(pos.x, pos.y - 34);
     const W = this.fc.width, H = this.fc.height, m = 50 * this.dpr;
     const inside = sx > m && sx < W - m && sy > m && sy < H - m;
     f.save();
+    if (inside && !mark) { f.restore(); return; }
     if (inside) {
       const bob = Math.sin(t * 5) * 4 * this.dpr;
       f.font = `${22 * this.dpr}px sans-serif`;
-      f.fillText('⭐', sx, sy - 10 * this.dpr + bob);
+      f.fillText(mark, sx, sy - 10 * this.dpr + bob);
     } else {
       const [px, py] = toScreen(p.x, p.y - 10);
       const ang = Math.atan2(sy - py, sx - px);

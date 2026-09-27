@@ -57,6 +57,8 @@ test('buying animals needs a pen or fold and room', () => {
   assert.equal(buyAnimal(s, 'abu_rashid', cam.id).result, 'nostable');
   s.built.stable = true;
   assert.equal(buyAnimal(s, 'abu_rashid', cam.id).result, 'bought');
+  // الحلال المشترى ينتظر يمشي للمراح أول ما ترجع المزرعة
+  assert.deepEqual(s.arrivals, [s.sheep[0].id, s.camels[0].id]);
 });
 
 test('selling your camel to a farmer: counter stays under their max, completes the sale', () => {

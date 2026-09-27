@@ -1015,6 +1015,7 @@ export class UI {
             this.audio.play('deal');
             g.fx.confetti(...g.fx.at(s.player.x, s.player.y, 20));
             this.toast(`🤝 ${what} بـ ${market.fmt(res.price)}`, 'gain', 3);
+            if (res.kind) this.toast(res.kind === 'camel' ? '🐪 الناقة بتلحقك، تلقاها بالمراح أول ما ترجع مزرعتك' : '🐑 الغنمة بتلحقك، تلقاها بالحظيرة أول ما ترجع مزرعتك', '', 4);
             g.save();
           } else if (msgs[res.result]) this.toast(msgs[res.result]);
           m.rerender();

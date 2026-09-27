@@ -120,6 +120,9 @@ export function buyAnimal(state, farmId, dealId) {
     state.sheep.push({ ...d.sheep, id: 's' + state.sheepSeq + '_f' });
   }
   d.closed = true;
+  // الحلال الجديد يمشي من طريق القرية للمراح أول ما ترجع مزرعتك
+  state.arrivals = state.arrivals || [];
+  state.arrivals.push(d.kind === 'camel' ? state.camels[state.camels.length - 1].id : state.sheep[state.sheep.length - 1].id);
   addStat(state, 'npcBuys', 1);
   return { result: 'bought', price: d.ask, kind: d.kind };
 }

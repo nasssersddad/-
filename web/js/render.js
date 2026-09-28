@@ -19,6 +19,9 @@ import { currentQuest } from './systems/quests.js';
 import { PostFX } from './engine/post.js';
 import * as placement from './systems/placement.js';
 import { PLACEABLES } from './data/buildings.js';
+import { BUILD_ZONES, zonesFor } from './data/zones.js';
+import * as production from './systems/production.js';
+import { RECIPES } from './data/recipes.js';
 
 export class Renderer {
   constructor(worldCanvas, fxCanvas, postCanvas) {
@@ -287,6 +290,7 @@ export class Renderer {
         case 'herb': this.sprite(list, art.herb(game.depleted(o)), o.x, o.y + 2, o.y - 4, { ox: sh }); break;
         case 'deco': if (!o.hidden) this.sprite(list, art.deco(o.variant), o.x, o.y + 2, o.y - 6); break;
         case 'placed': this.collectPlaced(game, o, list, lights); break;
+        case 'zonesign': this.sprite(list, art.buildSign(), o.x, o.y + 2, o.y); break;
         case 'well': this.sprite(list, art.well(), o.x, o.y + 4, o.y, { ox: sh }); break;
         case 'tent': this.sprite(list, art.tent(), o.x, o.y + 4, o.y); break;
         case 'stall': this.sprite(list, art.stall(), o.x, o.y + 4, o.y); break;
@@ -386,6 +390,7 @@ export class Renderer {
     }
     if (s.built.stable) this.collectPen(game, list, lights);
     if (s.built.sheepfold) this.collectFold(game, list);
+    this.collectZones(game, list);
     this.collectGhost(game, list);
     this.collectWorkers(game, list);
     for (const g of game.guestRt) {
@@ -463,6 +468,28 @@ export class Renderer {
     const bob = Math.round(Math.sin(t * 3 + o.tx) * 1);
     this.sprite(list, art.buildSign(), o.x, o.y + 2, o.y, { alpha: status.needTech ? 0.55 : 1, oy: 0 });
     list.push({ y: o.y + 1, draw: (ctx, cam) => { ctx.globalAlpha = 0.5 + Math.sin(t * 3) * 0.2; ctx.drawImage(art.ghostOutline(18, 12), Math.round(o.x - 9 - cam.x), Math.round(o.y - 10 - cam.y + bob * 0)); ctx.globalAlpha = 1; } });
+  }
+
+  // ساحات البناء: أرضية فاتحة وحدود متقطعة. وقت الوضع: المسموحة تلمع بالأخضر
+  collectZones(game, list) {
+    const t = game.t;
+    const allowed = game.placing ? zonesFor(game.placing.type).map(z => z.id) : null;
+    list.push({ y: -2e9, draw: (ctx, cam) => {
+      for (const z of BUILD_ZONES) {
+        const r = z.rect;
+        const x = r.x0 * TILE - cam.x, y = r.y0 * TILE - cam.y, w = (r.x1 - r.x0 + 1) * TILE, h = (r.y1 - r.y0 + 1) * TILE;
+        if (x > this.bw || y > this.bh || x + w < 0 || y + h < 0) continue;
+        const on = allowed && allowed.includes(z.id);
+        const off = allowed && !on;
+        ctx.fillStyle = on ? `rgba(120,230,100,${0.14 + Math.sin(t * 4) * 0.06})` : off ? 'rgba(0,0,0,0.12)' : 'rgba(255,240,200,0.07)';
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = on ? '#b8ff9a' : off ? 'rgba(60,40,20,0.35)' : 'rgba(140,100,50,0.55)';
+        ctx.lineWidth = on ? 2 : 1;
+        ctx.setLineDash(on ? [] : [4, 3]);
+        ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+        ctx.setLineDash([]);
+      }
+    } });
   }
 
   // رسمة كل نوع (للمنحط والشبح)
@@ -1003,6 +1030,26 @@ export class Renderer {
         const [x, y] = toScreen(o.x, o.y - 42);
         this.bubble(f, x, y + Math.sin(t * 5) * 3 * this.dpr, '🪙', true);
       }
+      // الورش: فقاعة باللي جاهز، أو ⏳ وهي شغالة
+      const nowMin = game.absMinutes();
+      for (const st of Object.keys(production.TIMED)) {
+        const o = game.worldObjById['spot:' + st];
+        if (!o || !s.built[st] || !this.visible(o.x, o.y, cam, 0)) continue;
+        const js = production.jobs(s, st, nowMin);
+        if (!js.length) continue;
+        const [x, y] = toScreen(o.x, o.y - 40);
+        const rd = js.find(j => j.ready);
+        if (rd) {
+          const r = RECIPES.find(q => q.id === rd.recipe);
+          this.bubble(f, x, y + Math.sin(t * 5) * 3 * this.dpr, ITEMS[Object.keys(r.out)[0]].icon, true);
+        } else {
+          const j = js[0];
+          f.font = `${14 * this.dpr}px sans-serif`;
+          f.fillText('⏳', x, y);
+          f.fillStyle = 'rgba(0,0,0,0.5)'; f.fillRect(x - 14 * this.dpr, y + 10 * this.dpr, 28 * this.dpr, 4 * this.dpr);
+          f.fillStyle = '#ffd24a'; f.fillRect(x - 14 * this.dpr, y + 10 * this.dpr, 28 * this.dpr * j.progress, 4 * this.dpr);
+        }
+      }
       for (const [id, pos] of Object.entries(game.world.npcSpots)) {
         if (!game.npcPresent(id)) continue;
         const [x, y] = toScreen(pos.x, pos.y - 28);
@@ -1013,6 +1060,11 @@ export class Renderer {
         if (o.kind === 'sign' && this.visible(o.x, o.y, cam, 0)) {
           const [x, y] = toScreen(o.x, o.y - 24);
           this.label(f, x, y, o.text, '#fff3d6');
+        }
+        if (o.kind === 'zonesign' && this.visible(o.x, o.y, cam, 0)) {
+          const z = BUILD_ZONES.find(q => q.id === o.zone);
+          const [x, y] = toScreen(o.x, o.y - 24);
+          this.label(f, x, y, `🏗️ يمديك تبني هنا — ${z.icon} ${z.name}`, '#ffe9a8');
         }
       }
     }

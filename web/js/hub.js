@@ -9,7 +9,9 @@ import { SHEEP_BREEDS } from './data/sheep.js';
 import { TRAITS, camelBreedName } from './data/camels.js';
 import { count, add, addStat, has, bagUsed, bagCap, bagFree, counts } from './systems/inventory.js';
 import * as placement from './systems/placement.js';
+import * as production from './systems/production.js';
 import { PLACEABLES, BAG_CAPS, BAG_UPGRADE_COINS, MATS } from './data/buildings.js';
+import { zonesFor, zoneCenter } from './data/zones.js';
 import { spotStatus } from './systems/crafting.js';
 import { applyReward } from './systems/rewards.js';
 import * as farming from './systems/farming.js';
@@ -91,6 +93,16 @@ export function advice(g) {
   if (bagUsed(s) >= bagCap(s) * 0.85) out.push({ icon: '🎒', text: `حقيبتك قرّبت تتعبّى (${bagUsed(s)}/${bagCap(s)}). حط أغراضك بصندوق داخل بيتك أو بعها.`, btn: '📦 صندوق', go: { store: 'build:in' } });
   const cropsHave = Object.keys(s.inv).filter(id => CROPS.has(id) && s.inv[id] > 0).reduce((a, id) => a + s.inv[id], 0);
   if (cropsHave >= 6) out.push({ icon: '💰', text: `عندك ${cropsHave} خضار ومحصول. بعها وخذ دراهم!`, btn: '💰 بيع', go: { store: 'sell' } });
+  // الورش اللي بالوقت
+  const nowMin = g.absMinutes();
+  for (const st of Object.keys(production.TIMED)) {
+    const o = g.worldObjById['spot:' + st];
+    if (!o || !s.built[st]) continue;
+    const name = BUILD_SPOTS[st].name;
+    const rd = production.readyCount(s, nowMin, st);
+    if (rd) out.push({ icon: '📥', text: `${name} خلّص ${rd} طلب، استلمه!`, btn: '📍 وديني', go: { guide: o, label: name } });
+    else if (!production.queue(s, st).length) out.push({ icon: '⏱️', text: `${name} فاضي، حط له شغل عشان ينتج وأنت تمشي.`, btn: '📍 وديني', go: { guide: o, label: name } });
+  }
   const sold = s.stall.slots.filter(x => x && x.sold).length;
   if (sold) out.push({ icon: '🏪', text: `بسطتك باعت ${sold} غرض، استلم فلوسك.`, btn: '🏪 البسطة', go: { trade: 'stall' } });
   const buildable = Object.keys(BUILD_SPOTS).filter(id => spotStatus(s, id).ok);
@@ -281,6 +293,8 @@ export function installHub(UI) {
     m.bcat = m.bcat || 'out';
     const cats = [['out', '🏗️ مباني برا'], ['field', '🌾 حقول'], ['deco', '🌺 ديكور وطرق'], ['in', '🛋️ داخل البيت'], ['home', '🏠 ترميم البيت']];
     m.handlers.arrange = () => { m.close(); g.startArrange(); };
+    m.handlers.zgo = (type) => { const z = zonesFor(type)[0]; const c = zoneCenter(z); this.hubGo({ guide: { x: c.x * TILE, y: c.y * TILE }, label: z.name }, m); };
+    const zoneLine = (type) => { const zs = zonesFor(type); return zs.length ? `<div class="sinfo">📍 مكانه: <b>${zs.map(z => z.icon + ' ' + z.name).join(' أو ')}</b> <button class="link" data-a="zgo" data-v="${type}">وديني</button></div>` : ''; };
     const arrangeBtn = '<div class="row center" style="margin:4px 0 8px"><button class="btn blue" data-a="arrange">🧩 رتّب مزرعتك (انقل أي شي)</button></div>';
     m.handlers.bcat = (v) => { m.bcat = v; this.audio.play('ui'); m.rerender(); };
     const buyMissing = (cost) => {
@@ -305,7 +319,7 @@ export function installHub(UI) {
     if (m.bcat === 'field') {
       const n = placement.placedOf(s, 'field').length, max = placement.maxFields(s), price = placement.fieldPrice(s);
       const empty = placement.placedOf(s, 'field').filter(p => !s.plots[placement.fieldId(p)]).length;
-      body = `<p class="howto">🌾 اشترِ حقول وحطها بأي مكان برا (على الرمل أو جنب الأحواض). كل حقل تزرع فيه زي الأحواض، ولو نقلته <b>الزرع ينتقل معه</b>. عدد الحقول يزيد كل ما كبر مستواك.</p>
+      body = `<p class="howto">🌾 اشترِ حقول وحطها داخل <b>🌾 ساحة المزرعة</b> (جنب الأحواض).${zoneLine('field')} كل حقل تزرع فيه زي الأحواض، ولو نقلته <b>الزرع ينتقل معه</b>. عدد الحقول يزيد كل ما كبر مستواك.</p>
         <div class="sgrid"><div class="scard ${n < max && s.player.coins >= price ? 'ready' : ''}"><div class="sbig">🌱</div><b>حقل زراعة</b>
           <div class="sinfo">عندك ${n}/${max} حقل${empty ? ` • ${empty} فاضي` : ''}</div><div class="sinfo">السعر: 🪙${price} (يزيد مع كل حقل)</div>
           <div class="row center">${n < max ? `<button class="btn green big" data-a="place" data-v="field" ${s.player.coins >= price ? '' : 'disabled'}>📍 ضعه</button>` : `<div class="lock">🔒 الحقل الجاي بمستوى ${(max - 3) * 2}</div>`}</div></div>
@@ -326,7 +340,7 @@ export function installHub(UI) {
       }).join('')}</div>`;
     } else if (m.bcat === 'out') {
       const types = Object.keys(PLACEABLES).filter(t => PLACEABLES[t].cat === 'building');
-      body = `<p class="howto">🏗️ اختر المبنى واضغط <b>«📍 ضعه»</b>، وحرّكه لأي مكان تبيه <b>برا بيتك</b> (الأخضر = يصير). بعدين ابنه بنفسك أو خلّ البنّاء يبنيه.</p>${arrangeBtn}<div class="sgrid">${types.map(type => {
+      body = `<p class="howto">🏗️ كل مبنى له <b>ساحة بناء</b> محددة عليها لوحة «يمديك تبني هنا». اضغط <b>«📍 ضعه»</b> وحرّكه داخل ساحته (الساحة تلمع بالأخضر). بعدين ابنه بنفسك أو خلّ البنّاء يبنيه.</p>${arrangeBtn}<div class="sgrid">${types.map(type => {
         const d = PLACEABLES[type];
         const inf = placement.info(type);
         const st = spotStatus(s, d.spot);
@@ -340,7 +354,7 @@ export function installHub(UI) {
         else if (d.inside && !placement.placedOf(s, d.inside).length) act = `<div class="lock">🔒 حط ${esc(placement.info(d.inside).name)} أول</div>`;
         else act = `<button class="btn green big" data-a="place" data-v="${type}">📍 ضعه</button>${miss(inf.cost).replace('MISS', 'pmiss" data-v="' + type)}`;
         return `<div class="scard ${built ? 'done' : !p && !st.hidden && !st.needTech ? 'ready' : ''}"><div class="sbig">${d.icon}</div><b>${esc(inf.name)}</b>
-          <div class="sinfo">${esc(inf.desc)}</div><div class="sinfo">📐 ${d.w}×${d.h}${inf.rating ? ` • ⭐ سمعة +${inf.rating}` : ''}${d.perk ? ` • ⬆️ ${esc(d.perk)}` : ''}</div>
+          <div class="sinfo">${esc(inf.desc)}</div><div class="sinfo">📐 ${d.w}×${d.h}${inf.rating ? ` • ⭐ سمعة +${inf.rating}` : ''}${d.perk ? ` • ⬆️ ${esc(d.perk)}` : ''}</div>${zoneLine(type)}
           ${built ? '' : this.costHtml(inf.cost)}<div class="row center">${act}</div></div>`;
       }).join('')}</div>`;
     } else {
@@ -661,7 +675,7 @@ export function installHub(UI) {
       { icon: '🌱', title: 'الزراعة', steps: ['اشترِ بذور من أبو سالم 🥕 (جنب الأحواض) أو من 🛒 المتجر.', 'اوقف جنب حوض فاضي واضغط ✋ «ازرع». زر البذرة 🔄 يبدّل وش تزرع.', 'اسقِ الحوض كل يوم 💧 (الماء من البير بالخان)، أو خلّ 🌧️ المطر يسقيه عنك!', 'بعد الأيام يطلع المحصول: احصده 🧺 وبعه 💰.'], go: { store: 'seeds' }, btn: '🌱 اشترِ بذور' },
       { icon: '🐪', title: 'الحلال', steps: ['ابنِ المراح 🏗️ وتجيك ناقتين هدية.', 'كل يوم اسقها وأطعمها (برسيم أو تمر)، أو اضغط «اسقِ وأطعم الكل» من 📋 إدارتي.', 'احلب النياق 🥛، ولقّح الفحل مع الناقة، وفيه فرصة يطلع لك حوار نادر!', 'كل ناقة لها خواص ✨، والحوار يورثها. النادرة تسوى ثروة.'], go: { manage: 'animals' }, btn: '🐪 حلالي' },
       { icon: '💰', title: 'البيع والتجارة', steps: ['أسرع طريقة: 🛒 المتجر ← «💰 بيع»، وتبيع أي شي على طول.', 'تبي سعر أعلى؟ ابنِ البسطة 🏪 وحط أغراضك بسعرك، والمارّة يشترون.', 'لوحة الطلبات 📋 تجيك طلبات قوافل بجوايز حلوة.', 'بالحلال تقدر تساوم وتقايض من 🐪 الحلال ← السوق.'], go: { store: 'sell' }, btn: '💰 بيع الحين' },
-      { icon: '🏗️', title: 'البناء', steps: ['اجمع خشب 🪵 وحجر 🪨 وطين 🟫 من النخل والسدر والصخور.', '🛒 المتجر ← «🏗️ مباني» ← «📍 ضعه»: حرّك المبنى لأي مكان تبيه <b>برا بيتك</b> (الأخضر = يصير) واضغط «ضعه هنا».', 'ابنه بنفسك أو خلّ البنّاء 👷 يبنيه. بعدين تقدر 🔀 تنقله أو ⬆️ ترقّيه من زر 🔧.', 'داخل بيتك حط 📦 صناديق تخزّن فيها أغراضك (حقيبتك لها سعة)، وأثاث يرفع راحتك وطاقتك.', 'زيّن برا بممرات وسياج وورد 🌺، الجمال يزيد دراهم الضيوف.'], go: { store: 'build' }, btn: '🏗️ المباني' },
+      { icon: '🏗️', title: 'البناء', steps: ['اجمع خشب 🪵 وحجر 🪨 وطين 🟫 من النخل والسدر والصخور.', '🛒 المتجر ← «🏗️ مباني» ← «📍 ضعه»: كل مبنى له <b>ساحة بناء</b> عليها لوحة «يمديك تبني هنا». الساحة الصح تلمع بالأخضر، حرّكه داخلها واضغط «ضعه هنا».', 'الفرن والرحى والنول تشتغل بالوقت: حط طلبات بالطابور ⏱️، وارجع استلمها لما تخلص 📥.', 'ابنه بنفسك أو خلّ البنّاء 👷 يبنيه. بعدين تقدر 🔀 تنقله أو ⬆️ ترقّيه من زر 🔧.', 'داخل بيتك حط 📦 صناديق تخزّن فيها أغراضك (حقيبتك لها سعة)، وأثاث يرفع راحتك وطاقتك.', 'زيّن برا بممرات وسياج وورد 🌺، الجمال يزيد دراهم الضيوف.'], go: { store: 'build' }, btn: '🏗️ المباني' },
       { icon: '👷', title: 'العمّال', steps: ['وظّف حطّاب، مزارع، بنّاء، أو راعي من 👷 العمّال.', 'يشتغلون لحالهم، وراتبهم بالساعة.', 'لا تتأخر بالراتب! إذا تأخرت يضربون ✊ ويبون غرامة.', 'فعّل الدفع التلقائي وارتاح.'], go: { workers: true }, btn: '👷 العمّال' },
       { icon: '🗺️', title: 'القرية والعقارات', steps: ['اطلع من «طريق القرية» يسار مزرعتك.', 'فيها 5 مزارع جيران: تشتري منهم بضاعة ونياق وغنم وتساومهم.', 'تقدر تشتري مزرعة كاملة 🏡 وتصير تنتج لك كل يوم.', 'من 📋 إدارتي ← عقاراتي: طوّرها واستلم إنتاجها.'], go: { manage: 'property' }, btn: '🏡 عقاراتي' },
       { icon: '🎁', title: 'المكافآت والفعاليات', steps: ['كل يوم ادخل وخذ مكافأتك اليومية 🎁، والسلسلة تكبر الجوايز.', '3 مهام يومية، وعجلة حظ، وإنجازات.', 'فعالية جديدة كل يومين 🎪: سباق هجن، صقور، مهرجان تمور، وغيرها.', 'الصعوبة تزيد مع كل مرحلة، فالجوايز تحتاج شغل!'], go: { events: true }, btn: '🎪 الفعاليات' },

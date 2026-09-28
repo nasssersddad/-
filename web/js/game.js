@@ -31,7 +31,9 @@ import * as farmsSys from './systems/farms.js';
 import * as events from './systems/events.js';
 import * as weather from './systems/weather.js';
 import * as placement from './systems/placement.js';
+import * as production from './systems/production.js';
 import { PLACEABLES } from './data/buildings.js';
+import { BUILD_ZONES, zonesFor, zoneCenter } from './data/zones.js';
 
 // اتجاه الحركة ← وجه الشخصية
 export function screenDir(dx, dy) {
@@ -104,7 +106,7 @@ export class Game {
     retention.ensureDailyQuests(s, this.now());
     this.restoreGuests();
     this.ui.bind(this);
-    if (this.migrated && this.migrated.length) setTimeout(() => this.ui.toast('🔀 نقلنا الورش (' + this.migrated.map(t => placement.info(t).name).join('، ') + ') برا البيت. تقدر تنقلها لأي مكان من 📋 إدارتي', 'gain', 7), 1500);
+    if (this.migrated && this.migrated.length) setTimeout(() => this.ui.toast('🔀 رتّبنا مبانيك داخل ساحات البناء: ' + this.migrated.map(t => placement.info(t).name).join('، '), 'gain', 7), 1500);
     this.welcome(!loaded);
   }
 
@@ -727,7 +729,10 @@ export class Game {
     } else {
       const ptx = Math.floor(s.player.x / TILE), pty = Math.floor(s.player.y / TILE);
       const inHouse = placement.insideKhan(ptx, pty);
-      const near = d.zone === 'in' ? (inHouse ? { x: ptx, y: pty } : { x: 30, y: 20 }) : (inHouse ? { x: 31, y: 31 } : { x: ptx - 1, y: pty + 1 });
+      // المباني والحقول تبدأ بأقرب ساحة مسموحة لها
+      const zs = zonesFor(type);
+      const nearest = zs.length ? zs.map(zoneCenter).sort((a, b) => Math.hypot(a.x - ptx, a.y - pty) - Math.hypot(b.x - ptx, b.y - pty))[0] : null;
+      const near = nearest || (d.zone === 'in' ? (inHouse ? { x: ptx, y: pty } : { x: 30, y: 20 }) : (inHouse ? { x: 31, y: 31 } : { x: ptx - 1, y: pty + 1 }));
       const f = (d.inside && placement.placedOf(s, d.inside)[0]) ? { tx: placement.placedOf(s, d.inside)[0].tx + 1, ty: placement.placedOf(s, d.inside)[0].ty + 2 } : placement.findFreeSpot(s, this.world, type, near, false, { x: ptx, y: pty });
       ({ tx, ty } = f || { tx: near.x, ty: near.y });
     }
@@ -914,6 +919,22 @@ export class Game {
     this.fx.float(...this.fx.at(a.x, a.y, 36), `⬆️ مستوى ${u.level}`, '#ffd24a', 15);
     this.gainXp(8, a.x, a.y, 44);
     this.syncPlaced();
+    this.save();
+    return true;
+  }
+
+  // يستلم الجاهز من ورشة: الإنتاج يروح للحقيبة (والزيادة للمخزن)
+  collectWorkshop(station) {
+    const s = this.state;
+    const r = production.collect(s, station, this.absMinutes(), this.rng, placement.doubleChance(s, station));
+    if (!r.done.length) return false;
+    const o = this.worldObjById['spot:' + station] || { x: s.player.x, y: s.player.y };
+    this.gainItems(r.out, o.x, o.y, 30);
+    this.gainXp(r.xp, o.x, o.y, 44);
+    this.audio.play(r.bonus ? 'chest' : 'craft');
+    this.fx.burst(...this.fx.at(o.x, o.y, 16), ['#ffd24a', '#fff'], 12, 50, 0.6);
+    this.ui.toast(`📥 استلمت ${Object.entries(r.out).map(([k, n]) => `${ITEMS[k].icon}×${n}`).join(' ')}${r.bonus ? ' ✨ (فيه ضعف من الترقية!)' : ''}`, 'gain', 2.5);
+    this.checkProgress();
     this.save();
     return true;
   }
@@ -1298,6 +1319,7 @@ export class Game {
         case 'plot':
           if (o.group === 1 || s.built.farm2) list.push({ kind: 'plot', ref: o, x: o.x, y: o.y });
           break;
+        case 'zonesign': list.push({ kind: 'zonesign', ref: o, x: o.x, y: o.y }); break;
         case 'placed':
           if (!PLACEABLES[o.ptype].flat) list.push({ kind: o.ptype === 'chest' ? 'chest' : 'placed', ref: o, x: o.x, y: o.y });
           break;
@@ -1370,7 +1392,12 @@ export class Game {
       case 'clay': return { icon: '🪏', label: 'احفر' };
       case 'herb': return { icon: '🌿', label: 'اقطف' };
       case 'well': return { icon: '🪣', label: 'اسحب ماء' };
-      case 'station': return { icon: '🔨', label: 'اصنع' };
+      case 'station':
+        if (production.isTimed(t.ref.station)) {
+          if (production.readyCount(this.state, this.absMinutes(), t.ref.station)) return { icon: '📥', label: 'استلم' };
+          return { icon: '⏱️', label: production.queue(this.state, t.ref.station).length ? 'الطابور' : 'شغّل' };
+        }
+        return { icon: '🔨', label: 'اصنع' };
       case 'spot': return { icon: '🏗️', label: 'ابنِ' };
       case 'sealed': return { icon: '🔒', label: 'شوف' };
       case 'lamp': return { icon: '💬', label: 'كلّم' };
@@ -1378,6 +1405,7 @@ export class Game {
       case 'crypt': return { icon: '⬇️', label: 'انزل' };
       case 'npc': return { icon: '🛒', label: 'بيع وشراء' };
       case 'wildcamel': return { icon: '🐪', label: 'ناقة الجيران' };
+      case 'zonesign': { const z = BUILD_ZONES.find(x => x.id === t.ref.zone); return { icon: z.icon, label: z.name }; }
       case 'chest': return t.ref.spot === 'barn' ? { icon: '🏚️', label: 'المخزن' } : { icon: '📦', label: 'الصندوق' };
       case 'placed': return { icon: PLACEABLES[t.ref.ptype].icon, label: placement.info(t.ref.ptype).name };
       case 'guest': return { icon: t.ref.served ? '💬' : '☕', label: 'قدّم' };
@@ -1442,7 +1470,12 @@ export class Game {
     switch (t.kind) {
       case 'palm': case 'sidr': case 'rock': case 'clay': case 'herb': this.gather(t.ref); break;
       case 'well': this.drawWater(t.ref); break;
-      case 'station': this.input.action = false; this.ui.openCraft(t.ref.station); break;
+      case 'station':
+        this.input.action = false;
+        // الورشة فيها شي جاهز؟ نستلمه على طول
+        if (production.isTimed(t.ref.station) && production.readyCount(this.state, this.absMinutes(), t.ref.station)) this.collectWorkshop(t.ref.station);
+        else this.ui.openCraft(t.ref.station);
+        break;
       case 'spot': this.input.action = false; this.ui.openBuild(t.ref.spot); break;
       case 'sealed': this.input.action = false; this.ui.dialogue([['lamp', 'هذا باب السرداب... مقفول بطلاسم. لا تستعجل، أقول لك متى.']]); break;
       case 'lamp': this.input.action = false; this.talkLamp(); break;
@@ -1451,6 +1484,7 @@ export class Game {
       case 'npc': this.input.action = false; this.talkNpc(t.id); break;
       case 'chest': this.input.action = false; this.ui.openChest(t.ref.pid); break;
       case 'placed': this.input.action = false; this.ui.openPlacedMenu(t.ref.pid); break;
+      case 'zonesign': this.input.action = false; this.ui.openStore('build:' + (t.ref.zone === 'farm' ? 'field' : 'out')); break;
       case 'wildcamel': this.input.action = false; this.audio.play('camel'); this.ui.toast(t.ref.eating ? '🐪 ناقة الجيران ترعى… تبي نياق لك؟ اشترِ من 🛒 المتجر أو من القرية' : '🐪 هذي نياق الجيران. نياقك تشتريها من 🛒 المتجر أو من مزارع القرية', '', 3); break;
       case 'guest': this.input.action = false; this.serveGuest(t.ref); break;
       case 'gchest': this.input.action = false; this.openGroundChest(t.ref); break;

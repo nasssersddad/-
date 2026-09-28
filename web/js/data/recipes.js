@@ -13,18 +13,18 @@ export const RECIPES = [
   { id: 'bed',     station: 'workbench', out: { bed: 1 },     in: { plank: 4, rope: 2 },     xp: 6, kp: { c: 2 }, tech: 't_bed' },
   { id: 'cushion', station: 'workbench', out: { cushion: 1 }, in: { plank: 1, wool: 2 },     xp: 5, kp: { c: 2 }, tech: 't_carpet' },
 
-  { id: 'brick',   station: 'kiln', out: { brick: 1 },  in: { clay: 2, water: 1, wood: 1 }, xp: 3, kp: { c: 1 }, tech: 't_brick' },
-  { id: 'jar',     station: 'kiln', out: { jar: 1 },    in: { clay: 3, wood: 1 },           xp: 4, kp: { c: 2 } },
-  { id: 'lantern', station: 'kiln', out: { lantern: 1 },in: { jar: 1, frond: 2 },           xp: 5, kp: { c: 1, s: 1 }, tech: 't_lantern' },
+  { id: 'brick',   station: 'kiln', out: { brick: 1 },  in: { clay: 2, water: 1, wood: 1 }, time: 60, xp: 3, kp: { c: 1 }, tech: 't_brick' },
+  { id: 'jar',     station: 'kiln', out: { jar: 1 },    in: { clay: 3, wood: 1 },           time: 90, xp: 4, kp: { c: 2 } },
+  { id: 'lantern', station: 'kiln', out: { lantern: 1 },in: { jar: 1, frond: 2 },           time: 120, xp: 5, kp: { c: 1, s: 1 }, tech: 't_lantern' },
 
   { id: 'coffee',  station: 'hearth', out: { coffee: 2 }, in: { beans: 1, water: 1, wood: 1 },                xp: 3, kp: { c: 1 } },
   { id: 'coffee2', station: 'hearth', out: { coffee2: 2 },in: { beans: 1, cardamom: 1, water: 1, wood: 1 },   xp: 5, kp: { c: 2 }, tech: 't_coffee2' },
   { id: 'bread',   station: 'hearth', out: { bread: 2 },  in: { flour: 1, water: 1, wood: 1 },                xp: 4, kp: { c: 1, n: 1 }, tech: 't_bread' },
   { id: 'pressed', station: 'hearth', out: { pressed: 1 },in: { dates: 4, jar: 1 },                           xp: 5, kp: { c: 1, n: 1 }, tech: 't_pressed' },
 
-  { id: 'flour',   station: 'mill', out: { flour: 1 }, in: { wheat: 2 }, xp: 2, kp: { n: 1 } },
+  { id: 'flour',   station: 'mill', out: { flour: 1 }, in: { wheat: 2 }, time: 45, xp: 2, kp: { n: 1 } },
 
-  { id: 'carpet',  station: 'loom', out: { carpet: 1 }, in: { wool: 3, herb: 1 }, xp: 6, kp: { c: 2, n: 1 }, tech: 't_carpet' },
+  { id: 'carpet',  station: 'loom', out: { carpet: 1 }, in: { wool: 3, herb: 1 }, time: 180, xp: 6, kp: { c: 2, n: 1 }, tech: 't_carpet' },
 ];
 
 // مواقع البناء والترميم. rating = كم ترفع سمعة الخان

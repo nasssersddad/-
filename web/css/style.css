@@ -429,3 +429,13 @@ canvas.bigmap { width: 100%; display: block; border: 3px solid var(--wood); bord
 .chestcol .bar i { background: linear-gradient(#8fdc5a, #4f9a2f); display: block; height: 100%; }
 .chestcol .shop-row .btn { padding: 2px 8px; font-size: 12px; }
 .bmenu .big { font-size: 40px; text-align: center; }
+
+/* طابور الورش */
+.qbar { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.qslot { position: relative; width: 104px; min-height: 76px; border-radius: 12px; border: 2px solid rgba(107,63,31,.5); background: rgba(255,255,255,.55); display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 28px; overflow: hidden; padding-bottom: 6px; }
+.qslot small { font: 700 11px Cairo; }
+.qslot i { position: absolute; left: 0; bottom: 0; height: 5px; background: linear-gradient(90deg, #ffd24a, #e0802a); }
+.qslot.empty { border-style: dashed; color: rgba(107,63,31,.5); font-size: 22px; }
+.qslot.run { border-color: #e0a030; }
+.qslot.ready { border-color: var(--green); background: linear-gradient(#e6ffd6, #bfe8a0); animation: bounce 1.2s infinite; }
+.qslot .link { font-size: 11px; padding: 0; }

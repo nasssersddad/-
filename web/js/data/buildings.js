@@ -5,11 +5,11 @@
 export const PLACEABLES = {
   // ---------- مباني برا ----------
   kiln: { spot: 'kiln', icon: '🔥', w: 2, h: 2, zone: 'out', cat: 'building', solid: true,
-    levels: [null, { cost: { brick: 4, stone: 6 }, coins: 150 }, { cost: { brick: 8, stone: 10 }, coins: 400 }], perk: 'فرصة ضعف الإنتاج' },
+    levels: [null, { cost: { brick: 4, stone: 6 }, coins: 150 }, { cost: { brick: 8, stone: 10 }, coins: 400 }], perk: 'طابور أطول + فرصة ضعف الإنتاج' },
   mill: { spot: 'mill', icon: '🥣', w: 2, h: 2, zone: 'out', cat: 'building', solid: true,
-    levels: [null, { cost: { stone: 8, plank: 3 }, coins: 150 }, { cost: { stone: 12, plank: 6 }, coins: 400 }], perk: 'فرصة ضعف الإنتاج' },
+    levels: [null, { cost: { stone: 8, plank: 3 }, coins: 150 }, { cost: { stone: 12, plank: 6 }, coins: 400 }], perk: 'طابور أطول + فرصة ضعف الإنتاج' },
   loom: { spot: 'loom', icon: '🧶', w: 2, h: 2, zone: 'out', cat: 'building', solid: true,
-    levels: [null, { cost: { plank: 6, rope: 4 }, coins: 150 }, { cost: { plank: 10, rope: 6 }, coins: 400 }], perk: 'فرصة ضعف الإنتاج' },
+    levels: [null, { cost: { plank: 6, rope: 4 }, coins: 150 }, { cost: { plank: 10, rope: 6 }, coins: 400 }], perk: 'طابور أطول + فرصة ضعف الإنتاج' },
   stall_shop: { spot: 'stall_shop', icon: '🏪', w: 3, h: 2, zone: 'out', cat: 'building', solid: true,
     levels: [null, { cost: { plank: 6, frond: 8 }, coins: 200 }, { cost: { plank: 10, carpet: 1 }, coins: 500 }], perk: 'تبيع أسرع' },
   orders_board: { spot: 'orders_board', icon: '📋', w: 2, h: 1, zone: 'out', cat: 'building', solid: true,
@@ -54,7 +54,7 @@ export const LEGACY_POS = {
 };
 
 // الورش اللي كانت داخل البيت: تنتقل برا قريب من هنا
-export const WORKSHOP_YARD = { x: 16, y: 32 };
+export const WORKSHOP_YARD = { x: 11, y: 10 }; // وسط ساحة الورش
 
 export const CHEST_CAP = [80, 140, 220];
 export const BARN_CAP = [200, 350, 500];

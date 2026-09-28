@@ -9,7 +9,7 @@ const world = buildWorld();
 test('buildings go outside the house only, furniture inside only', () => {
   const s = newState(0);
   assert.equal(P.canPlace(s, world, 'kiln', 30, 20).ok, false, 'kiln inside the house');
-  assert.match(P.canPlace(s, world, 'kiln', 30, 20).reason, /برا البيت/);
+  assert.match(P.canPlace(s, world, 'kiln', 30, 20).reason, /ساحة الورش/);
   const out = P.findFreeSpot(s, world, 'kiln', { x: 16, y: 32 });
   assert.ok(out, 'there is room outside');
   assert.ok(P.canPlace(s, world, 'kiln', out.tx, out.ty).ok);

@@ -582,7 +582,7 @@ const bld = await ev(async () => {
   const stall = P.placedOf(s, 'stall_shop')[0];
   const upOk = stall ? g.upgradePlaced(stall.id) : false;
   // ممرات
-  g.placeAt({ x: 12 * 16, y: 36 * 16 }); s.inv.stone = 5;
+  g.placeAt({ x: 46 * 16, y: 6 * 16 }); s.inv.stone = 5;
   g.startPlacing('path'); for (let i = 0; i < 3; i++) g.confirmPlacing(); g.stopPlacing();
   return { insideOk, outsideOk, loomOutside, penMoved, camelsInside, chest: !!chest, comfort, toChest, before, upOk, stallSpeed: P.stallSpeed(s), paths: P.placedOf(s, 'path').length };
 });
@@ -650,6 +650,36 @@ await tick(300);
 await shot('56-fields-store');
 await closeModals();
 
+// 21) ساحات البناء والورش بالوقت
+await settle();
+const zq = await ev(async () => {
+  const g = window.__game, s = g.state;
+  const P = await import('./js/systems/placement.js');
+  const PR = await import('./js/systems/production.js');
+  s.tech.t_kiln = true; s.tech.t_brick = true; s.player.energy = 200; s.player.coins += 5000;
+  Object.assign(s.inv, { stone: 20, clay: 20, water: 10, wood: 10 });
+  // الفرن برا ساحته ينرفض
+  const wrong = P.canPlace(s, g.world, 'kiln', 46, 38);
+  let kiln = P.placedOf(s, 'kiln')[0];
+  if (!kiln) {
+    g.startPlacing('kiln'); g.confirmPlacing();
+    for (const x of [...g.ui.modals]) { if (x.handlers.build) x.handlers.build(); x.closable = true; x.close(); }
+    kiln = P.placedOf(s, 'kiln')[0];
+  }
+  const now = g.absMinutes();
+  const q1 = PR.enqueue(s, 'kiln', 'brick', now).ok;
+  const before = s.inv.brick || 0;
+  s.time.minute += 70;
+  await new Promise(r => setTimeout(r, 300));
+  const got = g.collectWorkshop('kiln');
+  return { wrongZone: !wrong.ok && /ساحة الورش/.test(wrong.reason), kilnBuilt: !!s.built.kiln, q1, got, bricks: (s.inv.brick || 0) - before };
+});
+console.log('zones+queue:', zq);
+await ev(() => window.__game.ui.openCraft('kiln'));
+await tick(400);
+await shot('57-workshop-queue');
+await closeModals();
+
 // حفظ وتحميل
 await settle();
 const saved = await ev(() => { window.__game.save(); return JSON.parse(localStorage.getItem('almuzare_save')).player.coins; });
@@ -671,6 +701,10 @@ server.close();
 const fatal = errors.filter(e => !/favicon/.test(e));
 if (fatal.length) {
   console.error('❌ أخطاء بالمتصفح:\n' + fatal.join('\n'));
+  process.exit(1);
+}
+if (!zq.wrongZone || !zq.kilnBuilt || !zq.q1 || !zq.got || zq.bricks < 1) {
+  console.error('❌ الساحات أو الورش بالوقت فيها مشكلة', zq);
   process.exit(1);
 }
 if (extra.fields < 3 || !extra.planted || !extra.barnBuilt || extra.inBarn < 1 || !extra.movedOk) {

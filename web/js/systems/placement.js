@@ -4,6 +4,7 @@ import { BUILD_SPOTS } from '../data/recipes.js';
 import { ITEMS } from '../data/items.js';
 import { T, TILE, KHAN, MAP_W, MAP_H, tileAt } from '../data/map.js';
 import { add, count, counts, bagFree, bagUsed, bagCap } from './inventory.js';
+import { zonesFor, inZone, zoneCenter } from '../data/zones.js';
 
 const OUT_TILES = new Set([T.SAND, T.SAND2, T.GRASS, T.WADI, T.ROCKY]);
 const IN_TILES = new Set([T.FLOOR, T.ROOMFLOOR]);
@@ -108,6 +109,9 @@ export function canPlace(state, world, type, tx, ty, flip = false, ignoreId = nu
   const d = PLACEABLES[type];
   if (!d) return { ok: false, reason: 'غير معروف' };
   const fp = footprint({ type, tx, ty, flip });
+  // المباني والحقول بساحاتها المحددة بس
+  const zs = zonesFor(type);
+  if (zs.length && !zs.some(z => inZone(z, fp))) return { ok: false, reason: `ابنِه داخل ${zs.map(z => z.icon + ' ' + z.name).join(' أو ')}`, zone: true };
   for (let y = fp.y0; y <= fp.y1; y++) {
     for (let x = fp.x0; x <= fp.x1; x++) {
       if (x < 3 || y < 3 || x > MAP_W - 4 || y > MAP_H - 4) return { ok: false, reason: 'قريب من حد الخريطة' };
@@ -322,7 +326,16 @@ export function migrate(state, world) {
     }
     state.placed.push({ id: newId(state), type, tx: pos.tx, ty: pos.ty, flip: false, level: 1 });
   }
-  state.placedVersion = 1;
+  // نسخة 2: المباني والحقول اللي برا ساحاتها تنتقل لأقرب مكان بساحتها
+  if ((state.placedVersion || 0) < 2) {
+    for (const p of state.placed) {
+      const zs = zonesFor(p.type);
+      if (!zs.length || PLACEABLES[p.type].inside || zs.some(z => inZone(z, footprint(p)))) continue;
+      const f = findFreeSpot(state, world, p.type, zoneCenter(zs[0]), p.flip);
+      if (f && move(state, world, p.id, f.tx, f.ty).ok && !moved.includes(p.type)) moved.push(p.type);
+    }
+  }
+  state.placedVersion = 2;
   return { moved };
 }
 

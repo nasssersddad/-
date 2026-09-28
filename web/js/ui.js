@@ -2,6 +2,7 @@
 import { ITEMS, RELICS, RELIC_SETS, SEEDS, itemIcon, itemName } from './data/items.js';
 import * as farming from './systems/farming.js';
 import * as placement from './systems/placement.js';
+import * as production from './systems/production.js';
 import { PLACEABLES } from './data/buildings.js';
 import { installHub, advice } from './hub.js';
 import { RECIPES, STATIONS, BUILD_SPOTS } from './data/recipes.js';
@@ -404,7 +405,62 @@ export class UI {
   }
 
   // ---------- الصناعة ----------
+  // الورش اللي بالوقت: طابور طلبات، وكل واحد يخلص بعد وقت، وتستلمه
+  openWorkshop(station) {
+    const g = this.g;
+    const s = g.state;
+    const secs = (min) => { const sec = Math.ceil(min / 4); return sec >= 60 ? `${Math.floor(sec / 60)}د ${sec % 60}ث` : `${sec}ث`; };
+    const m0 = this.modal({
+      title: `${STATIONS[station].icon} ${STATIONS[station].name} ⏱️`,
+      cls: 'store',
+      onClose: () => clearInterval(timer),
+      render: (m) => {
+        const now = g.absMinutes();
+        const js = production.jobs(s, station, now);
+        const nSlots = production.slots(s, station);
+        const ready = js.filter(j => j.ready).length;
+        const list = recipesFor(s, station);
+        const slotsHtml = Array.from({ length: nSlots }, (_, i) => {
+          const j = js[i];
+          if (!j) return '<div class="qslot empty">➕<small>فاضي</small></div>';
+          const r = RECIPES.find(x => x.id === j.recipe);
+          const [outId, outN] = Object.entries(r.out)[0];
+          if (j.ready) return `<div class="qslot ready">${itemIcon(outId)}<small>✅ جاهز ×${outN}</small></div>`;
+          return `<div class="qslot ${j.started ? 'run' : ''}">${itemIcon(outId)}<small>${j.started ? '⏳ باقي ' + secs(j.left) : '⌛ ينتظر'}</small><i style="width:${Math.round(j.progress * 100)}%"></i>
+            ${j.started ? `<button class="link" data-a="rush" data-v="${i}">⚡ 🪙${production.rushCost(j, now)}</button>` : ''}</div>`;
+        }).join('');
+        m.body.innerHTML = `<p class="howto">⏱️ حط طلبات بالطابور، وكل طلب يخلص بعد وقت. تقدر تمشي وتسوي شغلك وترجع تستلم. (الطابور ${js.length}/${nSlots}، ويكبر لما ترقّي الورشة)</p>
+          <div class="qbar">${slotsHtml}</div>
+          <div class="row center" style="margin:6px 0 10px"><button class="btn green big" data-a="collect" ${ready ? '' : 'disabled'}>📥 استلم ${ready ? `(${ready})` : ''}</button></div>
+          <div class="grid">${list.map(r => {
+            const [outId, outN] = Object.entries(r.out)[0];
+            const full = js.length >= nSlots;
+            return `<div class="card ${r.locked ? 'locked' : r.affordable && !full ? 'ready' : ''}">
+              <h3><span class="ic">${itemIcon(outId)}</span>${itemName(outId)} ×${outN} <small class="muted">(عندك ${count(s, outId)})</small></h3>
+              ${this.costHtml(r.in)}
+              ${r.locked ? `<p class="muted">🔒 تحتاج تتعلم: ${TECH_BY_ID[r.tech].name}</p>` : `<div class="row"><button class="btn green" data-a="start" data-v="${r.id}" ${r.affordable && !full ? '' : 'disabled'}>▶️ ابدأ (⏱️ ${secs(production.recipeTime(r))})</button>${full ? '<small class="muted">الطابور مليان</small>' : ''}</div>`}
+            </div>`;
+          }).join('')}</div>`;
+        m.handlers.start = (id) => {
+          const r = production.enqueue(s, station, id, g.absMinutes());
+          if (!r.ok) { this.audio.play('deny'); this.toast(r.reason); return; }
+          this.audio.play('craft');
+          g.save(); m.rerender(); this.refresh();
+        };
+        m.handlers.collect = () => { g.collectWorkshop(station); m.rerender(); };
+        m.handlers.rush = (i) => {
+          const r = production.rush(s, station, Number(i), g.absMinutes());
+          if (!r.ok) { this.audio.play('deny'); if (r.reason === 'poor') this.toast('الدراهم ما تكفي 💸'); return; }
+          this.audio.play('coin');
+          m.rerender(); this.refresh();
+        };
+      },
+    });
+    const timer = setInterval(() => { if (m0.closed) clearInterval(timer); else m0.rerender(); }, 500);
+  }
+
   openCraft(station) {
+    if (production.isTimed(station)) { this.openWorkshop(station); return; }
     const g = this.g;
     const s = g.state;
     this.modal({

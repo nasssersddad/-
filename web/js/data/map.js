@@ -1,5 +1,6 @@
 // خريطة العالم: تنولد بنفس الشكل كل مرة (بذرة ثابتة)
 import { mulberry32 } from '../systems/util.js';
+import { BUILD_ZONES, zoneAt } from './zones.js';
 
 export const TILE = 16;
 export const MAP_W = 64;
@@ -166,6 +167,7 @@ export function buildWorld() {
   // بمولّد عشوائي ثاني عشان مواقع الموارد القديمة ما تتغير
   const rng2 = mulberry32(4242);
   const reserved = (tx, ty) => {
+    if (zoneAt(tx, ty)) return true; // ساحات البناء
     const t = get(tx, ty);
     if (t === T.ROAD || t === T.WATER || t === T.SOIL || t === T.WALL || t === T.FLOOR || t === T.ROOMFLOOR || t === T.DUNE) return true;
     if (tx >= KHAN.x0 - 1 && tx <= KHAN.x1 + 1 && ty >= KHAN.y0 - 1 && ty <= KHAN.y1 + 2) return true;
@@ -213,6 +215,14 @@ export function buildWorld() {
     add({ id: 'deco' + n, kind: 'deco', variant: Math.floor(rng() * 4), tx, ty });
     mark(tx, ty);
   }
+
+  // ساحات البناء: نشيل منها الموارد والشجيرات عشان تكون فاضية ومرتبة، ونحط لوحة لكل ساحة
+  const CLEAR = new Set(['palm', 'sidr', 'rock', 'clay', 'herb', 'deco']);
+  for (let i = objects.length - 1; i >= 0; i--) {
+    const o = objects[i];
+    if (CLEAR.has(o.kind) && zoneAt(o.tx, o.ty)) objects.splice(i, 1);
+  }
+  for (const z of BUILD_ZONES) add({ id: 'zsign:' + z.id, kind: 'zonesign', zone: z.id, tx: Math.floor((z.rect.x0 + z.rect.x1) / 2), ty: z.rect.y0 });
 
   for (const o of objects) {
     o.x = px(o.tx);

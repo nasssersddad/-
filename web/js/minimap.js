@@ -5,6 +5,7 @@ import { NPCS } from './data/npcs.js';
 import { isReady } from './systems/farming.js';
 import { footprint, isBuilt, info } from './systems/placement.js';
 import { PLACEABLES } from './data/buildings.js';
+import { BUILD_ZONES } from './data/zones.js';
 
 const COL = {
   [T.SAND]: '#d9b77a', [T.SAND2]: '#cfad70', [T.GRASS]: '#7fa84a', [T.WATER]: '#3f8fc0', [T.ROAD]: '#b8925a',
@@ -71,6 +72,18 @@ export function drawMap(cv, game, opts = {}) {
   if (game.mode === 'world') {
     box(KHAN.x0 * TILE, KHAN.y0 * TILE, (KHAN.x1 + 1) * TILE, (KHAN.y1 + 1) * TILE, 'rgba(60,30,10,.8)');
     label((KHAN.x0 + KHAN.x1) / 2 * TILE, (KHAN.y0 + 2) * TILE, 'الخان');
+    // ساحات البناء
+    for (const z of BUILD_ZONES) {
+      const r = z.rect;
+      const [a1, b1] = P(r.x0 * TILE, r.y0 * TILE), [c1, d1] = P((r.x1 + 1) * TILE, (r.y1 + 1) * TILE);
+      ctx.fillStyle = 'rgba(255,240,200,0.12)';
+      ctx.fillRect(a1, b1, c1 - a1, d1 - b1);
+      ctx.setLineDash([3, 2]);
+      ctx.strokeStyle = 'rgba(120,80,30,0.7)'; ctx.lineWidth = 1;
+      ctx.strokeRect(a1 + 0.5, b1 + 0.5, c1 - a1 - 1, d1 - b1 - 1);
+      ctx.setLineDash([]);
+      label((r.x0 + r.x1 + 1) / 2 * TILE, (r.y0 + r.y1 + 1) / 2 * TILE, z.icon + ' ' + z.name, '#ffe9a8');
+    }
     // المباني والديكور المنحطة باختيارك
     for (const p of s.placed || []) {
       const d = PLACEABLES[p.type];

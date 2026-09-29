@@ -2,6 +2,7 @@
 import { RECIPES } from '../data/recipes.js';
 import { has, remove, addStat } from './inventory.js';
 import { typeLevel } from './placement.js';
+import { weekday } from './time.js';
 
 export const TIMED = { kiln: true, mill: true, loom: true };
 export const RUSH_PER_HOUR = 8; // دراهم لكل ساعة لعب باقية
@@ -10,8 +11,27 @@ export function isTimed(station) {
   return !!TIMED[station];
 }
 
-export function recipeTime(r) {
-  return r.time || 60;
+// أيام الورش: كل ورشة لها يوم بالأسبوع شغلها فيه أسرع ×2
+// (0 السبت، 2 الاثنين، 5 الخميس)
+export const WORKSHOP_DAYS = { 0: 'mill', 2: 'loom', 5: 'kiln' };
+export const DAY_FAST = 0.5;
+
+export function workshopDay(state) {
+  return WORKSHOP_DAYS[weekday(state)] || null;
+}
+
+// كم يتضاعف الوقت: يوم الورشة ×0.5، وفعالية أسبوع الورش ×0.6
+export function speedFactor(state, station, mods = {}) {
+  let k = 1;
+  if (state && workshopDay(state) === station) k *= DAY_FAST;
+  if (mods && mods.workshopFast) k *= mods.workshopFast;
+  return k;
+}
+
+export function recipeTime(r, state = null, station = null, mods = {}) {
+  const base = r.time || 60;
+  if (!state) return base;
+  return Math.max(1, Math.round(base * speedFactor(state, station || r.station, mods)));
 }
 
 // عدد خانات الطابور: 2، وتزيد مع مستوى الورشة
@@ -26,7 +46,7 @@ export function queue(state, station) {
 }
 
 // يحط طلب: يسحب المواد (من الحقيبة والمخازن)، ويبدأ بعد آخر طلب
-export function enqueue(state, station, recipeId, nowMin) {
+export function enqueue(state, station, recipeId, nowMin, mods = {}) {
   const r = RECIPES.find(x => x.id === recipeId && x.station === station);
   if (!r) return { ok: false, reason: 'غير معروف' };
   if (r.tech && !state.tech[r.tech]) return { ok: false, reason: 'تحتاج تتعلمها' };
@@ -36,7 +56,7 @@ export function enqueue(state, station, recipeId, nowMin) {
   remove(state, r.in);
   const last = q.length ? q[q.length - 1].end : nowMin;
   const start = Math.max(last, nowMin);
-  const job = { recipe: r.id, start, end: start + recipeTime(r) };
+  const job = { recipe: r.id, start, end: start + recipeTime(r, state, station, mods) };
   q.push(job);
   addStat(state, 'queued', 1);
   return { ok: true, job };

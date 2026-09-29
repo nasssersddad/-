@@ -52,6 +52,8 @@ export const ITEMS = {
   cucumber:  { name: 'خيار',         icon: '🥒', price: 8, food: 7 },
   eggplant:  { name: 'باذنجان',      icon: '🍆', price: 11 },
   corn:      { name: 'ذرة',          icon: '🌽', price: 10, food: 10 },
+  egg:       { name: 'بيض',          icon: '🥚', price: 6, food: 5 },
+  shakshuka: { name: 'شكشوكة',       icon: '🍳', price: 24, food: 28 },
 };
 
 export const SEEDS = {

@@ -428,7 +428,7 @@ canvas.bigmap { width: 100%; display: block; border: 3px solid var(--wood); bord
 .chestcol .bar { height: 8px; margin-bottom: 6px; }
 .chestcol .bar i { background: linear-gradient(#8fdc5a, #4f9a2f); display: block; height: 100%; }
 .chestcol .shop-row .btn { padding: 2px 8px; font-size: 12px; }
-.bmenu .big { font-size: 40px; text-align: center; }
+.bmenu div.big { font-size: 40px; text-align: center; }
 
 /* طابور الورش */
 .qbar { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
@@ -439,3 +439,32 @@ canvas.bigmap { width: 100%; display: block; border: 3px solid var(--wood); bord
 .qslot.run { border-color: #e0a030; }
 .qslot.ready { border-color: var(--green); background: linear-gradient(#e6ffd6, #bfe8a0); animation: bounce 1.2s infinite; }
 .qslot .link { font-size: 11px; padding: 0; }
+
+/* قن الدجاج */
+.coopstat { display: flex; justify-content: space-around; gap: 8px; margin: 4px 0 8px; }
+.coopstat > div { display: flex; flex-direction: column; align-items: center; background: rgba(255,255,255,.35); border-radius: 10px; padding: 6px 10px; min-width: 70px; }
+.coopstat .sbig { font-size: 26px; }
+
+/* مودّة الجيران وطلباتهم */
+.affbar { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,.35); border-radius: 10px; padding: 5px 10px; margin: 0 0 8px; }
+.affbar .affname { font-weight: 700; white-space: nowrap; }
+.affbar .bar { flex: 1; margin: 0; }
+.affbar .bar i { background: linear-gradient(90deg, #e86a8a, #ff9ab0); }
+.affbar small { white-space: nowrap; }
+b.gold { color: #b07a10; }
+.card.reqcard { display: flex; flex-direction: row; align-items: center; gap: 12px; }
+.reqcard .rqicon { font-size: 38px; }
+.reqcard .rqmid { flex: 1; }
+.reqcard .gains { justify-content: flex-start; margin-top: 4px; }
+.reqcard .have { color: #1a6a10; }
+.reqcard .miss { color: #b00; }
+
+/* أيام الورش */
+.wsday { background: rgba(255,255,255,.3); border-radius: 10px; padding: 5px 10px; margin: 0 0 6px; font-size: .92em; text-align: center; }
+.wsday.on { background: linear-gradient(90deg, #ffe7a0, #ffd070); border: 1px solid #d8a030; animation: wsglow 1.6s ease-in-out infinite; }
+.wsday.ev { background: linear-gradient(90deg, #d8f0ff, #b0dcff); border-color: #5a9ad8; }
+@keyframes wsglow { 50% { filter: brightness(1.08); } }
+.bar.coopbar { margin: 0 4px 8px; } .bar.coopbar i { background: linear-gradient(#ffe68a, #e0a030); }
+.ctag.ok { background: rgba(60,160,40,.2); color: #1a6a10; font-weight: 700; }
+.zreq { margin: 6px 0 10px; gap: 8px; }
+.zreq .ctag { font-size: 1.05em; padding: 4px 10px; }

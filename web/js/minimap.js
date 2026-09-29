@@ -5,7 +5,7 @@ import { NPCS } from './data/npcs.js';
 import { isReady } from './systems/farming.js';
 import { footprint, isBuilt, info } from './systems/placement.js';
 import { PLACEABLES } from './data/buildings.js';
-import { BUILD_ZONES } from './data/zones.js';
+import { BUILD_ZONES, isZoneOpen } from './data/zones.js';
 
 const COL = {
   [T.SAND]: '#d9b77a', [T.SAND2]: '#cfad70', [T.GRASS]: '#7fa84a', [T.WATER]: '#3f8fc0', [T.ROAD]: '#b8925a',
@@ -76,13 +76,15 @@ export function drawMap(cv, game, opts = {}) {
     for (const z of BUILD_ZONES) {
       const r = z.rect;
       const [a1, b1] = P(r.x0 * TILE, r.y0 * TILE), [c1, d1] = P((r.x1 + 1) * TILE, (r.y1 + 1) * TILE);
-      ctx.fillStyle = 'rgba(255,240,200,0.12)';
+      const open = isZoneOpen(s, z);
+      ctx.fillStyle = open ? 'rgba(255,240,200,0.12)' : 'rgba(30,15,0,0.3)';
       ctx.fillRect(a1, b1, c1 - a1, d1 - b1);
-      ctx.setLineDash([3, 2]);
-      ctx.strokeStyle = 'rgba(120,80,30,0.7)'; ctx.lineWidth = 1;
+      ctx.setLineDash(open ? [3, 2] : []);
+      ctx.strokeStyle = open ? 'rgba(120,80,30,0.7)' : 'rgba(110,74,40,0.9)'; ctx.lineWidth = 1;
       ctx.strokeRect(a1 + 0.5, b1 + 0.5, c1 - a1 - 1, d1 - b1 - 1);
       ctx.setLineDash([]);
-      label((r.x0 + r.x1 + 1) / 2 * TILE, (r.y0 + r.y1 + 1) / 2 * TILE, z.icon + ' ' + z.name, '#ffe9a8');
+      if (!open && !opts.labels) { ctx.font = `${Math.round(k * 3.4)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; const [lx, ly] = P((r.x0 + r.x1 + 1) / 2 * TILE, (r.y0 + r.y1 + 1) / 2 * TILE); ctx.fillText('🔒', lx, ly); }
+      label((r.x0 + r.x1 + 1) / 2 * TILE, (r.y0 + r.y1 + 1) / 2 * TILE, (open ? z.icon + ' ' : '🔒 ') + z.name, open ? '#ffe9a8' : '#ffc9a0');
     }
     // المباني والديكور المنحطة باختيارك
     for (const p of s.placed || []) {

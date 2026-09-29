@@ -99,6 +99,7 @@ export function orderPool(state) {
   if (state.built.stable) pool.push('milk', 'alfalfa');
   if (state.built.sheepfold) pool.push('wool');
   if (state.tech.t_melon) pool.push('melon');
+  if (state.built.coop) pool.push('egg', 'egg');
   return pool;
 }
 

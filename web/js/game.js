@@ -32,8 +32,9 @@ import * as events from './systems/events.js';
 import * as weather from './systems/weather.js';
 import * as placement from './systems/placement.js';
 import * as production from './systems/production.js';
+import * as coopSys from './systems/coop.js';
 import { PLACEABLES } from './data/buildings.js';
-import { BUILD_ZONES, zonesFor, zoneCenter } from './data/zones.js';
+import { BUILD_ZONES, zonesFor, zoneCenter, isZoneOpen, unlockZone, zoneById } from './data/zones.js';
 
 // اتجاه الحركة ← وجه الشخصية
 export function screenDir(dx, dy) {
@@ -41,6 +42,7 @@ export function screenDir(dx, dy) {
 }
 
 const SPEED = 64;
+export const PATH_BOOST = 1.35; // الممرات والطريق تسرّع المشي
 const ACTION_REPEAT = 0.34;
 
 export class Game {
@@ -212,6 +214,7 @@ export class Game {
     this.updateCamels(dt);
     this.updateWildCamels(dt);
     this.updateSheep(dt);
+    this.updateHens(dt);
     this.updateWorkers(dt);
   }
 
@@ -281,6 +284,7 @@ export class Game {
       if (sold.length) this.ui.refresh();
     }
     if (s.built.orders_board) shop.ensureOrders(s, this.rng, nowMin);
+    coopSys.coopTick(s, nowMin);
   }
 
   // ---------- العالم المفتوح ----------
@@ -549,6 +553,7 @@ export class Game {
     this.tileDirty = true;
     this.boxVersion = (this.boxVersion || 0) + 1;
     if (spotId === 'stable') this.giftStarterCamels();
+    if (spotId === 'coop') this.giftHens();
     this.save();
     this.checkProgress();
   }
@@ -633,6 +638,69 @@ export class Game {
     this.ui.toast(`🐑 ${sheepSys.SHEEP_BREEDS[sh.breed].name} — ${sh.ageDays >= 2 ? 'بالغ' : 'طلي صغير'}. الصوف يطلع كل يومين.`, '', 2.5);
   }
 
+  // ---------- الدجاج ----------
+  giftHens() {
+    if (!coopSys.giftHens(this.state)) return;
+    const o = this.worldObjById['spot:coop'];
+    if (o) this.fx.float(...this.fx.at(o.x, o.y, 36), `🐔 +${coopSys.STARTER_HENS}`, '#fff3c4', 14);
+    this.ui.toast(`🐔 جاك ${coopSys.STARTER_HENS} دجاجات هدية! أكّلهم قمح أو برسيم أو ذرة ويبيضون لك`, 'gain', 5);
+  }
+
+  // الدجاج يتمشى وينقر قدام القن
+  coopRect() {
+    const o = this.worldObjById['spot:coop'];
+    if (!o || !o.fp) return null;
+    const f = o.fp;
+    return { x0: (f.x0 - 0.5) * TILE, x1: (f.x1 + 1.5) * TILE, y0: (f.y1 + 1) * TILE + 2, y1: (f.y1 + 2) * TILE + 4 };
+  }
+
+  updateHens(dt) {
+    const s = this.state;
+    this.henRt = this.henRt || [];
+    const box = s.built.coop ? this.coopRect() : null;
+    const n = box ? coopSys.coop(s).hens : 0;
+    if (this.henRt.length > n) this.henRt.length = n;
+    if (!box) return;
+    const rnd = () => ({ x: box.x0 + this.rng() * (box.x1 - box.x0), y: box.y0 + this.rng() * (box.y1 - box.y0) });
+    while (this.henRt.length < n) { const p = rnd(); this.henRt.push({ ...p, tx: p.x, ty: p.y, wait: this.rng() * 2, dir: this.rng() < 0.5 ? 1 : -1, color: this.henRt.length, mouth: 5, grain: true }); }
+    const hungry = coopSys.hungry(s);
+    for (const rt of this.henRt) {
+      // القن انتقل؟ الدجاج يلحقه
+      if (rt.x < box.x0 - 48 || rt.x > box.x1 + 48 || rt.y < box.y0 - 48 || rt.y > box.y1 + 48) { const p = rnd(); rt.x = rt.tx = p.x; rt.y = rt.ty = p.y; }
+      this.grazeUpdate(rt, dt, box, 20, () => (hungry ? null : rnd()));
+    }
+  }
+
+  coopAction(o) {
+    const s = this.state;
+    const c = coopSys.coop(s);
+    this.input.action = false;
+    if (c.eggs > 0) {
+      if (!this.hasRoom(c.eggs, 'egg')) return;
+      this.startAnim('pick', { x: o.x, y: o.y }, 0.6, 0.4, () => {
+        const n = coopSys.collectEggs(s);
+        this.audio.play('pick');
+        this.gainItems({ egg: n }, o.x, o.y, 26);
+        this.gainXp(Math.max(1, Math.floor(n / 2)), o.x, o.y, 40);
+        this.ui.refresh();
+      });
+      return;
+    }
+    if (coopSys.hungry(s) && coopSys.feedItem(s)) {
+      if (!this.spendEnergy(1)) return;
+      this.startAnim('feed', { x: o.x, y: o.y + 8 }, 0.6, 0.45, () => {
+        const it = coopSys.feedItem(s);
+        coopSys.addFeed(s, it, 1);
+        this.audio.play('eat');
+        this.fx.float(...this.fx.at(o.x, o.y, 30), `${ITEMS[it].icon} أكل للدجاج (+${coopSys.FEED_PER_ITEM / 60} ساعات)`, '#fff3c4', 12);
+        this.gainXp(1, o.x, o.y, 40);
+        this.ui.refresh();
+      });
+      return;
+    }
+    this.ui.openCoop();
+  }
+
   // ---------- الأنيميشن ----------
   // الفعل ياخذ وقته: يبدأ، وعند hitAt يصير التأثير، وينتهي عند dur
   startAnim(type, target, dur, hitAt, onHit) {
@@ -699,10 +767,12 @@ export class Game {
     const s = this.state;
     this.world.objects = this.world.objects.filter(o => !o.dynamic);
     const hide = new Set();
+    this.pathTiles = new Set();
     for (const p of s.placed || []) {
       const d = PLACEABLES[p.type];
       const a = placement.anchor(p);
       const f = placement.footprint(p);
+      if (d.speed) this.pathTiles.add(f.x0 + ',' + f.y0);
       for (let y = f.y0; y <= f.y1; y++) for (let x = f.x0; x <= f.x1; x++) hide.add(x + ',' + y);
       const common = { dynamic: true, pid: p.id, tx: Math.floor(a.x / TILE), ty: f.y1, x: a.x, y: a.y, fp: f, flip: p.flip };
       if (d.cat === 'building') this.world.objects.push({ ...common, id: 'spot:' + p.type, kind: 'spot', spot: d.spot });
@@ -730,7 +800,9 @@ export class Game {
       const ptx = Math.floor(s.player.x / TILE), pty = Math.floor(s.player.y / TILE);
       const inHouse = placement.insideKhan(ptx, pty);
       // المباني والحقول تبدأ بأقرب ساحة مسموحة لها
-      const zs = zonesFor(type);
+      const all = zonesFor(type);
+      const opened = all.filter(z => isZoneOpen(s, z));
+      const zs = opened.length ? opened : all;
       const nearest = zs.length ? zs.map(zoneCenter).sort((a, b) => Math.hypot(a.x - ptx, a.y - pty) - Math.hypot(b.x - ptx, b.y - pty))[0] : null;
       const near = nearest || (d.zone === 'in' ? (inHouse ? { x: ptx, y: pty } : { x: 30, y: 20 }) : (inHouse ? { x: 31, y: 31 } : { x: ptx - 1, y: pty + 1 }));
       const f = (d.inside && placement.placedOf(s, d.inside)[0]) ? { tx: placement.placedOf(s, d.inside)[0].tx + 1, ty: placement.placedOf(s, d.inside)[0].ty + 2 } : placement.findFreeSpot(s, this.world, type, near, false, { x: ptx, y: pty });
@@ -934,6 +1006,10 @@ export class Game {
     this.audio.play(r.bonus ? 'chest' : 'craft');
     this.fx.burst(...this.fx.at(o.x, o.y, 16), ['#ffd24a', '#fff'], 12, 50, 0.6);
     this.ui.toast(`📥 استلمت ${Object.entries(r.out).map(([k, n]) => `${ITEMS[k].icon}×${n}`).join(' ')}${r.bonus ? ' ✨ (فيه ضعف من الترقية!)' : ''}`, 'gain', 2.5);
+    if (this.eventMod('workshopTokens')) {
+      const n = events.addTokens(s, r.done.length * 2);
+      if (n) this.fx.float(...this.fx.at(o.x, o.y, 56), `🔨 +${n}`, '#ffe07a', 13);
+    }
     this.checkProgress();
     this.save();
     return true;
@@ -989,7 +1065,7 @@ export class Game {
       rt.eatT -= dt;
       rt.moving = false;
       rt.eating = true;
-      if (this.rng() < dt * 1.5) this.fx.emit(...this.fx.at(rt.x + rt.dir * 12, rt.y, 2), (this.rng() - 0.5) * 16, -14, rt.drinking ? '#9fd8f0' : '#7fb846', 0.6, 30, 1.5);
+      if (this.rng() < dt * 1.5) this.fx.emit(...this.fx.at(rt.x + rt.dir * (rt.mouth || 12), rt.y, 2), (this.rng() - 0.5) * 16, -14, rt.drinking ? '#9fd8f0' : rt.grain ? '#e8c060' : '#7fb846', 0.6, 30, 1.5);
       if (rt.eatT <= 0) { rt.eating = false; rt.drinking = false; rt.wait = 1 + this.rng() * 3; }
       return;
     }
@@ -1130,6 +1206,11 @@ export class Game {
     return events.mod(this.state, this.now(), name);
   }
 
+  // تسريع الورش من الفعالية (أسبوع الورش)
+  workshopMods() {
+    return { workshopFast: this.eventMod('workshopFast') || 0 };
+  }
+
   // كنوز العاصفة ولمعات القمر: تنولد كل يوم لعبة بأماكن رمل حول المزرعة
   eventSpots() {
     const s = this.state;
@@ -1198,13 +1279,26 @@ export class Game {
     this.moving = Math.hypot(m.x, m.y) > 0.1;
     if (!this.moving) return;
     const tired = p.energy <= 0 && this.mode === 'world';
-    const sp = SPEED * (tired ? 0.6 : 1) * Math.min(1, Math.hypot(m.x, m.y) * 1.3);
+    this.onPath = this.onPathAt(p.x, p.y);
+    const sp = SPEED * (tired ? 0.6 : 1) * (this.onPath ? PATH_BOOST : 1) * Math.min(1, Math.hypot(m.x, m.y) * 1.3);
+    if (this.onPath) {
+      this.dustT = (this.dustT || 0) - dt;
+      if (this.dustT <= 0) { this.dustT = 0.12; this.fx.emit(...this.fx.at(p.x + (this.rng() - 0.5) * 6, p.y, 1), (this.rng() - 0.5) * 14, -8, 'rgba(220,200,160,0.8)', 0.4, 20, 1.5); }
+    }
     const len = Math.hypot(m.x, m.y) || 1;
     const vx = (m.x / len) * sp * dt, vy = (m.y / len) * sp * dt;
     if (Math.abs(m.x) > Math.abs(m.y)) p.dir = m.x > 0 ? 'right' : 'left';
     else p.dir = m.y > 0 ? 'down' : 'up';
     if (!this.blocked(p.x + vx, p.y)) p.x += vx;
     if (!this.blocked(p.x, p.y + vy)) p.y += vy;
+  }
+
+  // واقف على ممر حطيته أو على الطريق؟
+  onPathAt(x, y) {
+    const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
+    if (this.mode === 'open') return owTile(this.open.tiles, tx, ty) === T.ROAD;
+    if (this.mode !== 'world') return false;
+    return !!(this.pathTiles && this.pathTiles.has(tx + ',' + ty)) || tileAt(this.world.tiles, tx, ty) === T.ROAD;
   }
 
   blocked(x, y) {
@@ -1342,6 +1436,7 @@ export class Game {
     for (const c of s.groundChests || []) list.push({ kind: 'gchest', ref: c, x: c.x, y: c.y + 2 });
     for (const sp of this.eventSpots()) list.push({ kind: this.eventMod('buried') ? 'buried' : 'sparkle', ref: sp, x: sp.x, y: sp.y, r: 20 });
     if (s.built.trough && this.worldObjById['spot:trough']) { const o = this.worldObjById['spot:trough']; list.push({ kind: 'trough', ref: o, x: o.x, y: o.y }); }
+    if (s.built.coop && this.worldObjById['spot:coop']) { const o = this.worldObjById['spot:coop']; list.push({ kind: 'coop', ref: o, x: o.x, y: o.y }); }
     for (const [spot, kind] of [['stall_shop', 'shop'], ['orders_board', 'orders'], ['workers_house', 'whouse']]) {
       const o = this.worldObjById['spot:' + spot];
       if (s.built[spot] && o) list.push({ kind, ref: o, x: o.x, y: o.y });
@@ -1405,7 +1500,7 @@ export class Game {
       case 'crypt': return { icon: '⬇️', label: 'انزل' };
       case 'npc': return { icon: '🛒', label: 'بيع وشراء' };
       case 'wildcamel': return { icon: '🐪', label: 'ناقة الجيران' };
-      case 'zonesign': { const z = BUILD_ZONES.find(x => x.id === t.ref.zone); return { icon: z.icon, label: z.name }; }
+      case 'zonesign': { const z = BUILD_ZONES.find(x => x.id === t.ref.zone); return isZoneOpen(s, z) ? { icon: z.icon, label: z.name } : { icon: '🔒', label: 'افتح الساحة' }; }
       case 'chest': return t.ref.spot === 'barn' ? { icon: '🏚️', label: 'المخزن' } : { icon: '📦', label: 'الصندوق' };
       case 'placed': return { icon: PLACEABLES[t.ref.ptype].icon, label: placement.info(t.ref.ptype).name };
       case 'guest': return { icon: t.ref.served ? '💬' : '☕', label: 'قدّم' };
@@ -1416,7 +1511,12 @@ export class Game {
       case 'buried': return { icon: '⛏️', label: 'احفر الكنز' };
       case 'sparkle': return { icon: '✨', label: 'اجمع' };
       case 'gohome': return { icon: '🏠', label: 'ارجع مزرعتي' };
-      case 'owner': return { icon: '🤝', label: farmsSys.farmState(s, t.ref.farm).owned ? 'مزرعتك' : 'تفاوض' };
+      case 'owner': {
+        const fs = farmsSys.farmState(s, t.ref.farm);
+        if (fs.owned) return { icon: '🤝', label: 'مزرعتك' };
+        if (fs.request && !fs.request.done && fs.request.day === s.time.day) return { icon: '📜', label: 'طلبه' };
+        return { icon: '🤝', label: 'تفاوض' };
+      }
       case 'farmstore': return { icon: '📦', label: 'المخزن' };
       case 'orders': return { icon: '📋', label: 'الطلبات' };
       case 'whouse': return { icon: '👷', label: 'العمّال' };
@@ -1428,6 +1528,12 @@ export class Game {
         return { icon: '🐑', label: 'شوف' };
       }
       case 'trough': return s.trough.water >= 10 ? { icon: '✔', label: 'مليان' } : { icon: '🏺', label: 'كب ماء' };
+      case 'coop': {
+        const c = coopSys.coop(s);
+        if (c.eggs) return { icon: '🥚', label: `استلم ${c.eggs}` };
+        if (coopSys.hungry(s) && coopSys.feedItem(s)) return { icon: '🌾', label: 'أكّل الدجاج' };
+        return { icon: '🐔', label: 'القن' };
+      }
       case 'camel': {
         const c = t.ref, day = s.time.day;
         if (!camels.isWatered(c, day) && count(s, 'water') > 0) return { icon: '💧', label: 'اسقِ' };
@@ -1484,7 +1590,13 @@ export class Game {
       case 'npc': this.input.action = false; this.talkNpc(t.id); break;
       case 'chest': this.input.action = false; this.ui.openChest(t.ref.pid); break;
       case 'placed': this.input.action = false; this.ui.openPlacedMenu(t.ref.pid); break;
-      case 'zonesign': this.input.action = false; this.ui.openStore('build:' + (t.ref.zone === 'farm' ? 'field' : 'out')); break;
+      case 'zonesign': {
+        this.input.action = false;
+        const z = zoneById(t.ref.zone);
+        if (!isZoneOpen(this.state, z)) this.ui.openZoneUnlock(z.id);
+        else this.ui.openStore('build:' + (z.types.includes('field') ? 'field' : 'out'));
+        break;
+      }
       case 'wildcamel': this.input.action = false; this.audio.play('camel'); this.ui.toast(t.ref.eating ? '🐪 ناقة الجيران ترعى… تبي نياق لك؟ اشترِ من 🛒 المتجر أو من القرية' : '🐪 هذي نياق الجيران. نياقك تشتريها من 🛒 المتجر أو من مزارع القرية', '', 3); break;
       case 'guest': this.input.action = false; this.serveGuest(t.ref); break;
       case 'gchest': this.input.action = false; this.openGroundChest(t.ref); break;
@@ -1493,6 +1605,7 @@ export class Game {
       case 'stairsDown': this.input.action = false; this.enterFloor(this.dungeon.floor + 1); break;
       case 'plot': this.plotAction(t.ref); break;
       case 'trough': this.troughAction(t.ref); break;
+      case 'coop': this.coopAction(t.ref); break;
       case 'sheep': this.sheepAction(t.ref, t.rt); break;
       case 'worldexit': this.input.action = false; this.travel('open'); break;
       case 'buried': this.input.action = false; this.digTreasure(t.ref); break;
@@ -1784,6 +1897,7 @@ export class Game {
       if (w === 'coffee2') return !!s.tech.t_coffee2;
       if (w === 'pressed') return !!s.tech.t_pressed;
       if (w === 'tomato') return (s.stats.planted || 0) > 0;
+      if (w === 'egg' || w === 'shakshuka') return !!s.built.coop;
       return true;
     });
   }
@@ -1923,6 +2037,24 @@ export class Game {
     return true;
   }
 
+  // ---------- توسعة الأرض ----------
+  unlockZone(id) {
+    const s = this.state;
+    const r = unlockZone(s, id);
+    if (!r.ok) { this.audio.play('deny'); this.ui.toast(r.reason); return false; }
+    const z = zoneById(id);
+    const c = zoneCenter(z);
+    this.audio.play('build');
+    this.shake = 4;
+    this.fx.burst(...this.fx.at(c.x * TILE, c.y * TILE, 8), ['#e8b53a', '#fff3c4', '#b8ff9a'], 40, 110, 1);
+    this.ui.toast(`🔓 فتحت ${z.icon} ${z.name}! صار عندك أرض جديدة تبني فيها`, 'ach', 5);
+    this.gainXp(20, c.x * TILE, c.y * TILE, 30);
+    this.boxVersion = (this.boxVersion || 0) + 1;
+    this.save();
+    this.ui.refresh();
+    return true;
+  }
+
   // ---------- البناء ----------
   doBuild(spotId) {
     const s = this.state;
@@ -1939,6 +2071,7 @@ export class Game {
     this.boxVersion = (this.boxVersion || 0) + 1;
     this.gainXp(10 + b.rating, o.x, o.y, 42);
     if (spotId === 'stable') this.giftStarterCamels();
+    if (spotId === 'coop') this.giftHens();
     this.ui.refresh();
     this.save();
     this.checkProgress();

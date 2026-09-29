@@ -19,9 +19,10 @@ import { currentQuest } from './systems/quests.js';
 import { PostFX } from './engine/post.js';
 import * as placement from './systems/placement.js';
 import { PLACEABLES } from './data/buildings.js';
-import { BUILD_ZONES, zonesFor } from './data/zones.js';
+import { BUILD_ZONES, zonesFor, isZoneOpen } from './data/zones.js';
 import * as production from './systems/production.js';
 import { RECIPES } from './data/recipes.js';
+import * as coopSys from './systems/coop.js';
 
 export class Renderer {
   constructor(worldCanvas, fxCanvas, postCanvas) {
@@ -390,6 +391,7 @@ export class Renderer {
     }
     if (s.built.stable) this.collectPen(game, list, lights);
     if (s.built.sheepfold) this.collectFold(game, list);
+    if (s.built.coop) this.collectHens(game, list);
     this.collectZones(game, list);
     this.collectGhost(game, list);
     this.collectWorkers(game, list);
@@ -443,6 +445,7 @@ export class Renderer {
         case 'stall_shop': this.sprite(list, art.shopStall(), o.x, o.y + 6, o.y, { flip: o.flip }); break;
         case 'orders_board': this.sprite(list, art.ordersBoard(), o.x, o.y + 4, o.y, { flip: o.flip }); break;
         case 'barn': this.sprite(list, art.barn(placement.levelOf(s, placement.placedById(s, o.pid))), o.x, o.y + 4, o.y, { flip: o.flip }); break;
+        case 'coop': this.sprite(list, art.coop(placement.typeLevel(s, 'coop'), coopSys.coop(s).eggs > 0), o.x, o.y + 4, o.y, { flip: o.flip }); break;
         default: break;
       }
       return;
@@ -479,8 +482,21 @@ export class Renderer {
         const r = z.rect;
         const x = r.x0 * TILE - cam.x, y = r.y0 * TILE - cam.y, w = (r.x1 - r.x0 + 1) * TILE, h = (r.y1 - r.y0 + 1) * TILE;
         if (x > this.bw || y > this.bh || x + w < 0 || y + h < 0) continue;
-        const on = allowed && allowed.includes(z.id);
+        const locked = !isZoneOpen(game.state, z);
+        const on = allowed && allowed.includes(z.id) && !locked;
         const off = allowed && !on;
+        if (locked) {
+          // ساحة مسكّرة: غامقة وحولها سياج خشب
+          ctx.fillStyle = on === false && allowed && allowed.includes(z.id) ? `rgba(230,160,60,${0.16 + Math.sin(t * 4) * 0.05})` : 'rgba(20,10,0,0.22)';
+          ctx.fillRect(x, y, w, h);
+          ctx.fillStyle = '#6e4a28';
+          ctx.fillRect(x, y + 3, w, 1); ctx.fillRect(x, y + h - 4, w, 1);
+          ctx.fillRect(x + 2, y, 1, h); ctx.fillRect(x + w - 3, y, 1, h);
+          ctx.fillStyle = '#8a5a33';
+          for (let px = 0; px < w; px += TILE) { ctx.fillRect(x + px, y, 2, 6); ctx.fillRect(x + px, y + h - 7, 2, 6); }
+          for (let py = 0; py < h; py += TILE) { ctx.fillRect(x + 1, y + py, 3, 5); ctx.fillRect(x + w - 4, y + py, 3, 5); }
+          continue;
+        }
         ctx.fillStyle = on ? `rgba(120,230,100,${0.14 + Math.sin(t * 4) * 0.06})` : off ? 'rgba(0,0,0,0.12)' : 'rgba(255,240,200,0.07)';
         ctx.fillRect(x, y, w, h);
         ctx.strokeStyle = on ? '#b8ff9a' : off ? 'rgba(60,40,20,0.35)' : 'rgba(140,100,50,0.55)';
@@ -499,6 +515,7 @@ export class Renderer {
       case 'stall_shop': return art.shopStall();
       case 'orders_board': return art.ordersBoard();
       case 'barn': return art.barn(level);
+      case 'coop': return art.coop(level);
       case 'field': return art.soilPlot(false);
       case 'workers_house': return art.mudHouse(level);
       case 'trough': return art.trough(5);
@@ -604,6 +621,21 @@ export class Renderer {
         ctx.translate(Math.round(rt.x - cam.x), Math.round(rt.y - cam.y));
         if (rt.dir < 0) ctx.scale(-1, 1);
         ctx.drawImage(img, Math.round(-w / 2), Math.round(-h + 2), Math.round(w), Math.round(h));
+        ctx.restore();
+      } });
+    }
+  }
+
+  collectHens(game, list) {
+    const t = game.t;
+    for (const rt of game.henRt || []) {
+      const frame = rt.eating ? (Math.floor(t * 4 + rt.color) % 2 ? 2 : 0) : rt.moving ? Math.floor(t * 8 + rt.color) % 2 : 0;
+      const img = art.hen(rt.color, frame);
+      list.push({ y: rt.y, draw: (ctx, cam) => {
+        ctx.save();
+        ctx.translate(Math.round(rt.x - cam.x), Math.round(rt.y - cam.y));
+        if (rt.dir < 0) ctx.scale(-1, 1);
+        ctx.drawImage(img, Math.round(-img.width / 2), Math.round(-img.height + 1));
         ctx.restore();
       } });
     }
@@ -1030,6 +1062,14 @@ export class Renderer {
         const [x, y] = toScreen(o.x, o.y - 42);
         this.bubble(f, x, y + Math.sin(t * 5) * 3 * this.dpr, '🪙', true);
       }
+      // القن: بيض جاهز، أو الدجاج جوعان
+      const co = s.built.coop && game.worldObjById['spot:coop'];
+      if (co && this.visible(co.x, co.y, cam, 0)) {
+        const c = coopSys.coop(s);
+        const [x, y] = toScreen(co.x, co.y - 40);
+        if (c.eggs) { this.bubble(f, x, y + Math.sin(t * 5) * 3 * this.dpr, '🥚', true); this.label(f, x, y - 18 * this.dpr, `${c.eggs} بيض`, '#fff3c4'); }
+        else if (coopSys.hungry(s)) { f.globalAlpha = 0.9; this.bubble(f, x, y + Math.sin(t * 4) * 2 * this.dpr, '🌾', false, 0.8); f.globalAlpha = 1; }
+      }
       // الورش: فقاعة باللي جاهز، أو ⏳ وهي شغالة
       const nowMin = game.absMinutes();
       for (const st of Object.keys(production.TIMED)) {
@@ -1064,7 +1104,12 @@ export class Renderer {
         if (o.kind === 'zonesign' && this.visible(o.x, o.y, cam, 0)) {
           const z = BUILD_ZONES.find(q => q.id === o.zone);
           const [x, y] = toScreen(o.x, o.y - 24);
-          this.label(f, x, y, `🏗️ يمديك تبني هنا — ${z.icon} ${z.name}`, '#ffe9a8');
+          if (isZoneOpen(s, z)) this.label(f, x, y, `🏗️ يمديك تبني هنا — ${z.icon} ${z.name}`, '#ffe9a8');
+          else {
+            const can = (s.player.level || 1) >= z.lock.level;
+            this.label(f, x, y - 13 * this.dpr, `🔒 ${z.icon} ${z.name} — مسكّرة`, '#ffc9a0');
+            this.label(f, x, y, can ? `افتحها بـ 🪙${z.lock.coins}` : `تنفتح بمستوى ${z.lock.level} • 🪙${z.lock.coins}`, can ? '#bff5a0' : '#e8d8c0');
+          }
         }
       }
     }
@@ -1107,7 +1152,11 @@ export class Renderer {
           this.label(f, x, y, own ? `✔ ${FARMS[o.farm].name} (لك)` : FARMS[o.farm].name, own ? '#9ff07a' : '#fff3d6');
         } else if (o.kind === 'owner' && !farmsSys.farmState(s, o.farm).owned) {
           const [x, y] = toScreen(o.x, o.y - 30);
-          this.label(f, x, y, FARMS[o.farm].owner, '#ffe9a8');
+          const fs = farmsSys.farmState(s, o.farm);
+          const al = farmsSys.affinityLevel(fs.aff);
+          this.label(f, x, y, (al.index ? al.icon + ' ' : '') + FARMS[o.farm].owner, '#ffe9a8');
+          const rq = fs.request;
+          if (rq && !rq.done && rq.day === s.time.day) this.bubble(f, x + 22 * this.dpr, y - 12 * this.dpr + Math.sin(t * 4 + o.x) * 2 * this.dpr, '📜', true, 0.8);
         } else if (o.kind === 'sign') {
           const [x, y] = toScreen(o.x, o.y - 24);
           this.label(f, x, y, o.text, '#fff3d6');

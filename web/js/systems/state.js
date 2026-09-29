@@ -47,6 +47,8 @@ export function newState(now = Date.now()) {
     orderSeq: 0,
     sheep: [],
     arrivals: [],
+    zonesOpen: {},
+    coop: { hens: 0, feedMin: 0, eggs: 0, last: null, acc: 0 },
     placed: [],
     chests: {},
     bagLevel: 0,

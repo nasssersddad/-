@@ -87,6 +87,7 @@ export class UI {
     const pb = (id, fn) => { $(id).addEventListener('pointerdown', e => e.stopPropagation()); $(id).addEventListener('click', (e) => { e.stopPropagation(); fn(); }); };
     pb('pbOk', () => this.g.confirmPlacing());
     pb('pbFlip', () => { this.audio.play('ui'); this.g.flipPlacing(); });
+    pb('pbUnlock', () => { const pl = this.g.placing; if (pl && pl.check && pl.check.locked) this.openZoneUnlock(pl.check.locked); });
     pb('pbCancel', () => { this.audio.play('ui'); this.g.stopPlacing(); });
     $('placeBar').addEventListener('pointerdown', e => e.stopPropagation());
     pb('arDone', () => { this.audio.play('ui'); this.g.stopArrange(); this.toast('✅ رتّبت مزرعتك', 'gain', 2); });
@@ -175,6 +176,7 @@ export class UI {
       const ok = pl.check && pl.check.ok;
       set('pbReason', ok ? '✅ المكان يصلح' : '❌ ' + (pl.check ? pl.check.reason : ''));
       $('pbReason').className = ok ? 'ok' : 'bad';
+      $('pbUnlock').classList.toggle('hidden', !(pl.check && pl.check.locked));
     }
     // زر 🔧 لإدارة المبنى أو الديكور اللي جنبك
     let chip = null;
@@ -273,6 +275,13 @@ export class UI {
   // ---------- الحوار ----------
   dialogue(lines) {
     return new Promise((resolve) => {
+      // حوار مفتوح؟ نكمّل بعده بدل ما نمسحه (وإلا الوعد الأول يضيع وتعلق المهام)
+      if (this.dialogOpen && this.dResolve) {
+        this.dq.push(...lines);
+        const prev = this.dResolve;
+        this.dResolve = () => { prev(); resolve(); };
+        return;
+      }
       this.dq = [...lines];
       this.dResolve = resolve;
       this.dialogOpen = true;
@@ -429,7 +438,12 @@ export class UI {
           return `<div class="qslot ${j.started ? 'run' : ''}">${itemIcon(outId)}<small>${j.started ? '⏳ باقي ' + secs(j.left) : '⌛ ينتظر'}</small><i style="width:${Math.round(j.progress * 100)}%"></i>
             ${j.started ? `<button class="link" data-a="rush" data-v="${i}">⚡ 🪙${production.rushCost(j, now)}</button>` : ''}</div>`;
         }).join('');
-        m.body.innerHTML = `<p class="howto">⏱️ حط طلبات بالطابور، وكل طلب يخلص بعد وقت. تقدر تمشي وتسوي شغلك وترجع تستلم. (الطابور ${js.length}/${nSlots}، ويكبر لما ترقّي الورشة)</p>
+        const mods = g.workshopMods();
+        const today = production.workshopDay(s);
+        const days = Object.entries(production.WORKSHOP_DAYS).map(([d, st]) => `${STATIONS[st].icon} ${WEEKDAYS[d]}`).join(' • ');
+        const banners = (today === station ? `<div class="wsday on">${STATIONS[station].icon} <b>اليوم يوم ${STATIONS[station].name}!</b> الشغل اللي تحطه اليوم أسرع ×2</div>` : `<div class="wsday">📅 أيام الورش: ${days} — يومها الشغل أسرع ×2</div>`)
+          + (mods.workshopFast ? `<div class="wsday on ev">🔨 <b>أسبوع الورش!</b> كل الورش أسرع، وكل طلب تستلمه = 🔨 مطرقتين للفعالية</div>` : '');
+        m.body.innerHTML = banners + `<p class="howto">⏱️ حط طلبات بالطابور، وكل طلب يخلص بعد وقت. تقدر تمشي وتسوي شغلك وترجع تستلم. (الطابور ${js.length}/${nSlots}، ويكبر لما ترقّي الورشة)</p>
           <div class="qbar">${slotsHtml}</div>
           <div class="row center" style="margin:6px 0 10px"><button class="btn green big" data-a="collect" ${ready ? '' : 'disabled'}>📥 استلم ${ready ? `(${ready})` : ''}</button></div>
           <div class="grid">${list.map(r => {
@@ -438,11 +452,11 @@ export class UI {
             return `<div class="card ${r.locked ? 'locked' : r.affordable && !full ? 'ready' : ''}">
               <h3><span class="ic">${itemIcon(outId)}</span>${itemName(outId)} ×${outN} <small class="muted">(عندك ${count(s, outId)})</small></h3>
               ${this.costHtml(r.in)}
-              ${r.locked ? `<p class="muted">🔒 تحتاج تتعلم: ${TECH_BY_ID[r.tech].name}</p>` : `<div class="row"><button class="btn green" data-a="start" data-v="${r.id}" ${r.affordable && !full ? '' : 'disabled'}>▶️ ابدأ (⏱️ ${secs(production.recipeTime(r))})</button>${full ? '<small class="muted">الطابور مليان</small>' : ''}</div>`}
+              ${r.locked ? `<p class="muted">🔒 تحتاج تتعلم: ${TECH_BY_ID[r.tech].name}</p>` : `<div class="row"><button class="btn green" data-a="start" data-v="${r.id}" ${r.affordable && !full ? '' : 'disabled'}>▶️ ابدأ (⏱️ ${secs(production.recipeTime(r, s, station, mods))}${production.speedFactor(s, station, mods) < 1 ? ` <s class="muted">${secs(production.recipeTime(r))}</s>` : ''})</button>${full ? '<small class="muted">الطابور مليان</small>' : ''}</div>`}
             </div>`;
           }).join('')}</div>`;
         m.handlers.start = (id) => {
-          const r = production.enqueue(s, station, id, g.absMinutes());
+          const r = production.enqueue(s, station, id, g.absMinutes(), g.workshopMods());
           if (!r.ok) { this.audio.play('deny'); this.toast(r.reason); return; }
           this.audio.play('craft');
           g.save(); m.rerender(); this.refresh();
@@ -1135,11 +1149,12 @@ export class UI {
   }
 
   // ---------- مزارع الجيران ----------
-  openFarm(farmId, tab = 'animals') {
+  openFarm(farmId, tab = null) {
     const g = this.g;
     const s = g.state;
     const def = FARMS[farmId];
     const f = farmsSys.refreshFarm(s, farmId, s.time.day);
+    if (!tab) tab = f.request && !f.request.done ? 'request' : 'animals';
     this.modal({
       title: `🏡 ${def.name}`,
       render: (m) => {
@@ -1152,15 +1167,28 @@ export class UI {
           m.handlers.collect = () => { g.collectFarm(farmId); m.rerender(); };
           return;
         }
+        const rq = f.request;
         this.tabs(m, [
+          { id: 'request', label: '📜 طلبه', badge: rq && !rq.done ? 1 : 0 },
           { id: 'animals', label: '🐪 حلاله' },
           { id: 'goods', label: '🧺 بضاعته' },
           { id: 'sell', label: '💰 بيعه حلالك' },
           { id: 'farm', label: '🏡 اشترِ المزرعة' },
         ], tab, (v) => { tab = v; m.rerender(); });
-        const head = `<p>💬 <b>${esc(def.owner)}</b>: ${esc(def.greet)} <span class="ctag">طبعه: ${PERSONAS[def.persona].name}</span> <span class="ctag">اختصاصه: ${esc(def.specialty)}</span></p>`;
-        if (tab === 'goods') {
-          m.body.innerHTML = head + `<div class="shop-list">${f.stock.filter(d => !d.closed).map(d => `<div class="shop-row"><span class="ic">${ITEMS[d.item].icon}</span><span class="nm">${ITEMS[d.item].name} ×${d.qty}<br><small class="muted">🪙${d.ask} للحبة${d.angry ? ' • 😤 زعلان' : ''}</small></span>
+        const al = farmsSys.affinityLevel(f.aff);
+        const affBar = `<div class="affbar"><span class="affname">${al.icon} ${al.name}${al.discount ? ` <b class="gold">خصم ${Math.round(al.discount * 100)}%</b>` : ''}</span><div class="bar"><i style="width:${f.aff}%"></i></div><small class="muted">${al.next ? `❤️ ${f.aff}/${al.next.at} ← ${al.next.icon} ${al.next.name} (${Math.round(al.next.discount * 100)}%)` : `❤️ ${f.aff}/100 — أعلى مستوى`}</small></div>`;
+        const head = `<p>💬 <b>${esc(def.owner)}</b>: ${esc(def.greet)} <span class="ctag">طبعه: ${PERSONAS[def.persona].name}</span> <span class="ctag">اختصاصه: ${esc(def.specialty)}</span></p>${affBar}`;
+        const discTag = (d) => d.disc ? ` <span class="ctag gold">خصم الصداقة ✔</span>` : '';
+        if (tab === 'request') {
+          const have = rq ? count(s, rq.item) + stored(s, rq.item) : 0;
+          m.body.innerHTML = (rq ? `<div class="card ${rq.done ? 'done' : have >= rq.qty ? 'ready' : ''} reqcard">
+              <div class="rqicon">${rq.done ? '✅' : ITEMS[rq.item].icon}</div>
+              <div class="rqmid"><div>${rq.done ? `<b>شكراً يا جار! ارجع بكرة، يمكن يبي شي ثاني.</b>` : `💬 <b>${esc(def.owner)}</b>: «أبي <b>${rq.qty} ${ITEMS[rq.item].icon} ${ITEMS[rq.item].name}</b>، تقدر تجيبها لي؟» <span class="${have >= rq.qty ? 'have' : 'miss'}">(عندك ${have}/${rq.qty})</span>`}</div>
+              ${rq.done ? '' : `<div class="gains"><span>🪙 +${rq.coins}</span><span>❤️ مودّة +${rq.aff}</span>${rq.bonus ? Object.entries(rq.bonus).map(([k, n]) => `<span>${ITEMS[k].icon} +${n}</span>`).join('') : ''}</div>`}</div>
+              ${rq.done ? '' : `<button class="btn green big" data-a="give" ${have >= rq.qty ? '' : 'disabled'}>🤝 سلّمه</button>`}
+            </div>` : '<p class="muted">ما عنده طلب اليوم.</p>') + affBar + `<p class="muted">كل يوم يطلب شي جديد. كل ما سلّمت، تزيد المودّة: 🤝 معروف (خصم 5%) ← 😊 صديق (10%) ← ❤️ أخو (15% ويصبر عليك بالمساومة). المساومة اللي تزعّله تنقص المودّة شوي.</p>`;
+        } else if (tab === 'goods') {
+          m.body.innerHTML = head + `<div class="shop-list">${f.stock.filter(d => !d.closed).map(d => `<div class="shop-row"><span class="ic">${ITEMS[d.item].icon}</span><span class="nm">${ITEMS[d.item].name} ×${d.qty}<br><small class="muted">🪙${d.ask} للحبة${d.angry ? ' • 😤 زعلان' : ''}</small>${discTag(d)}</span>
             <button class="btn" data-a="buyg" data-v="${d.id}" ${s.player.coins >= d.ask ? '' : 'disabled'}>اشترِ</button>${d.angry ? '' : `<button class="btn blue" data-a="hagg" data-v="${d.id}">ساوم 💬</button>`}</div>`).join('') || '<p class="muted">خلصت بضاعته اليوم.</p>'}</div>`;
         } else if (tab === 'animals') {
           const list = f.animals.filter(a => !a.closed);
@@ -1169,7 +1197,7 @@ export class UI {
             const pic = a.kind === 'camel' ? this.camelImg(a.camel) : '<span style="font-size:36px">🐑</span>';
             const tags = a.kind === 'camel' ? this.camelTag(a.camel) : `<span class="ctag">${a.sheep.ageDays >= 2 ? 'بالغ' : 'طلي'}</span>`;
             return `<div class="ccard"><div class="cpic">${pic}</div><div class="cinfo"><h3>${name}</h3><div class="ctags">${tags}</div>
-              <div class="row"><b class="price">🪙 ${market.fmt(a.ask)}</b>${a.angry ? '<span class="muted">😤 زعلان منك</span>' : `<button class="btn green" data-a="buya" data-v="${a.id}" ${s.player.coins >= a.ask ? '' : 'disabled'}>اشترِ</button><button class="btn blue" data-a="haga" data-v="${a.id}">ساوم 💬</button>`}</div></div></div>`;
+              <div class="row"><b class="price">🪙 ${market.fmt(a.ask)}</b>${discTag(a)}${a.angry ? '<span class="muted">😤 زعلان منك</span>' : `<button class="btn green" data-a="buya" data-v="${a.id}" ${s.player.coins >= a.ask ? '' : 'disabled'}>اشترِ</button><button class="btn blue" data-a="haga" data-v="${a.id}">ساوم 💬</button>`}</div></div></div>`;
           }).join('') || '<p class="muted">ما عنده حلال للبيع اليوم.</p>'}</div>`;
         } else if (tab === 'sell') {
           const mine = [...s.camels.map(c => ({ kind: 'camel', a: c })), ...s.sheep.map(x => ({ kind: 'sheep', a: x }))];
@@ -1177,7 +1205,7 @@ export class UI {
         } else {
           const d = f.sale;
           m.body.innerHTML = head + `<div class="card ready"><h3>🏡 ${esc(def.name)}</h3><p>إذا اشتريتها تصير لك، وتنتج كل يوم: ${Object.entries(def.produce).map(([k, v]) => `${ITEMS[k].icon}×${v}`).join(' ')} + 🪙${def.income}، وتستلمها من مخزنها.</p>
-            <div class="row"><b class="price">🪙 ${market.fmt(d.ask)}</b>${d.angry ? '<span class="muted">😤 رفض يكمل معك اليوم</span>' : `<button class="btn green big" data-a="buyf" ${s.player.coins >= d.ask ? '' : 'disabled'}>اشترها</button><button class="btn blue" data-a="hagf">ساوم 💬</button>`}</div>
+            <div class="row"><b class="price">🪙 ${market.fmt(d.ask)}</b>${discTag(d)}${d.angry ? '<span class="muted">😤 رفض يكمل معك اليوم</span>' : `<button class="btn green big" data-a="buyf" ${s.player.coins >= d.ask ? '' : 'disabled'}>اشترها</button><button class="btn blue" data-a="hagf">ساوم 💬</button>`}</div>
             <p class="muted">دراهمك: 🪙${market.fmt(s.player.coins)}</p></div>`;
         }
         const after = (res, what) => {
@@ -1201,10 +1229,20 @@ export class UI {
             if (!res) return true;
             if (res.result === 'accept') { after(buy(), what); return true; }
             if (res.result === 'bought' || ['poor', 'full', 'nostable', 'nofold', 'gone'].includes(res.result)) { after(res, what); return true; }
+            if (res.result === 'leave') { farmsSys.offend(s, farmId); this.toast(`😤 ${def.owner} زعل منك (المودّة −${farmsSys.ANGER_AFF})`, '', 3); }
             return res.result === 'leave';
           },
           done: () => m.rerender(),
         });
+        m.handlers.give = () => {
+          const r = farmsSys.fulfillRequest(s, farmId);
+          if (!r.ok) { this.audio.play('deny'); this.toast(r.reason); return; }
+          this.audio.play('deal');
+          g.fx.confetti(...g.fx.at(s.player.x, s.player.y, 20));
+          this.gainToast([{ icon: '🪙', text: `+${r.coins}` }, { icon: '❤️', text: `مودّة +${r.aff}` }, ...(r.bonus ? Object.entries(r.bonus).map(([k, n]) => ({ icon: ITEMS[k].icon, text: `+${n}` })) : [])]);
+          if (r.levelUp) this.toast(`${r.levelUp.icon} صرت «${r.levelUp.name}» عند ${def.owner}! خصم ${Math.round(r.levelUp.discount * 100)}% على كل شي عنده`, 'ach', 5);
+          g.save(); m.rerender(); this.refresh();
+        };
         m.handlers.buyg = (id) => after(farmsSys.buyGoods(s, farmId, id, 1), 'اشتريت');
         m.handlers.hagg = (id) => { const d = f.stock.find(x => x.id === id); chat(d, `${ITEMS[d.item].name} (سعر الحبة)`, () => farmsSys.buyGoods(s, farmId, id, 1), 'اشتريت'); };
         m.handlers.buya = (id) => after(farmsSys.buyAnimal(s, farmId, id), 'اشتريت الحلال');
@@ -1224,6 +1262,7 @@ export class UI {
               if (!res) return true;
               if (res.price !== undefined) { this.audio.play('deal'); this.toast(`🤝 بعت على ${def.owner} بـ ${market.fmt(res.price)}`, 'gain', 3); g.save(); return true; }
               if (res.result === 'accept') { const r2 = farmsSys.completeSell(s, o); if (r2) { this.audio.play('deal'); this.toast(`🤝 بعت بـ ${market.fmt(r2.price)}`, 'gain', 3); g.save(); } return true; }
+              if (res.result === 'leave') { farmsSys.offend(s, farmId); this.toast(`😤 ${def.owner} زعل منك (المودّة −${farmsSys.ANGER_AFF})`, '', 3); }
               return res.result === 'leave';
             },
             done: () => { m.rerender(); this.refresh(); },

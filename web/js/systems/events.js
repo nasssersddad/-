@@ -1,5 +1,5 @@
 // نظام الفعاليات: التدوير، العملة، مسار الجوايز، الترتيب، ونتائج الألعاب الصغيرة
-import { EVENTS, EVENT_DAYS, TRACK_COSTS, TRACK_REWARDS, DAILY_PLAYS, AD_PLAYS } from '../data/events.js';
+import { EVENTS, EVENT_DAYS, EVENT_OFFSET, TRACK_COSTS, TRACK_REWARDS, DAILY_PLAYS, AD_PLAYS } from '../data/events.js';
 import { TRADER_NAMES } from './market.js';
 import { dateKey, mulberry32, hashString, clamp } from './util.js';
 import { add, count, addStat } from './inventory.js';
@@ -15,7 +15,7 @@ function dayNumber(now) {
 export function currentEvent(now) {
   const n = dayNumber(now);
   const slot = Math.floor(n / EVENT_DAYS);
-  const def = EVENTS[((slot % EVENTS.length) + EVENTS.length) % EVENTS.length];
+  const def = EVENTS[(((slot + EVENT_OFFSET) % EVENTS.length) + EVENTS.length) % EVENTS.length];
   const d = new Date(now);
   const midnight = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const endMs = midnight + (EVENT_DAYS - (n % EVENT_DAYS)) * DAY;

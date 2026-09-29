@@ -46,7 +46,7 @@ export const GUEST_LOOKS = [
   { robe: '#6e2d2d', head: '#2a2a2a', skin: '#d19a6a' },
 ];
 export const GUEST_NAMES = ['أبو سعد', 'بو خالد', 'التاجر جاسم', 'أبو ناصر', 'العم حمد', 'بو عبدالله', 'الدكتور فيصل', 'مسافر من حايل', 'تاجر من صنعاء', 'حاج من الشام', 'أبو محمد'];
-export const GUEST_WANTS = ['coffee', 'coffee', 'dates', 'bread', 'melon', 'coffee2', 'tomato', 'pressed', 'milk', 'milk'];
+export const GUEST_WANTS = ['coffee', 'coffee', 'dates', 'bread', 'melon', 'coffee2', 'tomato', 'pressed', 'milk', 'milk', 'shakshuka', 'egg'];
 export const GUEST_LINES = {
   want: ['يا راعي الخان، أبي {x} الله يسلمك.', 'السفر هدّني... عندك {x}؟', 'والله إني مشتهي {x}!', 'لا تقول ما عندك {x}!'],
   thanks: ['الله يعطيك العافية! هذا حقك.', 'كفو والله، خان محترم!', 'تسلم يدك يا ولد الأجاويد.', 'بقول لكل القوافل عن خانك!'],

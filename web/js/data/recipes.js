@@ -22,6 +22,8 @@ export const RECIPES = [
   { id: 'bread',   station: 'hearth', out: { bread: 2 },  in: { flour: 1, water: 1, wood: 1 },                xp: 4, kp: { c: 1, n: 1 }, tech: 't_bread' },
   { id: 'pressed', station: 'hearth', out: { pressed: 1 },in: { dates: 4, jar: 1 },                           xp: 5, kp: { c: 1, n: 1 }, tech: 't_pressed' },
 
+  { id: 'shakshuka', station: 'hearth', out: { shakshuka: 1 }, in: { egg: 2, tomato: 1, wood: 1 }, xp: 5, kp: { c: 1, n: 1 } },
+
   { id: 'flour',   station: 'mill', out: { flour: 1 }, in: { wheat: 2 }, time: 45, xp: 2, kp: { n: 1 } },
 
   { id: 'carpet',  station: 'loom', out: { carpet: 1 }, in: { wool: 3, herb: 1 }, time: 180, xp: 6, kp: { c: 2, n: 1 }, tech: 't_carpet' },
@@ -52,6 +54,7 @@ export const BUILD_SPOTS = {
   orders_board: { name: 'لوحة قافلة الطلبات', desc: 'طلبات من القوافل: جهّز الأغراض واستلم دراهم وخبرة.', cost: { plank: 3, rope: 2 }, rating: 2 },
   pen3:       { name: 'مراح كبير', desc: 'المراح يشيل 12 ناقة.', cost: { plank: 8, rope: 6, brick: 6 }, rating: 5, after: 'pen2' },
   farm2:      { name: 'توسعة المزرعة', desc: 'أربع أحواض زراعة زيادة.', cost: { wood: 6, stone: 4, water: 4 }, rating: 2, tech: 't_farm2' },
+  coop:       { name: 'قن الدجاج', desc: 'قن فيه دجاج يبيض كل كم ساعة إذا أكّلته (قمح، برسيم، ذرة، أو بذور). والبيض ينباع أو تطبخ فيه شكشوكة.', cost: { wood: 8, plank: 4, rope: 2 }, rating: 3 },
   barn:       { name: 'المخزن', desc: 'مخزن كبير برا يشيل مواد البناء: خشب وحجر وطين وألواح وحبال وطوب... اللي تجمعه وحقيبتك مليانة يروح له أول.', cost: { wood: 10, plank: 8, stone: 6 }, rating: 3 },
   crypt_door: { name: 'باب السرداب', desc: 'باب قديم مقفول بطلاسم... زعبول يعرف سالفته.', cost: { lantern: 1, rope: 2 }, rating: 0, flag: 'q_crypt' },
 };

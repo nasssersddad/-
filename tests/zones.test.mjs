@@ -34,6 +34,7 @@ test('buildings only inside their own zone; deco anywhere', () => {
 test('each zone fits what it is meant for', () => {
   const s = newState(0);
   s.player.level = 60;
+  s.zonesOpen = Object.fromEntries(BUILD_ZONES.map(z => [z.id, true]));
   for (const t of ['kiln', 'mill', 'loom', 'barn', 'workers_house', 'stall_shop', 'orders_board', 'stable', 'sheepfold']) {
     const f = P.findFreeSpot(s, world, t, zoneCenter(zonesFor(t)[0]));
     assert.ok(f, t + ' fits');
@@ -47,7 +48,7 @@ test('each zone fits what it is meant for', () => {
 test('old saves: buildings placed outside their zone are moved into it', () => {
   const s = newState(0);
   s.built.kiln = true;
-  s.placed = [{ id: 'p1', type: 'kiln', tx: 45, ty: 6, flip: false, level: 1 }];
+  s.placed = [{ id: 'p1', type: 'kiln', tx: 47, ty: 24, flip: false, level: 1 }];
   s.placedVersion = 1;
   const r = P.migrate(s, world);
   assert.deepEqual(r.moved, ['kiln']);
@@ -57,4 +58,27 @@ test('old saves: buildings placed outside their zone are moved into it', () => {
   s2.built.stable = true;
   P.migrate(s2, world);
   assert.deepEqual([P.placedOf(s2, 'stable')[0].tx, P.placedOf(s2, 'stable')[0].ty], [53, 31], 'legacy pen stays');
+});
+
+test('locked zones: refuse placing until unlocked with level and coins; old saves unlock them', async () => {
+  const { unlockZone, isZoneOpen, zoneById } = await import('../web/js/data/zones.js');
+  const s = newState(0);
+  const z = zoneById('farm2');
+  const c = zoneCenter(z);
+  const r = P.canPlace(s, world, 'field', c.x, c.y);
+  assert.equal(r.ok, false);
+  assert.equal(r.locked, 'farm2');
+  assert.match(unlockZone(s, 'farm2').reason, /مستوى 5/);
+  s.player.level = 5; s.player.coins = 100;
+  assert.match(unlockZone(s, 'farm2').reason, /الدراهم/);
+  s.player.coins = 1000;
+  assert.ok(unlockZone(s, 'farm2').ok);
+  assert.equal(s.player.coins, 200);
+  assert.ok(isZoneOpen(s, z));
+  assert.ok(P.canPlace(s, world, 'field', c.x, c.y).ok);
+  // حفظ قديم فيه حظيرة بالساحة ٢
+  const s2 = newState(0);
+  s2.built.sheepfold = true;
+  P.migrate(s2, world);
+  assert.ok(isZoneOpen(s2, zoneById('livestock2')), 'legacy fold unlocks livestock2');
 });

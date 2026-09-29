@@ -34,6 +34,7 @@ test('no placing on water, road, farm soil, or on top of trees and other buildin
 
 test('trough must sit inside the pen, and moving the pen carries the trough', () => {
   const s = newState(0);
+  s.zonesOpen = { livestock2: true };
   const pen = P.findFreeSpot(s, world, 'stable', { x: 50, y: 40 });
   const st = P.place(s, world, 'stable', pen.tx, pen.ty).p;
   s.built.stable = true;

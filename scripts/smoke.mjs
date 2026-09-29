@@ -543,6 +543,8 @@ const bld = await ev(async () => {
   const g = window.__game, s = g.state;
   const P = await import('./js/systems/placement.js');
   s.player.coins += 30000; s.tech.t_loom = true; s.player.energy = 200;
+  // المراح يتنقل لساحة الحلال ٢ (نفتحها أول، هي مسكّرة بالبداية)
+  s.zonesOpen = Object.assign(s.zonesOpen || {}, { livestock2: true });
   Object.assign(s.inv, { plank: 40, rope: 20, stone: 40, wood: 40, brick: 20, carpet: 2, lantern: 2 });
   g.placeAt({ x: 14 * 16, y: 34 * 16 });
   // النول داخل البيت ينرفض
@@ -680,6 +682,134 @@ await tick(400);
 await shot('57-workshop-queue');
 await closeModals();
 
+// 22) توسعة الأرض، الممرات، الدجاج، طلبات الجيران، أيام الورش
+await settle();
+await ev(() => { const g = window.__game, s = g.state; s.player.level = Math.max(10, s.player.level); s.player.coins += 30000; g.placeAt({ x: 52 * 16 + 8, y: 6 * 16 }); s.player.dir = 'up'; });
+await tick(500);
+await shot('58-locked-zone');
+await ev(() => window.__game.ui.openZoneUnlock('north'));
+await tick(300);
+await shot('59-zone-unlock');
+await closeModals();
+const nf = await ev(async () => {
+  const g = window.__game, s = g.state;
+  const P = await import('./js/systems/placement.js');
+  const Z = await import('./js/data/zones.js');
+  const C = await import('./js/systems/coop.js');
+  const PR = await import('./js/systems/production.js');
+  const out = {};
+  s.player.energy = 200;
+  // توسعة: توسعة المزرعة مسكّرة، نفتحها ونحط فيها حقل
+  const z = Z.zoneById('farm2'), c = Z.zoneCenter(z);
+  out.lockedBefore = P.canPlace(s, g.world, 'field', c.x, c.y).locked === 'farm2';
+  out.opened = g.unlockZone('farm2');
+  const nField = P.placedOf(s, 'field').length;
+  g.placeAt({ x: c.x * 16 + 8, y: (c.y + 3) * 16 });
+  g.startPlacing('field'); g.placing.tx = c.x; g.placing.ty = c.y; g.validatePlacing(); g.confirmPlacing(); g.stopPlacing();
+  out.fieldInFarm2 = P.placedOf(s, 'field').length === nField + 1 && P.placedOf(s, 'field').some(p => Z.inZone(z, P.footprint(p)));
+  // الممرات: نفس المكان، أسرع على الممر
+  const path = P.placedOf(s, 'path')[0];
+  if (path) {
+    const orig = g.input.move;
+    const px = path.tx * 16 + 8, py = path.ty * 16 + 12;
+    const on = g.onPathAt(px, py);
+    g.input.move = () => ({ x: 1, y: 0 });
+    g.placeAt({ x: px, y: py }); g.movePlayer(0.05); const dPath = Math.abs(s.player.x - px);
+    const key = path.tx + ',' + path.ty; g.pathTiles.delete(key);
+    const offRoad = !g.onPathAt(px, py);
+    g.placeAt({ x: px, y: py }); g.movePlayer(0.05); const dSand = Math.abs(s.player.x - px);
+    g.pathTiles.add(key);
+    g.input.move = orig;
+    out.path = { on, offRoad, dPath: +dPath.toFixed(2), dSand: +dSand.toFixed(2) };
+  }
+  // القن: ينبني بساحة الحلال، تجيك دجاجات، تأكلها وتبيض
+  Object.assign(s.inv, { wood: 30, plank: 20, rope: 10, wheat: 6, tomato: 4 });
+  g.placeAt({ x: 30 * 16, y: 42 * 16 });
+  g.startPlacing('coop');
+  out.coopZone = !!(g.placing && g.placing.check && g.placing.check.ok);
+  g.confirmPlacing();
+  for (const x of [...g.ui.modals]) { if (x.handlers.build) x.handlers.build(); x.closable = true; x.close(); }
+  out.coopBuilt = !!s.built.coop;
+  out.hens = C.coop(s).hens;
+  C.addFeed(s, 'wheat', 2);
+  const nowMin = g.absMinutes();
+  C.coopTick(s, nowMin);
+  s.time.minute += 240; g.clockTick();
+  out.eggs = C.coop(s).eggs;
+  return out;
+});
+console.log('new features:', nf);
+// روح للقن واستلم البيض بزر ✋
+await tick(600);
+const coopRun = await ev(async () => {
+  const g = window.__game, s = g.state;
+  const o = g.worldObjById['spot:coop'];
+  if (!o) return { none: true };
+  g.placeAt({ x: o.x, y: o.y + 14 }); s.player.dir = 'up';
+  await new Promise(r => setTimeout(r, 200));
+  const t = g.findTarget();
+  const kind = t && t.kind;
+  const I = await import('./js/systems/inventory.js');
+  const C = await import('./js/systems/coop.js');
+  const before = I.total(s, 'egg');
+  const inCoop = C.coop(s).eggs;
+  g.doAction(t, true);
+  for (let k = 0; k < 80 && g.anim; k++) await new Promise(r => setTimeout(r, 50));
+  const got = I.total(s, 'egg') - before;
+  if (got !== inCoop || C.coop(s).eggs !== 0) return { kind, got, inCoop, left: C.coop(s).eggs, bag: I.bagUsed(s), cap: I.bagCap(s) };
+  // شكشوكة بالموقد
+  const CR = await import('./js/systems/crafting.js');
+  const ok = CR.craft(s, 'shakshuka');
+  return { kind, got, shakshuka: !!ok && (s.inv.shakshuka || 0) > 0, henRt: (g.henRt || []).length };
+});
+console.log('coop run:', coopRun);
+await ev(() => { const g = window.__game; const o = g.worldObjById['spot:coop']; if (o) { g.placeAt({ x: o.x - 40, y: o.y + 34 }); g.state.player.dir = 'up'; const C = g.state.coop; C.eggs = 4; C.feedMin = 0; } });
+await tick(900);
+await shot('60-coop-hens');
+await ev(() => window.__game.ui.openCoop());
+await tick(300);
+await shot('61-coop-modal');
+await closeModals();
+// طلب جار: نفتح تبويب الطلب ونسلّمه
+const rqInfo = await ev(async () => {
+  const g = window.__game, s = g.state;
+  const F = await import('./js/systems/farms.js');
+  F.refreshFarm(s, 'umm_saad', s.time.day);
+  const rq = F.ensureRequest(s, 'umm_saad', s.time.day);
+  s.inv[rq.item] = (s.inv[rq.item] || 0) + rq.qty;
+  return { item: rq.item, qty: rq.qty, aff0: F.farmState(s, 'umm_saad').aff };
+});
+await ev(() => window.__game.ui.openFarm('umm_saad'));
+await tick(300);
+await shot('62-neighbor-request');
+await ev(() => { const b = document.querySelector('[data-a="give"]'); if (b) b.click(); });
+await tick(300);
+const rqAfter = await ev(async () => { const F = await import('./js/systems/farms.js'); const f = F.farmState(window.__game.state, 'umm_saad'); return { aff: f.aff, done: !!(f.request && f.request.done) }; });
+console.log('request:', rqInfo, rqAfter);
+await closeModals();
+// يوم الفرن: الشغل ياخذ نص الوقت
+const wday = await ev(async () => {
+  const g = window.__game, s = g.state;
+  const PR = await import('./js/systems/production.js');
+  const { RECIPES } = await import('./js/data/recipes.js');
+  while ((s.time.day - 1) % 7 !== 5) s.time.day += 1;
+  s.payroll.lastHour = null;
+  Object.assign(s.inv, { clay: 20, water: 10, stone: 10 });
+  const q = PR.queue(s, 'kiln'); q.length = 0;
+  const r = PR.enqueue(s, 'kiln', 'brick', g.absMinutes(), g.workshopMods());
+  const full = RECIPES.find(x => x.id === 'brick').time;
+  return { day: PR.workshopDay(s), dur: r.ok ? r.job.end - r.job.start : -1, full, k: PR.speedFactor(s, 'kiln', g.workshopMods()) };
+});
+console.log('workshop day:', wday);
+await ev(() => window.__game.ui.openCraft('kiln'));
+await tick(400);
+await shot('63-workshop-day');
+await closeModals();
+await ev(() => window.__game.ui.openStore('build:land'));
+await tick(300);
+await shot('64-land-store');
+await closeModals();
+
 // حفظ وتحميل
 await settle();
 const saved = await ev(() => { window.__game.save(); return JSON.parse(localStorage.getItem('almuzare_save')).player.coins; });
@@ -701,6 +831,12 @@ server.close();
 const fatal = errors.filter(e => !/favicon/.test(e));
 if (fatal.length) {
   console.error('❌ أخطاء بالمتصفح:\n' + fatal.join('\n'));
+  process.exit(1);
+}
+if (!nf.lockedBefore || !nf.opened || !nf.fieldInFarm2 || !nf.path || !nf.path.on || !nf.path.offRoad || !(nf.path.dPath > nf.path.dSand * 1.3) || !nf.coopZone || !nf.coopBuilt || nf.hens !== 3 || nf.eggs < 3
+  || coopRun.kind !== 'coop' || coopRun.got < 3 || !coopRun.shakshuka || coopRun.henRt < 3
+  || !(rqAfter.aff > rqInfo.aff0) || !rqAfter.done || wday.day !== 'kiln' || wday.dur !== Math.round(wday.full * wday.k) || wday.dur >= wday.full) {
+  console.error('❌ الميزات الجديدة (توسعة/ممرات/دجاج/جيران/أيام الورش) فيها مشكلة', { nf, coopRun, rqInfo, rqAfter, wday });
   process.exit(1);
 }
 if (!zq.wrongZone || !zq.kilnBuilt || !zq.q1 || !zq.got || zq.bricks < 1) {

@@ -1,11 +1,11 @@
 // مزارع الجيران بالعالم المفتوح: بضاعتهم، حلالهم، المساومة، وشراء المزرعة كاملة
 import { FARMS } from '../data/openworld.js';
-import { ITEMS } from '../data/items.js';
+import { ITEMS, SEEDS } from '../data/items.js';
 import { SHEEP_BREEDS, SHEEP_CAP } from '../data/sheep.js';
 import { sheepCapBonus } from './placement.js';
 import { PERSONAS, LINES, fmt } from './market.js';
 import { makeCamel, camelValue, capacity } from './camels.js';
-import { add, addStat } from './inventory.js';
+import { add, addStat, has, remove } from './inventory.js';
 import { mulberry32, hashString, pick, randInt } from './util.js';
 
 function line(rng, key, vars = {}) {
@@ -27,7 +27,114 @@ export function sheepPrice(sh) {
 export function farmState(state, id) {
   state.farms = state.farms || {};
   if (!state.farms[id]) state.farms[id] = { owned: false, day: -1, stock: [], animals: [], sale: null, storage: {}, lastIncomeDay: null };
-  return state.farms[id];
+  const f = state.farms[id];
+  if (f.aff == null) f.aff = 0;
+  return f;
+}
+
+// ---------- المودّة ----------
+// كل ما سلّمت طلبات الجار تزيد المودّة، ومعها خصم على بضاعته وحلاله ومزرعته
+export const AFF_LEVELS = [
+  { at: 0, id: 'stranger', name: 'غريب', icon: '🙂', discount: 0 },
+  { at: 20, id: 'known', name: 'معروف', icon: '🤝', discount: 0.05 },
+  { at: 50, id: 'friend', name: 'صديق', icon: '😊', discount: 0.10 },
+  { at: 80, id: 'brother', name: 'أخو', icon: '❤️', discount: 0.15 },
+];
+export const ANGER_AFF = 3;
+
+export function affinityLevel(aff = 0) {
+  let i = 0;
+  for (let k = 0; k < AFF_LEVELS.length; k++) if (aff >= AFF_LEVELS[k].at) i = k;
+  const L = AFF_LEVELS[i];
+  return { ...L, index: i, next: AFF_LEVELS[i + 1] || null };
+}
+
+// يطبّق خصم المودّة على الصفقات المفتوحة (ولو تغيّر المستوى يعدّلها)
+export function applyDiscount(f) {
+  const disc = affinityLevel(f.aff).discount;
+  const deals = [...(f.stock || []), ...(f.animals || []), ...(f.sale ? [f.sale] : [])];
+  for (const d of deals) {
+    if (d.closed) continue;
+    const was = d.disc || 0;
+    if (was === disc) continue;
+    const k = (1 - disc) / (1 - was);
+    // نحفظ السعر بدون تقريب عشان لو رجع الخصم يرجع السعر نفسه بالضبط (إلا إذا تساومتوا بالنص)
+    if (d.rawAsk == null || round(d.rawAsk) !== d.ask) d.rawAsk = d.ask;
+    if (d.rawMin == null || round(d.rawMin) !== d.min) d.rawMin = d.min;
+    d.rawAsk *= k; d.rawMin *= k;
+    d.ask = round(d.rawAsk);
+    d.min = round(d.rawMin);
+    d.disc = disc;
+    d.bonusPatience = disc >= 0.15 ? 1 : 0;
+  }
+}
+
+// زعل من المساومة: المودّة تنقص شوي
+export function offend(state, farmId) {
+  const f = farmState(state, farmId);
+  f.aff = Math.max(0, f.aff - ANGER_AFF);
+  applyDiscount(f);
+  return f.aff;
+}
+
+// ---------- طلبات الجيران ----------
+// كل جار يطلب أشياء تناسب شغله (وأنت تقدر تنتجها)
+export const REQUEST_POOL = {
+  abu_rashid: ['wheat', 'corn', 'rope', 'water', 'herb', 'carrot'],
+  umm_saad: ['tomato', 'egg', 'carrot', 'flour', 'dates', 'onion'],
+  sheikh_falih: ['coffee', 'jar', 'brick', 'lantern', 'milk', 'cucumber'],
+  bu_nasser: ['wood', 'stone', 'plank', 'water', 'egg', 'rope'],
+  harbi: ['wool', 'bread', 'milk', 'dates', 'onion', 'eggplant'],
+};
+
+// الغرض يطلع بالطلب بس إذا تقدر توصل له بمستواك ومبانيك
+export function canSupply(state, item) {
+  const seed = Object.values(SEEDS).find(d => d.crop === item);
+  if (seed && seed.level && (state.player.level || 1) < seed.level) return false;
+  if (item === 'egg') return !!state.built.coop;
+  if (item === 'jar' || item === 'brick' || item === 'lantern') return !!state.built.kiln;
+  if (item === 'flour') return !!state.built.mill;
+  if (item === 'bread') return !!state.tech.t_bread;
+  if (item === 'milk') return !!state.built.stable;
+  if (item === 'wool') return !!state.built.sheepfold;
+  return !!ITEMS[item];
+}
+
+// طلب اليوم لجار (ثابت لنفس اليوم والبذرة)
+export function ensureRequest(state, id, day) {
+  const f = farmState(state, id);
+  if (f.owned) { f.request = null; return null; }
+  if (f.request && f.request.day === day) return f.request;
+  const rng = mulberry32(hashString(`req:${id}:${state.seed}:${day}`));
+  const pool = (REQUEST_POOL[id] || ['water']).filter(it => canSupply(state, it));
+  const item = pool.length ? pick(rng, pool) : 'water';
+  const price = ITEMS[item].price;
+  const qty = Math.max(2, Math.min(12, Math.round((25 + rng() * 30) / price)));
+  const coins = Math.round(qty * price * 1.8 + 10);
+  const aff = randInt(rng, 8, 15);
+  const goods = FARMS[id].goods;
+  const bonus = rng() < 0.3 ? { [goods[Math.floor(rng() * goods.length)]]: randInt(rng, 1, 3) } : null;
+  f.request = { day, item, qty, coins, aff, bonus, done: false };
+  return f.request;
+}
+
+// تسلّم الطلب: ياخذ الأغراض (من الحقيبة والصناديق) ويعطيك الجايزة والمودّة
+export function fulfillRequest(state, farmId) {
+  const f = farmState(state, farmId);
+  const r = f.request;
+  if (!r || r.done || f.owned) return { ok: false, reason: 'ما عنده طلب الحين' };
+  if (!has(state, { [r.item]: r.qty })) return { ok: false, reason: `ناقصك ${ITEMS[r.item].name}` };
+  remove(state, { [r.item]: r.qty });
+  state.player.coins += r.coins;
+  addStat(state, 'coinsEarned', r.coins);
+  if (r.bonus) for (const [k, n] of Object.entries(r.bonus)) add(state, k, n);
+  const before = affinityLevel(f.aff).index;
+  f.aff = Math.min(100, f.aff + r.aff);
+  const after = affinityLevel(f.aff);
+  r.done = true;
+  addStat(state, 'requests', 1);
+  applyDiscount(f);
+  return { ok: true, coins: r.coins, aff: r.aff, bonus: r.bonus, levelUp: after.index > before ? after : null };
 }
 
 // صفقة جديدة (بياع يطلب ask، وأقل شي يقبله min)
@@ -39,7 +146,8 @@ function deal(value, persona, rng, askMul = null) {
 // يجدد بضاعة المزرعة وحلالها مرة كل يوم لعبة
 export function refreshFarm(state, id, day) {
   const f = farmState(state, id);
-  if (f.day === day || f.owned) return f;
+  ensureRequest(state, id, day);
+  if (f.day === day || f.owned) { applyDiscount(f); return f; }
   const def = FARMS[id];
   const rng = mulberry32(hashString(`farm:${id}:${state.seed}:${day}`));
   f.day = day;
@@ -57,6 +165,7 @@ export function refreshFarm(state, id, day) {
     f.animals.push({ id: `${id}_s${day}_${i}`, kind: 'sheep', sheep: sh, ...deal(sheepPrice(sh), def.persona, rng) });
   }
   if (!f.sale) f.sale = deal(def.price, def.persona, rng, 1.35);
+  applyDiscount(f);
   return f;
 }
 
@@ -74,13 +183,13 @@ export function haggle(d, price, rng) {
   d.rounds += 1;
   const P = PERSONAS[d.persona];
   if (price < d.value * 0.45) d.rounds += 1;
-  if (d.rounds > P.patience) {
+  if (d.rounds > P.patience + (d.bonusPatience || 0)) {
     d.angry = true;
     d.log.push({ who: 'them', text: line(rng, 'leave') });
     return { result: 'leave' };
   }
   const next = round(Math.max(d.min, d.ask - (d.ask - price) * P.step));
-  const isFinal = next <= d.min || d.rounds === P.patience;
+  const isFinal = next <= d.min || d.rounds === P.patience + (d.bonusPatience || 0);
   d.ask = Math.min(d.ask, next);
   d.log.push({ who: 'them', text: price < d.value * 0.45 ? line(rng, 'insult') + ' ' + line(rng, 'counter', { x: d.ask }) : line(rng, isFinal ? 'final' : 'counter', { x: d.ask }) });
   return { result: 'counter', amount: d.ask, final: isFinal };

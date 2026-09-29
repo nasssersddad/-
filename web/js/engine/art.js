@@ -1093,3 +1093,53 @@ export function barn(level = 1) {
     if (level >= 2) { R(ctx, 4, 16, 42, 1, '#e8b53a'); P(ctx, 25, 5, '#e8b53a'); }
   });
 }
+
+// قن الدجاج: بيت خشب صغير بسقف سعف، وسلّم للدجاج، وشبك قدام
+export function coop(level = 1, eggs = false) {
+  return cached(`coop:${level}:${eggs ? 1 : 0}`, 48, 36, (ctx) => {
+    ellipse(ctx, 24, 33, 22, 3, 'rgba(0,0,0,0.25)');
+    const wall = level >= 3 ? '#b0703a' : '#a06a3a';
+    // البيت
+    R(ctx, 6, 14, 22, 18, wall);
+    for (let x = 8; x < 28; x += 4) R(ctx, x, 14, 1, 18, PAL.woodDark);
+    // سقف سعف
+    for (let i = 0; i < 8; i++) R(ctx, 4 + i, 13 - i, 26 - i * 2, 1, i % 2 ? '#c8a050' : '#a8823a');
+    R(ctx, 3, 13, 28, 2, '#7a5a2a');
+    // الباب الصغير والسلّم
+    R(ctx, 14, 22, 7, 7, '#3a2210');
+    line(ctx, 17, 29, 23, 33, '#8a5a33', 2);
+    for (let i = 0; i < 3; i++) R(ctx, 18 + i * 2, 30 + i, 3, 1, '#c89a5a');
+    // الشبك قدام
+    R(ctx, 29, 18, 17, 14, 'rgba(255,255,255,0.08)');
+    for (let x = 29; x <= 45; x += 4) R(ctx, x, 18, 1, 14, '#6e4a28');
+    R(ctx, 29, 18, 17, 1, '#6e4a28'); R(ctx, 29, 25, 17, 1, 'rgba(110,74,40,0.6)');
+    // صحن أكل
+    ellipse(ctx, 37, 30, 4, 1.5, '#8a6a3a'); P(ctx, 36, 29, '#e8c060'); P(ctx, 38, 29, '#e8c060');
+    if (eggs) { ellipse(ctx, 10, 30, 2, 1.5, '#fff6e0'); ellipse(ctx, 13, 31, 2, 1.5, '#f4e4c0'); }
+    if (level >= 2) { R(ctx, 3, 12, 28, 1, '#e8b53a'); }
+    if (level >= 3) { R(ctx, 16, 16, 3, 3, '#2a1a0a'); P(ctx, 17, 17, '#ffd24a'); }
+  });
+}
+
+// دجاجة صغيرة: frame 0 واقفة، 1 تمشي، 2 تنقر الأرض
+export function hen(color = 0, frame = 0) {
+  const body = ['#f4f0e6', '#b8743a', '#3a3030', '#d8a860'][color % 4];
+  return cached(`hen:${color % 4}:${frame}`, 12, 11, (ctx) => {
+    ellipse(ctx, 6, 10, 4, 1, 'rgba(0,0,0,0.25)');
+    const peck = frame === 2;
+    // الجسم والذيل
+    R(ctx, 3, 4, 6, 4, body); R(ctx, 2, 3, 2, 3, body); R(ctx, 4, 8, 4, 1, body);
+    P(ctx, 1, 3, color % 4 === 2 ? '#2a5a3a' : body);
+    // الراس
+    const hx = peck ? 8 : 8, hy = peck ? 5 : 1;
+    R(ctx, hx, hy, 3, 3, body);
+    P(ctx, hx + 1, hy - 1, '#d83a2a'); P(ctx, hx + 2, hy - 1, '#d83a2a');
+    P(ctx, hx + 3, hy + 1, '#e8a030');
+    P(ctx, hx + 2, hy + 1, '#1a0e08');
+    P(ctx, hx + 1, hy + 3, '#d83a2a');
+    // الرجول
+    const leg = frame === 1 ? 1 : 0;
+    P(ctx, 5 - leg, 9, '#e8a030'); P(ctx, 7 + leg, 9, '#e8a030');
+    R(ctx, 4, 5, 3, 1, 'rgba(0,0,0,0.12)');
+  });
+}

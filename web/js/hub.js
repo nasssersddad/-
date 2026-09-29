@@ -10,8 +10,9 @@ import { TRAITS, camelBreedName } from './data/camels.js';
 import { count, add, addStat, has, bagUsed, bagCap, bagFree, counts } from './systems/inventory.js';
 import * as placement from './systems/placement.js';
 import * as production from './systems/production.js';
+import * as coopSys from './systems/coop.js';
 import { PLACEABLES, BAG_CAPS, BAG_UPGRADE_COINS, MATS } from './data/buildings.js';
-import { zonesFor, zoneCenter } from './data/zones.js';
+import { BUILD_ZONES, zonesFor, zoneCenter, isZoneOpen, zoneById } from './data/zones.js';
 import { spotStatus } from './systems/crafting.js';
 import { applyReward } from './systems/rewards.js';
 import * as farming from './systems/farming.js';
@@ -100,11 +101,32 @@ export function advice(g) {
     if (!o || !s.built[st]) continue;
     const name = BUILD_SPOTS[st].name;
     const rd = production.readyCount(s, nowMin, st);
+    const isDay = production.workshopDay(s) === st;
     if (rd) out.push({ icon: '📥', text: `${name} خلّص ${rd} طلب، استلمه!`, btn: '📍 وديني', go: { guide: o, label: name } });
+    else if (isDay && production.queue(s, st).length < production.slots(s, st)) out.push({ icon: '📅', text: `اليوم يوم ${name}! الشغل فيه أسرع ×2، عبّ طابوره.`, btn: '📍 وديني', go: { guide: o, label: name } });
     else if (!production.queue(s, st).length) out.push({ icon: '⏱️', text: `${name} فاضي، حط له شغل عشان ينتج وأنت تمشي.`, btn: '📍 وديني', go: { guide: o, label: name } });
+  }
+  // القن
+  const co = s.built.coop && g.worldObjById['spot:coop'];
+  if (co) {
+    const c = coopSys.coop(s);
+    if (c.eggs) out.push({ icon: '🥚', text: `القن فيه ${c.eggs} بيض، استلمه!`, btn: '📍 وديني', go: { guide: co, label: 'القن' } });
+    if (coopSys.hungry(s)) out.push({ icon: '🐔', text: coopSys.feedItem(s) ? 'الدجاج جوعان وما يبيض! حط له أكل (قمح، برسيم، ذرة).' : 'الدجاج جوعان وما عندك أكل له. ازرع قمح أو اشترِ برسيم.', btn: coopSys.feedItem(s) ? '📍 وديني' : '🛒 برسيم', go: coopSys.feedItem(s) ? { guide: co, label: 'القن' } : { store: 'items' } });
   }
   const sold = s.stall.slots.filter(x => x && x.sold).length;
   if (sold) out.push({ icon: '🏪', text: `بسطتك باعت ${sold} غرض، استلم فلوسك.`, btn: '🏪 البسطة', go: { trade: 'stall' } });
+  // طلبات الجيران اللي تقدر تسلّمها
+  for (const id of Object.keys(FARMS)) {
+    const rq = farmsSys.ensureRequest(s, id, day);
+    if (!rq || rq.done) continue;
+    if (has(s, { [rq.item]: rq.qty })) {
+      const go = g.mode === 'open' ? { guide: g.open.farmObjs[id].owner, label: FARMS[id].owner, mode: 'open' } : { travel: true };
+      out.push({ icon: '📜', text: `${FARMS[id].owner} يبي ${rq.qty} ${ITEMS[rq.item].icon} ${ITEMS[rq.item].name} (عندك!) — الجايزة 🪙${rq.coins} ومودّة.`, btn: g.mode === 'open' ? '📍 وديني' : '🗺️ القرية', go });
+      break;
+    }
+  }
+  const canOpen = BUILD_ZONES.find(z => !isZoneOpen(s, z) && (s.player.level || 1) >= z.lock.level && s.player.coins >= z.lock.coins);
+  if (canOpen) out.push({ icon: '🗺️', text: `تقدر تفتح ${canOpen.icon} ${canOpen.name} بـ🪙${fmt(canOpen.lock.coins)} وتكبّر أرضك!`, btn: '🔓 التوسعة', go: { store: 'build:land' } });
   const buildable = Object.keys(BUILD_SPOTS).filter(id => spotStatus(s, id).ok);
   if (buildable.length) out.push({ icon: '🏗️', text: `تقدر تبني الحين: ${BUILD_SPOTS[buildable[0]].name}${buildable.length > 1 ? ` و${buildable.length - 1} غيره` : ''}.`, btn: '🔨 المباني', go: { store: 'build' } });
   const stores = Object.keys(FARMS).filter(id => s.farms && s.farms[id] && s.farms[id].owned && farmsSys.storageValue(s.farms[id]) > 0);
@@ -137,6 +159,7 @@ export function installHub(UI) {
     else if (go.trade) { close(); this.openTrade(go.trade); }
     else if (go.workers) { close(); this.openWorkers(); }
     else if (go.events) { close(); this.openEvents(); }
+    else if (go.coop) { close(); this.openCoop(); }
     else if (go.travel) { close(); if (g.mode === 'world') g.travel('open'); }
     else if (go.tend) { this.tendAll(); if (m) m.rerender(); }
   };
@@ -291,10 +314,12 @@ export function installHub(UI) {
     const g = this.g;
     const s = g.state;
     m.bcat = m.bcat || 'out';
-    const cats = [['out', '🏗️ مباني برا'], ['field', '🌾 حقول'], ['deco', '🌺 ديكور وطرق'], ['in', '🛋️ داخل البيت'], ['home', '🏠 ترميم البيت']];
+    const cats = [['out', '🏗️ مباني برا'], ['field', '🌾 حقول'], ['deco', '🌺 ديكور وطرق'], ['land', '🗺️ توسعة الأرض'], ['in', '🛋️ داخل البيت'], ['home', '🏠 ترميم البيت']];
     m.handlers.arrange = () => { m.close(); g.startArrange(); };
-    m.handlers.zgo = (type) => { const z = zonesFor(type)[0]; const c = zoneCenter(z); this.hubGo({ guide: { x: c.x * TILE, y: c.y * TILE }, label: z.name }, m); };
-    const zoneLine = (type) => { const zs = zonesFor(type); return zs.length ? `<div class="sinfo">📍 مكانه: <b>${zs.map(z => z.icon + ' ' + z.name).join(' أو ')}</b> <button class="link" data-a="zgo" data-v="${type}">وديني</button></div>` : ''; };
+    m.handlers.zgo = (type) => { const z = zonesFor(type).find(q => isZoneOpen(s, q)) || zonesFor(type)[0]; const c = zoneCenter(z); this.hubGo({ guide: { x: c.x * TILE, y: c.y * TILE }, label: z.name }, m); };
+    const zoneLine = (type) => { const zs = zonesFor(type); return zs.length ? `<div class="sinfo">📍 مكانه: <b>${zs.map(z => z.icon + ' ' + z.name + (isZoneOpen(s, z) ? '' : ' 🔒')).join(' أو ')}</b> <button class="link" data-a="zgo" data-v="${type}">وديني</button></div>` : ''; };
+    m.handlers.zopen = (id) => { if (g.unlockZone(id)) m.rerender(); };
+    m.handlers.zgo2 = (id) => { const z = zoneById(id); const c = zoneCenter(z); this.hubGo({ guide: { x: c.x * TILE, y: c.y * TILE }, label: z.name }, m); };
     const arrangeBtn = '<div class="row center" style="margin:4px 0 8px"><button class="btn blue" data-a="arrange">🧩 رتّب مزرعتك (انقل أي شي)</button></div>';
     m.handlers.bcat = (v) => { m.bcat = v; this.audio.play('ui'); m.rerender(); };
     const buyMissing = (cost) => {
@@ -316,7 +341,20 @@ export function installHub(UI) {
     const chips = `<div class="helpnav">${cats.map(([id, label]) => `<button class="hbtn2 ${m.bcat === id ? 'on' : ''}" data-a="bcat" data-v="${id}"><small>${label}</small></button>`).join('')}</div>`;
     const miss = (cost) => { const mc = missingCost(s, cost, (x) => this.buyPrice(x)); return mc.coins ? `<button class="btn" data-a="MISS" ${s.player.coins >= mc.coins ? '' : 'disabled'}>اشترِ الناقص 🪙${fmt(mc.coins)}</button>` : ''; };
     let body = '';
-    if (m.bcat === 'field') {
+    if (m.bcat === 'land') {
+      body = `<p class="howto">🗺️ أرضك تكبر معك! الساحات المسكّرة 🔒 تنفتح لما توصل مستواها وتدفع دراهمها، وبعدها تبني فيها حقول ومباني زيادة.</p><div class="sgrid">${[...BUILD_ZONES].sort((a, b) => (isZoneOpen(s, a) ? 1 : 0) - (isZoneOpen(s, b) ? 1 : 0) || ((a.lock || {}).level || 0) - ((b.lock || {}).level || 0)).map(z => {
+        const open = isZoneOpen(s, z);
+        const r = z.rect;
+        const size = `${r.x1 - r.x0 + 1}×${r.y1 - r.y0 + 1}`;
+        const what = [...new Set(z.types.map(t => placement.info(t).name))].join('، ');
+        let act;
+        if (open) act = `<div class="lock ok">✅ مفتوحة</div>`;
+        else if ((s.player.level || 1) < z.lock.level) act = `<div class="lock">🔒 مستوى ${z.lock.level} (أنت ${s.player.level || 1})</div><div class="sinfo">🪙${fmt(z.lock.coins)}</div>`;
+        else act = `<button class="btn green big" data-a="zopen" data-v="${z.id}" ${s.player.coins >= z.lock.coins ? '' : 'disabled'}>🔓 افتحها 🪙${fmt(z.lock.coins)}</button>`;
+        return `<div class="scard ${open ? 'done' : (s.player.level || 1) >= z.lock.level && s.player.coins >= z.lock.coins ? 'ready' : ''}"><div class="sbig">${open ? z.icon : '🔒'}</div><b>${esc(z.name)}</b>
+          <div class="sinfo">📐 ${size} • تبني فيها: ${esc(what)}</div><div class="row center">${act}<button class="link" data-a="zgo2" data-v="${z.id}">📍 وديني</button></div></div>`;
+      }).join('')}</div>`;
+    } else if (m.bcat === 'field') {
       const n = placement.placedOf(s, 'field').length, max = placement.maxFields(s), price = placement.fieldPrice(s);
       const empty = placement.placedOf(s, 'field').filter(p => !s.plots[placement.fieldId(p)]).length;
       body = `<p class="howto">🌾 اشترِ حقول وحطها داخل <b>🌾 ساحة المزرعة</b> (جنب الأحواض).${zoneLine('field')} كل حقل تزرع فيه زي الأحواض، ولو نقلته <b>الزرع ينتقل معه</b>. عدد الحقول يزيد كل ما كبر مستواك.</p>
@@ -371,7 +409,7 @@ export function installHub(UI) {
         const can = item ? count(s, item) > 0 : (has(s, inf.cost) && s.player.coins >= inf.coins);
         const full = !placement.canAddMore(s, type);
         const price = item ? `<div class="sinfo">يحتاج ${ITEMS[item].icon} ${ITEMS[item].name} من حقيبتك (عندك ${count(s, item)})</div>` : `${Object.keys(inf.cost).length ? this.costHtml(inf.cost) : ''}${inf.coins ? `<div class="sinfo">🪙${inf.coins}</div>` : ''}`;
-        const perk = d.beauty ? `🌸 جمال +${d.beauty}` : d.comfort ? `🛋️ راحة +${d.comfort}` : type === 'chest' ? `📦 يشيل ${80} غرض (يترقّى)` : '';
+        const perk = (d.beauty ? `🌸 جمال +${d.beauty}` : d.comfort ? `🛋️ راحة +${d.comfort}` : type === 'chest' ? `📦 يشيل ${80} غرض (يترقّى)` : '') + (d.speed ? ' • 🏃 يسرّع المشي +35%' : '');
         return `<div class="scard ${can && !full ? 'ready' : ''}"><div class="sbig">${d.icon}</div><b>${esc(inf.name)}</b><div class="sinfo">${perk}${n ? ` • عندك ${n}` : ''}</div>${price}
           <div class="row center">${full ? '<div class="lock">وصلت الحد</div>' : `<button class="btn green" data-a="place" data-v="${type}" ${can ? '' : 'disabled'}>📍 ضعه</button>${!item && !can ? miss(inf.cost).replace('MISS', 'pmiss" data-v="' + type) : ''}`}</div></div>`;
       }).join('')}</div>`;
@@ -395,7 +433,7 @@ export function installHub(UI) {
         const built = placement.isBuilt(s, p);
         const lv = placement.levelOf(s, p);
         const u = placement.nextUpgrade(s, p);
-        const opener = { kiln: 1, mill: 1, loom: 1, stall_shop: 1, orders_board: 1, workers_house: 1, stable: 1, sheepfold: 1, chest: 1 }[p.type];
+        const opener = { kiln: 1, mill: 1, loom: 1, stall_shop: 1, orders_board: 1, workers_house: 1, stable: 1, sheepfold: 1, chest: 1, coop: 1 }[p.type];
         const extra = d.beauty ? `🌸 جمال +${d.beauty}` : d.comfort ? `🛋️ راحة +${d.comfort}` : p.type === 'chest' ? `📦 ${placement.chestUsed(s, pid)}/${placement.chestCap(s, pid)}` : '';
         m.body.innerHTML = `<div class="bmenu"><div class="big">${d.icon}</div>
           ${d.levels ? `<p class="center"><b>المستوى ${lv}/${d.levels.length}</b>${d.perk ? ` — ${esc(d.perk)}` : ''}</p>` : ''}
@@ -424,6 +462,7 @@ export function installHub(UI) {
           else if (p.type === 'workers_house') this.openWorkers();
           else if (p.type === 'stable') this.openCamels(null, 'pen');
           else if (p.type === 'sheepfold') this.openTrade('sheep');
+          else if (p.type === 'coop') this.openCoop();
           else this.openCraft(BUILD_SPOTS[d.spot].station);
         };
       },
@@ -603,7 +642,98 @@ export function installHub(UI) {
     }).join('');
     return `<div class="row center">${btn({ tend: true }, '🌿💧 اسقِ وأطعم الكل', 'green big')}${btn({ store: 'animals' }, '🛒 اشترِ حلال')}</div>
       <h4 class="sub">🐪 النياق (${s.camels.length})</h4>${s.built.stable ? (cam || '<p class="muted">ما عندك نياق.</p>') : '<p class="muted">🔒 ابنِ المراح أول.</p>'}
-      <h4 class="sub">🐑 الغنم (${s.sheep.length})</h4>${s.built.sheepfold ? (sh || '<p class="muted">ما عندك غنم.</p>') : '<p class="muted">🔒 ابنِ حظيرة الغنم أول.</p>'}`;
+      <h4 class="sub">🐑 الغنم (${s.sheep.length})</h4>${s.built.sheepfold ? (sh || '<p class="muted">ما عندك غنم.</p>') : '<p class="muted">🔒 ابنِ حظيرة الغنم أول.</p>'}
+      <h4 class="sub">🐔 الدجاج (${coopSys.coop(s).hens})</h4>${this.coopCard(btn)}`;
+  };
+
+  P.coopCard = function (btn) {
+    const g = this.g;
+    const s = g.state;
+    const co = g.worldObjById['spot:coop'];
+    if (!s.built.coop || !co) return `<p class="muted">🔒 ابنِ قن الدجاج (بساحة الحلال) عشان يجيك بيض كل يوم.</p><div class="row center">${btn({ store: 'build:out' }, '🏗️ ابنِ القن', 'blue')}</div>`;
+    const c = coopSys.coop(s);
+    const hrs = Math.floor(c.feedMin / 60);
+    return `<div class="acard"><span class="sbig">🐔</span><div class="ainfo"><b>قن الدجاج</b> <small class="muted">${c.hens}/${coopSys.henCap(s)} دجاجة • 🥚 ${c.eggs}/${coopSys.eggCap(s)}</small>
+      <small>${coopSys.hungry(s) ? '<b class="warn">🌾 جوعان وما يبيض</b>' : `🌾 أكل يكفي ${hrs} ساعة`}</small></div>
+      <div class="acol">${btn({ guide: co, label: 'القن' }, '📍')}${btn({ coop: true }, '🐔 افتح', 'green')}</div></div>`;
+  };
+
+  // ---------- فتح ساحة مسكّرة ----------
+  P.openZoneUnlock = function (id) {
+    const g = this.g;
+    const s = g.state;
+    const z = zoneById(id);
+    if (!z) return;
+    this.modal({
+      title: `🔒 ${z.icon} ${z.name}`, cls: 'small',
+      render: (m) => {
+        if (isZoneOpen(s, z)) { m.close(); return; }
+        const lvOk = (s.player.level || 1) >= z.lock.level;
+        const coinOk = s.player.coins >= z.lock.coins;
+        const what = [...new Set(z.types.map(t => placement.info(t).name))].join('، ');
+        m.body.innerHTML = `<div class="bmenu">
+          <p class="center">🗺️ ساحة جديدة تكبّر أرضك. تبني فيها: <b>${esc(what)}</b></p>
+          <div class="row center zreq"><span class="ctag ${lvOk ? 'ok' : 'warn'}">⭐ المستوى ${z.lock.level} ${lvOk ? '✔' : `(أنت ${s.player.level || 1})`}</span><span class="ctag ${coinOk ? 'ok' : 'warn'}">🪙 ${fmt(z.lock.coins)} ${coinOk ? '✔' : `(عندك ${fmt(s.player.coins)})`}</span></div>
+          <div class="row center"><button class="btn green" data-a="open" ${lvOk && coinOk ? '' : 'disabled'}>🔓 افتحها</button><button class="btn" data-a="all">🗺️ كل الساحات</button></div></div>`;
+        m.handlers.open = () => { if (g.unlockZone(id)) { m.close(); if (g.placing) g.validatePlacing(); } };
+        m.handlers.all = () => { m.close(); this.openStore('build:land'); };
+      },
+    });
+  };
+
+  // ---------- قن الدجاج ----------
+  P.openCoop = function () {
+    const g = this.g;
+    const s = g.state;
+    this.modal({
+      title: '🐔 قن الدجاج', cls: 'small',
+      render: (m) => {
+        if (!s.built.coop) { m.close(); return; }
+        const c = coopSys.coop(s);
+        const cap = coopSys.henCap(s);
+        const feedMax = coopSys.FEED_PER_ITEM * 12;
+        const hrs = Math.floor(c.feedMin / 60);
+        const perDay = Math.round(c.hens * 1440 / coopSys.LAY_EVERY);
+        const feeds = coopSys.FEEDS.filter(id => count(s, id) > 0);
+        m.body.innerHTML = `<div class="bmenu">
+          <div class="coopstat"><div><span class="sbig">🐔</span><b>${c.hens}/${cap}</b><small>دجاجة</small></div><div><span class="sbig">🥚</span><b>${c.eggs}/${coopSys.eggCap(s)}</b><small>بيض</small></div><div><span class="sbig">🌾</span><b>${hrs} س</b><small>أكل</small></div></div>
+          <div class="bar coopbar"><i style="width:${Math.min(100, c.feedMin / feedMax * 100)}%"></i></div>
+          <p class="howto">${coopSys.hungry(s) ? '⚠️ <b>الدجاج جوعان وما يبيض!</b> ' : ''}كل دجاجة تبيض بيضة كل ${coopSys.LAY_EVERY / 60} ساعات لعب وهي شبعانة (≈${perDay} بيضة باليوم). كل حبة أكل تكفي القن كله ${coopSys.FEED_PER_ITEM / 60} ساعات. البيض ينباع أو تطبخ فيه 🍳 شكشوكة بالموقد.</p>
+          <div class="row center">
+            <button class="btn green" data-a="eggs" ${c.eggs ? '' : 'disabled'}>🥚 استلم البيض (${c.eggs})</button>
+          </div>
+          <h4 class="sub">🌾 حط أكل</h4>
+          <div class="row center">${feeds.length ? feeds.map(id => `<button class="btn" data-a="feed" data-v="${id}:1">${itemIcon(id)} ×1 <small>(${count(s, id)})</small></button><button class="btn" data-a="feed" data-v="${id}:5">×5</button>`).join('') : '<span class="muted">ما عندك قمح ولا برسيم ولا ذرة. ازرعها أو اشترِ برسيم من المتجر.</span>'}</div>
+          <h4 class="sub">🐣 دجاج أكثر</h4>
+          <div class="row center"><button class="btn blue" data-a="hen" ${c.hens < cap && s.player.coins >= coopSys.HEN_PRICE ? '' : 'disabled'}>🐔 اشترِ دجاجة 🪙${coopSys.HEN_PRICE}</button>${c.hens >= cap ? '<button class="btn" data-a="pm">⬆️ رقِّ القن</button>' : ''}</div>
+          <div class="row center" style="margin-top:8px"><button class="btn" data-a="pm">🔧 انقل / رقِّ</button>${feeds.length ? '' : '<button class="btn" data-a="buy">🛒 اشترِ برسيم</button>'}</div>
+        </div>`;
+        m.handlers.eggs = () => {
+          const n = c.eggs;
+          if (!g.hasRoom(n, 'egg')) return;
+          coopSys.collectEggs(s);
+          const co = g.worldObjById['spot:coop'];
+          g.gainItems({ egg: n }, co ? co.x : s.player.x, co ? co.y : s.player.y, 26);
+          this.audio.play('pick'); m.rerender(); this.refresh();
+        };
+        m.handlers.feed = (v) => {
+          const [id, n] = v.split(':');
+          const k = coopSys.addFeed(s, id, Number(n));
+          if (!k) { this.audio.play('deny'); return; }
+          this.audio.play('eat');
+          this.toast(`🌾 حطيت ${k} ${itemName(id)} للدجاج (+${k * coopSys.FEED_PER_ITEM / 60} ساعة أكل)`, 'gain', 2);
+          m.rerender(); this.refresh();
+        };
+        m.handlers.hen = () => {
+          const r = coopSys.buyHen(s);
+          if (!r.ok) { this.audio.play('deny'); this.toast(r.reason); return; }
+          this.audio.play('coin'); this.toast('🐔 دجاجة جديدة بالقن!', 'gain', 2);
+          m.rerender(); this.refresh();
+        };
+        m.handlers.pm = () => { const p = placement.placedOf(s, 'coop')[0]; m.close(); if (p) this.openPlacedMenu(p.id); };
+        m.handlers.buy = () => { m.close(); this.openStore('items'); };
+      },
+    });
   };
 
   P.manageProperty = function (m, btn) {
@@ -673,11 +803,11 @@ export function installHub(UI) {
     const TOPICS = [
       { icon: '🕹️', title: 'الحركة والفعل', steps: ['حرّك إصبعك يسار الشاشة عشان تمشي.', 'اقرب من أي شي (نخلة، حوض، ناقة، شخص) وزر ✋ يتغير لاسمه.', 'اضغط ✋ وسوّ الفعل. تقدر تضغط مطوّل للجمع والزراعة.', 'السهم الذهبي 🧭 يدلّك على مهمتك، والرقم جنبه هو المسافة.'], go: null },
       { icon: '🌱', title: 'الزراعة', steps: ['اشترِ بذور من أبو سالم 🥕 (جنب الأحواض) أو من 🛒 المتجر.', 'اوقف جنب حوض فاضي واضغط ✋ «ازرع». زر البذرة 🔄 يبدّل وش تزرع.', 'اسقِ الحوض كل يوم 💧 (الماء من البير بالخان)، أو خلّ 🌧️ المطر يسقيه عنك!', 'بعد الأيام يطلع المحصول: احصده 🧺 وبعه 💰.'], go: { store: 'seeds' }, btn: '🌱 اشترِ بذور' },
-      { icon: '🐪', title: 'الحلال', steps: ['ابنِ المراح 🏗️ وتجيك ناقتين هدية.', 'كل يوم اسقها وأطعمها (برسيم أو تمر)، أو اضغط «اسقِ وأطعم الكل» من 📋 إدارتي.', 'احلب النياق 🥛، ولقّح الفحل مع الناقة، وفيه فرصة يطلع لك حوار نادر!', 'كل ناقة لها خواص ✨، والحوار يورثها. النادرة تسوى ثروة.'], go: { manage: 'animals' }, btn: '🐪 حلالي' },
+      { icon: '🐪', title: 'الحلال', steps: ['ابنِ المراح 🏗️ وتجيك ناقتين هدية.', 'كل يوم اسقها وأطعمها (برسيم أو تمر)، أو اضغط «اسقِ وأطعم الكل» من 📋 إدارتي.', 'احلب النياق 🥛، ولقّح الفحل مع الناقة، وفيه فرصة يطلع لك حوار نادر!', 'كل ناقة لها خواص ✨، والحوار يورثها. النادرة تسوى ثروة.', 'ابنِ 🐔 قن الدجاج وتجيك 3 دجاجات هدية. أكّلهم قمح أو برسيم أو ذرة ويبيضون 🥚 كل ساعتين، والبيض ينباع أو تطبخ فيه 🍳 شكشوكة.'], go: { manage: 'animals' }, btn: '🐪 حلالي' },
       { icon: '💰', title: 'البيع والتجارة', steps: ['أسرع طريقة: 🛒 المتجر ← «💰 بيع»، وتبيع أي شي على طول.', 'تبي سعر أعلى؟ ابنِ البسطة 🏪 وحط أغراضك بسعرك، والمارّة يشترون.', 'لوحة الطلبات 📋 تجيك طلبات قوافل بجوايز حلوة.', 'بالحلال تقدر تساوم وتقايض من 🐪 الحلال ← السوق.'], go: { store: 'sell' }, btn: '💰 بيع الحين' },
-      { icon: '🏗️', title: 'البناء', steps: ['اجمع خشب 🪵 وحجر 🪨 وطين 🟫 من النخل والسدر والصخور.', '🛒 المتجر ← «🏗️ مباني» ← «📍 ضعه»: كل مبنى له <b>ساحة بناء</b> عليها لوحة «يمديك تبني هنا». الساحة الصح تلمع بالأخضر، حرّكه داخلها واضغط «ضعه هنا».', 'الفرن والرحى والنول تشتغل بالوقت: حط طلبات بالطابور ⏱️، وارجع استلمها لما تخلص 📥.', 'ابنه بنفسك أو خلّ البنّاء 👷 يبنيه. بعدين تقدر 🔀 تنقله أو ⬆️ ترقّيه من زر 🔧.', 'داخل بيتك حط 📦 صناديق تخزّن فيها أغراضك (حقيبتك لها سعة)، وأثاث يرفع راحتك وطاقتك.', 'زيّن برا بممرات وسياج وورد 🌺، الجمال يزيد دراهم الضيوف.'], go: { store: 'build' }, btn: '🏗️ المباني' },
+      { icon: '🏗️', title: 'البناء', steps: ['اجمع خشب 🪵 وحجر 🪨 وطين 🟫 من النخل والسدر والصخور.', '🛒 المتجر ← «🏗️ مباني» ← «📍 ضعه»: كل مبنى له <b>ساحة بناء</b> عليها لوحة «يمديك تبني هنا». الساحة الصح تلمع بالأخضر، حرّكه داخلها واضغط «ضعه هنا».', 'الفرن والرحى والنول تشتغل بالوقت: حط طلبات بالطابور ⏱️، وارجع استلمها لما تخلص 📥.', 'ابنه بنفسك أو خلّ البنّاء 👷 يبنيه. بعدين تقدر 🔀 تنقله أو ⬆️ ترقّيه من زر 🔧.', 'داخل بيتك حط 📦 صناديق تخزّن فيها أغراضك (حقيبتك لها سعة)، وأثاث يرفع راحتك وطاقتك.', 'كل ورشة لها يوم بالأسبوع 📅 شغلها فيه أسرع ×2: السبت الرحى، الاثنين النول، الخميس الفرن.', 'زيّن برا بممرات وسياج وورد 🌺، الجمال يزيد دراهم الضيوف. والمشي على 🪨 الممرات أسرع +35% 🏃.', 'أرضك تكبر! الساحات المسكّرة 🔒 تفتحها بالمستوى والدراهم من 🛒 المتجر ← مباني ← «🗺️ توسعة الأرض».'], go: { store: 'build' }, btn: '🏗️ المباني' },
       { icon: '👷', title: 'العمّال', steps: ['وظّف حطّاب، مزارع، بنّاء، أو راعي من 👷 العمّال.', 'يشتغلون لحالهم، وراتبهم بالساعة.', 'لا تتأخر بالراتب! إذا تأخرت يضربون ✊ ويبون غرامة.', 'فعّل الدفع التلقائي وارتاح.'], go: { workers: true }, btn: '👷 العمّال' },
-      { icon: '🗺️', title: 'القرية والعقارات', steps: ['اطلع من «طريق القرية» يسار مزرعتك.', 'فيها 5 مزارع جيران: تشتري منهم بضاعة ونياق وغنم وتساومهم.', 'تقدر تشتري مزرعة كاملة 🏡 وتصير تنتج لك كل يوم.', 'من 📋 إدارتي ← عقاراتي: طوّرها واستلم إنتاجها.'], go: { manage: 'property' }, btn: '🏡 عقاراتي' },
+      { icon: '🗺️', title: 'القرية والعقارات', steps: ['اطلع من «طريق القرية» يسار مزرعتك.', 'فيها 5 مزارع جيران: تشتري منهم بضاعة ونياق وغنم وتساومهم.', 'كل جار عنده 📜 طلب يومي: سلّمه وخذ دراهم و❤️ مودّة. المودّة تعطيك خصم على بضاعته (5% ← 10% ← 15%).', 'تقدر تشتري مزرعة كاملة 🏡 وتصير تنتج لك كل يوم.', 'من 📋 إدارتي ← عقاراتي: طوّرها واستلم إنتاجها.'], go: { manage: 'property' }, btn: '🏡 عقاراتي' },
       { icon: '🎁', title: 'المكافآت والفعاليات', steps: ['كل يوم ادخل وخذ مكافأتك اليومية 🎁، والسلسلة تكبر الجوايز.', '3 مهام يومية، وعجلة حظ، وإنجازات.', 'فعالية جديدة كل يومين 🎪: سباق هجن، صقور، مهرجان تمور، وغيرها.', 'الصعوبة تزيد مع كل مرحلة، فالجوايز تحتاج شغل!'], go: { events: true }, btn: '🎪 الفعاليات' },
     ];
     let cur = topic;

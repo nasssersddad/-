@@ -21,6 +21,8 @@ export const PLACEABLES = {
   trough: { spot: 'trough', icon: '🏺', w: 2, h: 1, zone: 'out', cat: 'building', solid: true, inside: 'stable' },
   barn: { spot: 'barn', icon: '🏚️', w: 3, h: 3, zone: 'out', cat: 'building', solid: true, storage: 'mats',
     levels: [null, { cost: { plank: 10, stone: 10 }, coins: 300 }, { cost: { plank: 16, brick: 10 }, coins: 800 }], perk: 'يشيل مواد أكثر' },
+  coop: { spot: 'coop', icon: '🐔', w: 3, h: 2, zone: 'out', cat: 'building', solid: true,
+    levels: [null, { cost: { plank: 6, wood: 8 }, coins: 250 }, { cost: { plank: 10, brick: 6 }, coins: 600 }], perk: 'دجاج أكثر (6 ← 9 ← 12)' },
   sheepfold: { spot: 'sheepfold', icon: '🐑', w: 6, h: 5, zone: 'out', cat: 'building', area: true,
     levels: [null, { cost: { wood: 8, rope: 4 }, coins: 200 }, { cost: { wood: 12, plank: 6 }, coins: 500 }], perk: 'غنم أكثر (+3)' },
 
@@ -28,8 +30,8 @@ export const PLACEABLES = {
   field: { name: 'حقل زراعة', icon: '🌱', w: 1, h: 1, zone: 'out', cat: 'field', repeat: true, soil: true },
 
   // ---------- ديكور وطرق (برا) ----------
-  path: { name: 'ممر حجر', icon: '🪨', w: 1, h: 1, zone: 'out', cat: 'deco', cost: { stone: 1 }, beauty: 1, repeat: true, flat: true },
-  sandpath: { name: 'ممر رملي مرصوف', icon: '🟫', w: 1, h: 1, zone: 'out', cat: 'deco', cost: { clay: 1 }, beauty: 1, repeat: true, flat: true },
+  path: { name: 'ممر حجر', icon: '🪨', w: 1, h: 1, zone: 'out', cat: 'deco', cost: { stone: 1 }, beauty: 1, repeat: true, flat: true, speed: true },
+  sandpath: { name: 'ممر رملي مرصوف', icon: '🟫', w: 1, h: 1, zone: 'out', cat: 'deco', cost: { clay: 1 }, beauty: 1, repeat: true, flat: true, speed: true },
   fence: { name: 'سياج خشب', icon: '🪵', w: 1, h: 1, zone: 'out', cat: 'deco', cost: { wood: 1 }, beauty: 1, repeat: true, solid: true },
   flowers: { name: 'حوض ورد', icon: '🌺', w: 1, h: 1, zone: 'out', cat: 'deco', coins: 15, beauty: 3, repeat: true },
   potpalm: { name: 'نخلة زينة', icon: '🌴', w: 1, h: 1, zone: 'out', cat: 'deco', cost: { jar: 1 }, coins: 30, beauty: 4, solid: true },

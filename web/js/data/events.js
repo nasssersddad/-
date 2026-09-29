@@ -1,5 +1,7 @@
 // الفعاليات: تتبدل كل يومين حقيقيين، ولكل وحدة عملة ومسار جوايز
 export const EVENT_DAYS = 2;
+// إزاحة التدوير: لما أضفنا «أسبوع الورش» خلّينا فعالية اليوم نفسها عشان ما يضيع تقدّم اللاعبين
+export const EVENT_OFFSET = 5;
 
 export const EVENTS = [
   {
@@ -31,6 +33,11 @@ export const EVENTS = [
     id: 'friday_market', name: 'سوق الجمعة الكبير', icon: '🏪', token: 'ختم', tokenIcon: '🔖',
     desc: 'الزحمة بالسوق: البسطة تبيع أسرع، وطلبات القوافل تدفع +50%.',
     mods: { stallFast: true, ordersBonus: 0.5 }, how: 'كل بيعة من البسطة أو طلب تسلّمه = أختام.',
+  },
+  {
+    id: 'workshop_week', name: 'أسبوع الورش', icon: '🔨', token: 'مطرقة', tokenIcon: '🔨',
+    desc: 'الصنّاع بالديرة يساعدونك: الفرن والرحى والنول يخلصون الشغل أسرع (الوقت ×0.6)، وكل طلب تستلمه يعطيك مطارق.',
+    mods: { workshopFast: 0.6, workshopTokens: true }, how: 'حط شغل بالفرن والرحى والنول واستلمه: كل طلب = مطرقتين.',
   },
 ];
 

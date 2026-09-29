@@ -51,3 +51,29 @@ test('double chance and rushing with coins', () => {
   assert.equal(PR.queue(s, 'kiln')[1].end, 120, 'the next one moves up');
   assert.equal(PR.isTimed('workbench'), false, 'workbench stays instant');
 });
+
+test('workshop days halve the time; the workshop week event speeds all', async () => {
+  const s = base();
+  const { RECIPES } = await import('../web/js/data/recipes.js');
+  const brick = RECIPES.find(r => r.id === 'brick');
+  // الخميس يوم الفرن (weekday 5 ← day 6)
+  s.time.day = 6;
+  assert.equal(PR.workshopDay(s), 'kiln');
+  assert.equal(PR.recipeTime(brick, s, 'kiln'), Math.round(brick.time / 2));
+  const j = PR.enqueue(s, 'kiln', 'brick', 0).job;
+  assert.equal(j.end - j.start, Math.round(brick.time / 2));
+  // يوم ثاني: وقت عادي، والفعالية ×0.6
+  s.time.day = 2;
+  assert.equal(PR.workshopDay(s), null);
+  assert.equal(PR.recipeTime(brick, s, 'kiln'), brick.time);
+  assert.equal(PR.recipeTime(brick, s, 'kiln', { workshopFast: 0.6 }), Math.round(brick.time * 0.6));
+  // السبت الرحى، الاثنين النول
+  s.time.day = 1; assert.equal(PR.workshopDay(s), 'mill');
+  s.time.day = 3; assert.equal(PR.workshopDay(s), 'loom');
+});
+
+test('the workshop week is part of the event rotation', async () => {
+  const { EVENTS } = await import('../web/js/data/events.js');
+  const e = EVENTS.find(x => x.id === 'workshop_week');
+  assert.ok(e && e.mods.workshopFast < 1 && e.mods.workshopTokens);
+});

@@ -9,7 +9,7 @@ const exe = process.env.CHROME || (fs.existsSync('/opt/pw-browsers/chromium') ? 
 const browser = await chromium.launch({ executablePath: exe });
 const page = await browser.newPage();
 
-const draw = async (size, round) => page.evaluate(({ size, round }) => {
+const draw = async (size, round, square = false) => page.evaluate(({ size, round, square }) => {
   const S = 48;
   const c = document.createElement('canvas');
   c.width = S; c.height = S;
@@ -53,11 +53,12 @@ const draw = async (size, round) => page.evaluate(({ size, round }) => {
   o.width = size; o.height = size;
   const ox = o.getContext('2d');
   ox.imageSmoothingEnabled = false;
-  if (round) { ox.beginPath(); ox.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2); ox.clip(); }
+  if (square) { /* أيقونة Google Play: مربع كامل، والمتجر يدوّر الزوايا بنفسه */ }
+  else if (round) { ox.beginPath(); ox.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2); ox.clip(); }
   else { const r = size * 0.18; ox.beginPath(); ox.roundRect(0, 0, size, size, r); ox.clip(); }
   ox.drawImage(c, 0, 0, size, size);
   return o.toDataURL('image/png').split(',')[1];
-}, { size, round });
+}, { size, round, square });
 
 for (const [dir, size] of Object.entries(sizes)) {
   fs.mkdirSync(path.join(res, dir), { recursive: true });
@@ -65,6 +66,6 @@ for (const [dir, size] of Object.entries(sizes)) {
   fs.writeFileSync(path.join(res, dir, 'ic_launcher_round.png'), Buffer.from(await draw(size, true), 'base64'));
 }
 fs.mkdirSync('store', { recursive: true });
-fs.writeFileSync('store/icon-512.png', Buffer.from(await draw(512, false), 'base64'));
+fs.writeFileSync('store/icon-512.png', Buffer.from(await draw(512, false, true), 'base64'));
 await browser.close();
 console.log('✅ icons written');

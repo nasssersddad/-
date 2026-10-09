@@ -27,6 +27,29 @@ public class NativeBridge {
         Reminders.schedule(activity, Math.max(1, minutes) * 60_000L);
     }
 
+    /** إشعار بنص من اللعبة بعد كم دقيقة (id من 1 لين 4، وكل id يستبدل اللي قبله). */
+    @JavascriptInterface
+    public void scheduleNotification(int id, int minutes, String title, String text) {
+        if (id < 1 || id > Reminders.IDS.length) return;
+        Reminders.schedule(activity, id, Math.max(1, minutes) * 60_000L, title, text);
+    }
+
+    @JavascriptInterface
+    public void cancelNotifications() {
+        Reminders.cancel(activity);
+    }
+
+    /** زر «خيارات الخصوصية» يطلع بالإعدادات بس إذا كان مطلوب (موافقة الإعلانات) */
+    @JavascriptInterface
+    public boolean privacyOptionsRequired() {
+        return ads.privacyOptionsRequired();
+    }
+
+    @JavascriptInterface
+    public void showPrivacyOptions() {
+        activity.runOnUiThread(ads::showPrivacyOptions);
+    }
+
     @SuppressWarnings("deprecation")
     @JavascriptInterface
     public void vibrate(int ms) {

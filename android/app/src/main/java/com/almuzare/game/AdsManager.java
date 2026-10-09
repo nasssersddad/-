@@ -11,24 +11,53 @@ import com.google.android.gms.ads.LoadAdError;
 import com.google.android.gms.ads.MobileAds;
 import com.google.android.gms.ads.rewarded.RewardedAd;
 import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback;
+import com.google.android.ump.ConsentInformation;
+import com.google.android.ump.ConsentRequestParameters;
+import com.google.android.ump.UserMessagingPlatform;
 
 import org.json.JSONObject;
 
-/** إعلانات AdMob بمكافأة: تحميل مسبق، عرض، وإرجاع النتيجة للعبة. */
+/**
+ * إعلانات AdMob بمكافأة: تحميل مسبق، عرض، وإرجاع النتيجة للعبة.
+ * قبل أي إعلان نطلب موافقة المستخدم (UMP) إذا كانت مطلوبة ببلده (أوروبا مثلاً).
+ */
 public class AdsManager {
     private final Activity activity;
     private final WebView web;
+    private final ConsentInformation consent;
     private RewardedAd ad;
     private boolean loading;
+    private boolean started;
 
     AdsManager(Activity activity, WebView web) {
         this.activity = activity;
         this.web = web;
+        this.consent = UserMessagingPlatform.getConsentInformation(activity);
+        ConsentRequestParameters params = new ConsentRequestParameters.Builder().build();
+        consent.requestConsentInfoUpdate(activity, params,
+                () -> UserMessagingPlatform.loadAndShowConsentFormIfRequired(activity, formError -> startIfAllowed()),
+                requestError -> startIfAllowed());
+        // موافقة من جلسة قبل؟ نبدأ على طول بدون انتظار
+        startIfAllowed();
+    }
+
+    private void startIfAllowed() {
+        if (started || !consent.canRequestAds()) return;
+        started = true;
         MobileAds.initialize(activity, status -> load());
     }
 
+    /** لازم نعطي المستخدم زر يغيّر موافقته إذا بلده يطلبها */
+    boolean privacyOptionsRequired() {
+        return consent.getPrivacyOptionsRequirementStatus() == ConsentInformation.PrivacyOptionsRequirementStatus.REQUIRED;
+    }
+
+    void showPrivacyOptions() {
+        UserMessagingPlatform.showPrivacyOptionsForm(activity, formError -> startIfAllowed());
+    }
+
     private void load() {
-        if (loading || ad != null) return;
+        if (!started || loading || ad != null) return;
         loading = true;
         RewardedAd.load(activity, activity.getString(R.string.admob_rewarded_id), new AdRequest.Builder().build(),
                 new RewardedAdLoadCallback() {

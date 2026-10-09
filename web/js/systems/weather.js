@@ -43,5 +43,7 @@ export function applyRain(state, day) {
   for (const c of state.camels || []) c.wateredDay = day;
   for (const s of state.sheep || []) s.wateredDay = day;
   state.stats.rainDays = (state.stats.rainDays || 0) + 1;
+  // سقي المطر ينحسب سقي (عشان مهمة «اسقِ حوضين» ما تعلق بيوم مطر)
+  state.stats.watered = (state.stats.watered || 0) + n;
   return n;
 }

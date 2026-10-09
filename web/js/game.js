@@ -33,6 +33,10 @@ import * as weather from './systems/weather.js';
 import * as placement from './systems/placement.js';
 import * as production from './systems/production.js';
 import * as coopSys from './systems/coop.js';
+import * as unlocks from './systems/unlocks.js';
+import { pendingFirsts, markFirst, seedFirsts } from './data/firsts.js';
+import { catchUp, worthShowing } from './systems/away.js';
+import { planNotifications } from './systems/notify.js';
 import { PLACEABLES } from './data/buildings.js';
 import { BUILD_ZONES, zonesFor, zoneCenter, isZoneOpen, unlockZone, zoneById } from './data/zones.js';
 
@@ -43,6 +47,9 @@ export function screenDir(dx, dy) {
 
 const SPEED = 64;
 export const PATH_BOOST = 1.35; // الممرات والطريق تسرّع المشي
+export const COMBO_WINDOW = 2.2;  // ثواني بين الأفعال عشان الكومبو يكمل
+export const LUCKY_CHANCE = 0.05;
+export const HARVEST_CHEST_CHANCE = 0.03;
 const ACTION_REPEAT = 0.34;
 
 export class Game {
@@ -94,6 +101,8 @@ export class Game {
     for (const c of this.state.camels) camels.ensureTraits(c);
     const s = this.state;
     this.migrated = placement.migrate(s, this.world).moved;
+    if (!s.flags.seenUnlocks) unlocks.markAllSeen(s);
+    seedFirsts(s);
     this.syncPlaced();
     if (!loaded) {
       s.player.x = this.world.spawn.x;
@@ -118,13 +127,61 @@ export class Game {
       await this.ui.dialogue(INTRO);
       s.introSeen = true;
     } else {
-      const off = retention.offlineEarnings(s, this.now());
-      if (off) await this.offerOffline(off);
+      await this.awayFlow();
     }
     s.lastSeen = this.now();
     const ds = retention.dailyStatus(s, this.now());
     if (ds.available && s.quest.index >= 2) this.ui.openRewards('daily');
     this.save();
+  }
+
+  // رجعت بعد غياب: المزرعة كمّلت شغلها، وشاشة وحدة تلخص كل شي وتستلمه بضغطة
+  async awayFlow() {
+    const s = this.state;
+    if (this.awayBusy) return;
+    const rep = catchUp(s, this.now(), this.absMinutes());
+    s.lastSeen = this.now();
+    if (!worthShowing(rep)) return;
+    this.awayBusy = true;
+    try {
+      const choice = await this.ui.awayScreen(rep);
+      if (rep.coins) this.claimReward({ coins: rep.coins * (choice === 'x2' ? 2 : 1) }, null, true);
+      const c = coopSys.coop(s);
+      if (c.eggs && placement.roomFor(s, c.eggs, 'egg')) { const n = coopSys.collectEggs(s); this.gainItems({ egg: n }, s.player.x, s.player.y, 24); }
+      for (const st of Object.keys(rep.jobs)) this.collectWorkshop(st);
+      this.ui.refresh();
+      this.save();
+    } finally { this.awayBusy = false; }
+  }
+
+  // التطبيق رجع من الخلفية (الأندرويد ما يعيد تحميل الصفحة)
+  onResume() {
+    if (!this.state || this.ui.blocking() || this.mode === 'dungeon') return;
+    this.awayFlow();
+  }
+
+  // يجدول إشعارات الجوال (الأندرويد بس) قبل ما تطلع من اللعبة
+  scheduleNotifs() {
+    const nb = typeof window !== 'undefined' ? window.MuzareNative : null;
+    if (!this.state || !nb || typeof nb.scheduleNotification !== 'function') return 0;
+    try {
+      if (nb.cancelNotifications) nb.cancelNotifications();
+      const list = planNotifications(this.state, this.now(), this.absMinutes());
+      for (const n of list) nb.scheduleNotification(n.id, n.minutes, n.title, n.text);
+      return list.length;
+    } catch { return 0; }
+  }
+
+  // ناقة بخاصية نادرة مضمونة (جايزة تحدي الأسبوع)
+  giftRareCamel() {
+    const s = this.state;
+    if (!s.built.stable || s.camels.length >= camels.capacity(s)) { this.claimReward({ coins: 800 }, null, true); this.ui.toast('🐪 مراحك مليان، فأخذت بدال الناقة 800 درهم', '', 4); return null; }
+    const c = camels.makeCamel(s, this.rng, { traits: camels.rollTraits(this.rng, true), beauty: randInt(this.rng, 55, 80) });
+    s.camels.push(c);
+    if (this.mode !== 'world') { s.arrivals = s.arrivals || []; s.arrivals.push(c.id); }
+    this.audio.play('rare');
+    this.ui.toast(`🐪✨ جتك ${c.name} بخاصية نادرة ${TRAITS[c.traits.find(t => TRAITS[t].tier === 'rare')].icon}!`, 'ach', 5);
+    return c;
   }
 
   async offerOffline(off) {
@@ -148,6 +205,8 @@ export class Game {
 
   // ---------- الحلقة ----------
   update(dt) {
+    // وقفة قصيرة لما تخلص ضربة قوية (hit-stop) تخلي الضربة تحسّها
+    if (this.hitstop > 0) { this.hitstop -= dt; dt *= 0.08; }
     this.t += dt;
     this.animT += dt;
     this.fx.update(dt);
@@ -527,7 +586,7 @@ export class Game {
         return false;
       case 'plant': {
         const seed = farming.firstSeed(s);
-        if (seed && farming.plant(s, task.obj.id, seed)) { task.obj.popT = this.t; if (this.rainLevel() > 0) s.plots[task.obj.id].watered = true; this.fx.float(...this.fx.at(task.obj.x, task.obj.y, 14), '🌱', '#d8ffb0', 12); }
+        if (seed && farming.plant(s, task.obj.id, seed)) { task.obj.popT = this.t; if (this.rainLevel() > 0) { s.plots[task.obj.id].watered = true; addStat(s, 'watered', 1); } this.fx.float(...this.fx.at(task.obj.x, task.obj.y, 14), '🌱', '#d8ffb0', 12); }
         return false;
       }
       case 'waterCamel': camels.waterCamel(s, task.id, day); this.fx.float(...at(24), '💧', '#b9f0ff', 12); return false;
@@ -1647,7 +1706,8 @@ export class Game {
 
   gatherHit(o, specs) {
     const s = this.state;
-    this.audio.play(specs.sound);
+    const combo = this.comboHit(o.x, o.y);
+    this.audio.play(specs.sound, 1 + Math.min(0.5, (combo - 1) * 0.05));
     this.hitFx(o, specs.color);
     const n = s.nodes[o.id] && !(s.nodes[o.id].respawnDay > s.time.day) ? s.nodes[o.id] : { hits: 0 };
     n.hits = (n.hits || 0) + 1;
@@ -1663,6 +1723,9 @@ export class Game {
     if (o.kind === 'rock') { loot.stone = randInt(this.rng, 2, 3) + (o.variant === 'big' ? 2 : 0); if (this.rng() < (o.variant === 'big' ? 0.15 : 0.08)) loot.oldcoin = 1; }
     if (o.kind === 'clay') loot.clay = randInt(this.rng, 1, 2);
     if (o.kind === 'herb') { loot.herb = randInt(this.rng, 1, 2); if (this.rng() < 0.25) loot[pick(this.rng, ['seed_tomato', 'seed_wheat'])] = 1; }
+    // آخر ضربة: وقفة ورجّة، وأحياناً حظ ذهبي يضاعف الغلة
+    this.hitstop = 0.06; this.shake = Math.max(this.shake, 4); this.ui.vibrate(25);
+    if (this.rng() < LUCKY_CHANCE) { for (const k of Object.keys(loot)) loot[k] *= 2; this.luckyFx(o.x, o.y); }
     addStat(s, specs.stat, 1);
     for (const [k, v] of Object.entries(specs.kp)) s.kp[k] = (s.kp[k] || 0) + v;
     this.gainItems(loot, o.x, o.y, 14);
@@ -1680,6 +1743,7 @@ export class Game {
     for (const [id, n] of Object.entries(loot)) {
       const lost = r.lost[id] || 0, chest = r.chest[id] || 0;
       if (n - lost > 0) this.fx.float(...this.fx.at(x, y, lift + i * 9), `${ITEMS[id].icon} +${n - lost}${chest ? ' 📦' : ''}`, chest ? '#ffe0a0' : '#fff3c4', 13);
+      if (n - lost - chest > 0 && this.visibleNear({ x, y })) this.ui.flyItem(ITEMS[id].icon, n - lost - chest, x, y - lift);
       i++;
     }
     if (Object.keys(r.chest).length && this.t - (this.chestToastT || -99) > 20) { this.chestToastT = this.t; this.ui.toast('🎒 حقيبتك مليانة، الزيادة انحطت بالصندوق 📦', '', 3); }
@@ -1752,7 +1816,7 @@ export class Game {
       if (!this.spendEnergy(1)) return;
       this.startAnim('plant', o, 0.75, 0.5, () => {
         if (!farming.plant(s, o.id, seed)) return;
-        if (this.rainLevel() > 0) { s.plots[o.id].watered = true; this.fx.float(...this.fx.at(o.x, o.y, 26), '🌧️ انسقى من المطر', '#b9f0ff', 11); }
+        if (this.rainLevel() > 0) { s.plots[o.id].watered = true; addStat(s, 'watered', 1); this.fx.float(...this.fx.at(o.x, o.y, 26), '🌧️ انسقى من المطر', '#b9f0ff', 11); }
         o.popT = this.t;
         this.audio.play('plant');
         this.fx.burst(...this.fx.at(o.x, o.y, 6), ['#7a4f2e', '#5e3b21'], 8, 30, 0.4);
@@ -1768,10 +1832,16 @@ export class Game {
       this.startAnim('harvest', o, 0.55, 0.35, () => {
         const h = farming.harvest(s, o.id, this.rng);
         if (!h) return;
+        const combo = this.comboHit(o.x, o.y);
+        if (this.rng() < LUCKY_CHANCE) { add(s, h.crop, h.n); h.n *= 2; this.luckyFx(o.x, o.y); }
         this.overflowToChest(h.crop);
-        this.audio.play('pick');
+        this.audio.play('pick', 1 + Math.min(0.5, (combo - 1) * 0.06));
         this.hitFx(o, ['#e6c050', '#d9401a', '#6cc24a'], 10);
+        this.hitstop = 0.05; this.ui.vibrate(20);
+        // صندوق مفاجأة يطيح نادر من الحصاد
+        if (this.rng() < HARVEST_CHEST_CHANCE) this.dropChest(o.x + 14, o.y + 4, rollChestRarity(this.rng));
         this.fx.float(...this.fx.at(o.x, o.y, 16), `${ITEMS[h.crop].icon} +${h.n}`, '#fff3c4', 13);
+        this.ui.flyItem(ITEMS[h.crop].icon, h.n, o.x, o.y - 12);
         s.kp.n = (s.kp.n || 0) + 1;
         this.gainXp(6, o.x, o.y, 28);
         this.ui.refresh();
@@ -1784,7 +1854,8 @@ export class Game {
       this.startAnim('water', o, 0.85, 0.65, () => {
         if (!farming.water(s, o.id)) return;
         o.wetT = this.t;
-        this.audio.play('water');
+        const combo = this.comboHit(o.x, o.y);
+        this.audio.play('water', 1 + Math.min(0.5, (combo - 1) * 0.05));
         this.fx.burst(...this.fx.at(o.x, o.y, 6), ['#57a9cf', '#a6def0'], 10, 40, 0.5);
         this.gainXp(1, o.x, o.y, 20);
         this.ui.refresh();
@@ -1793,6 +1864,34 @@ export class Game {
     }
     this.input.action = false;
     this.fx.float(...this.fx.at(o.x, o.y, 16), 'انسقى اليوم ✔', '#b9f0ff', 11);
+  }
+
+  // كومبو: أفعال ورا بعض خلال ثانيتين ترفع العداد، وكل 5 تعطيك جايزة صغيرة
+  comboHit(x, y) {
+    const c = this.comboSt = this.comboSt || { n: 0, t: -99 };
+    c.n = this.t - c.t < COMBO_WINDOW ? c.n + 1 : 1;
+    c.t = this.t;
+    if (c.n >= 2) this.fx.float(...this.fx.at(x, y, 46), `×${c.n} 🔥`, c.n >= 10 ? '#ff5a3a' : c.n >= 5 ? '#ff9a3a' : '#ffd24a', Math.min(22, 12 + c.n));
+    if (c.n % 5 === 0) {
+      const s = this.state;
+      const bonus = Math.min(30, c.n);
+      this.audio.play('combo', 1 + Math.min(0.6, c.n / 50));
+      this.fx.burst(...this.fx.at(x, y, 20), ['#ffd24a', '#ff8a3a', '#fff'], 16, 80, 0.7);
+      this.ui.toast(`🔥 كومبو ×${c.n}! +${bonus} ✨`, 'gain', 2);
+      addStat(s, 'combos', 1);
+      s.stats.bestCombo = Math.max(s.stats.bestCombo || 0, c.n);
+      this.gainXp(bonus, x, y, 56);
+    }
+    return c.n;
+  }
+
+  // حظ ذهبي: الغلة ضعف مع لمعة وصوت
+  luckyFx(x, y) {
+    this.audio.play('lucky');
+    addStat(this.state, 'lucky', 1);
+    this.fx.burst(...this.fx.at(x, y, 12), ['#ffe04a', '#fff6c0', '#ffb030'], 24, 90, 0.9);
+    this.fx.float(...this.fx.at(x, y, 60), '🍀 حظ ذهبي! ضعف الغلة', '#ffe04a', 15);
+    this.ui.vibrate(40);
   }
 
   say(text, who = 'lamp') {
@@ -2003,6 +2102,18 @@ export class Game {
       const nxt = currentQuest(s);
       if (nxt) this.ui.toast(`📜 مهمة جديدة: ${nxt.title}`);
       this.ui.refresh();
+    }
+    for (const u of unlocks.newlyUnlocked(s)) this.ui.announceUnlock(u);
+    // «أول مرة!»: وحدة بكل مرة، ببطاقة تنزل من فوق وجايزة صغيرة
+    if (!this.checking && !this.ui.blocking() && this.t - (this.firstT || -99) > 4) {
+      const f = pendingFirsts(s)[0];
+      if (f) {
+        this.firstT = this.t;
+        markFirst(s, f.id);
+        const res = applyReward(s, f.reward, this.rng);
+        this.ui.firstTime(f, res.gains);
+        this.handleLevelUps(res);
+      }
     }
     for (const c of retention.claimableAchievements(s)) {
       const k = c.ach.stat + c.tier;

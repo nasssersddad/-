@@ -41,8 +41,9 @@ export class Audio {
     const o = this.ctx.createOscillator();
     const g = this.ctx.createGain();
     o.type = type;
-    o.frequency.setValueAtTime(freq, t);
-    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), t + dur);
+    const k = this.pitch || 1;
+    o.frequency.setValueAtTime(freq * k, t);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, (freq + slide) * k), t + dur);
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     o.connect(g); g.connect(this.master);
@@ -55,7 +56,7 @@ export class Audio {
     const s = this.ctx.createBufferSource();
     s.buffer = this.noiseBuf;
     const f = this.ctx.createBiquadFilter();
-    f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = q;
+    f.type = 'bandpass'; f.frequency.value = freq * (this.pitch || 1); f.Q.value = q;
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
@@ -83,8 +84,20 @@ export class Audio {
     if (this.rainGain) this.rainGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.6);
   }
 
-  play(name) {
+  // pitch: نغمة أعلى أو أوطى (الكومبو يعلّيها). وكل صوت يختلف شوي عن اللي قبله عشان ما يمل
+  play(name, pitch = 1) {
+    const vary = ['chop', 'mine', 'dig', 'pick', 'plant', 'hit', 'water', 'eat'].includes(name);
+    this.pitch = pitch * (vary ? 0.93 + Math.random() * 0.14 : 1);
+    this._play(name);
+    this.pitch = 1;
+  }
+
+  _play(name) {
     switch (name) {
+      case 'combo': this.tone(660, 0.09, 'triangle', 0.12); this.tone(990, 0.14, 'triangle', 0.1, 0.06); break;
+      case 'lucky': [784, 1047, 1319, 1568, 2093].forEach((f, i) => this.tone(f, 0.22, 'sine', 0.12, i * 0.05)); this.noise(0.5, 8000, 0.06, 0, 2); break;
+      case 'tick': this.tone(1500, 0.03, 'square', 0.04); break;
+      case 'first': [523, 784, 1047, 1568].forEach((f, i) => this.tone(f, 0.35, 'triangle', 0.13, i * 0.1)); break;
       case 'chop': this.noise(0.12, 700, 0.35); this.tone(140, 0.08, 'triangle', 0.2); break;
       case 'mine': this.noise(0.08, 2600, 0.3, 0, 4); this.tone(380, 0.1, 'square', 0.06); break;
       case 'dig': this.noise(0.18, 400, 0.3); break;

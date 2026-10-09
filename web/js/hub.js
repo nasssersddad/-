@@ -543,7 +543,7 @@ export function installHub(UI) {
         const adv = advice(g);
         const owned = Object.keys(FARMS).filter(id => s.farms && s.farms[id] && s.farms[id].owned);
         this.tabs(m, [
-          { id: 'now', label: '💡 وش أسوي؟', badge: adv[0] && adv[0].go.travel ? 0 : adv.length },
+          { id: 'now', label: '💡 وش أسوي؟', badge: adv[0] && adv[0].go.travel ? 0 : Math.min(3, adv.length) },
           { id: 'farm', label: '🌾 مزرعتي' },
           { id: 'animals', label: '🐪 حلالي' },
           { id: 'property', label: `🏡 عقاراتي (${owned.length})` },
@@ -555,7 +555,10 @@ export function installHub(UI) {
         const btn = (go, label, cls = '') => { m.gos.push(go); return `<button class="btn ${cls}" data-a="go" data-v="${m.gos.length - 1}">${label}</button>`; };
         let html = '';
         if (tab === 'now') {
-          html = `<div class="advice">${adv.map(a => `<div class="arow"><span class="ic">${a.icon}</span><span class="nm">${esc(a.text)}</span>${btn(a.go, a.btn, 'green')}</div>`).join('')}</div>`;
+          // أهم 3 بس عشان ما يضيع، والباقي بزر «المزيد»
+          const shown = m.showAll ? adv : adv.slice(0, 3);
+          m.handlers.more = () => { m.showAll = true; m.rerender(); };
+          html = `<div class="advice">${shown.map((a, i) => `<div class="arow ${i === 0 ? 'top' : ''}"><span class="ic">${a.icon}</span><span class="nm">${esc(a.text)}</span>${btn(a.go, a.btn, 'green')}</div>`).join('')}</div>${!m.showAll && adv.length > 3 ? `<div class="row center"><button class="btn" data-a="more">⬇️ المزيد (${adv.length - 3})</button></div>` : ''}`;
         } else if (tab === 'farm') html = this.manageFarm(m, btn);
         else if (tab === 'animals') html = this.manageAnimals(m, btn);
         else if (tab === 'property') html = this.manageProperty(m, btn);

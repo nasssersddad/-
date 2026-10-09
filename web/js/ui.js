@@ -8,6 +8,9 @@ import { installHub, advice } from './hub.js';
 import { RECIPES, STATIONS, BUILD_SPOTS } from './data/recipes.js';
 import { TECH, TECH_BY_ID, KP_TYPES } from './data/tech.js';
 import { NPCS, WEEKDAYS, WEEKDAY_ICONS } from './data/npcs.js';
+import * as unlocks from './systems/unlocks.js';
+import { BUILD_ZONES } from './data/zones.js';
+import { Flyer } from './engine/flyer.js';
 import { MAIN_QUESTS } from './data/quests.js';
 import { DAILY_CALENDAR, WHEEL, CHESTS, ACHIEVEMENTS, ACH_TIER_NAMES, ACH_TIER_REWARDS, DAILY_QUEST_BONUS, AD_PLACEMENTS, AD_SECONDS } from './data/rewards.js';
 import { count, has, add, addStat, bagUsed, bagCap, stored } from './systems/inventory.js';
@@ -58,6 +61,7 @@ export class UI {
 
   bind(game) {
     this.g = game;
+    this.flyer = new Flyer($('flyLayer'));
     document.querySelectorAll('[data-open]').forEach(el => {
       el.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -147,15 +151,28 @@ export class UI {
     const mh = maxHp(s);
     width('hpFill', Math.max(0, (p.hp / mh) * 100) + '%');
     set('hpText', `❤️ ${Math.max(0, p.hp)}/${mh}`);
+    // الدراهم: تطير للعداد، والرقم يعدّ قدامك
     if (this.last.coinsVal !== p.coins) {
-      if (this.last.coinsVal !== undefined && p.coins > this.last.coinsVal) {
-        $('coins').parentElement.classList.remove('pop');
-        void $('coins').offsetWidth;
-        $('coins').parentElement.classList.add('pop');
-      }
+      const prev = this.last.coinsVal;
+      if (prev !== undefined && p.coins > prev) {
+        this.flyGain('🪙', p.coins - prev, $('coins').parentElement);
+        this.coinRoll = { from: this.coinShown ?? prev, to: p.coins, start: performance.now() + 450, dur: 650 };
+      } else { this.coinRoll = null; this.coinShown = p.coins; $('coins').textContent = p.coins.toLocaleString('en'); }
       this.last.coinsVal = p.coins;
-      $('coins').textContent = p.coins.toLocaleString('en');
     }
+    if (this.coinRoll) {
+      const r = this.coinRoll, k = Math.max(0, Math.min(1, (performance.now() - r.start) / r.dur));
+      this.coinShown = Math.round(r.from + (r.to - r.from) * (1 - Math.pow(1 - k, 3)));
+      $('coins').textContent = this.coinShown.toLocaleString('en');
+      if (k >= 1) {
+        this.coinRoll = null;
+        $('coins').parentElement.classList.remove('pop'); void $('coins').offsetWidth; $('coins').parentElement.classList.add('pop');
+      }
+    }
+    // الخبرة: نجوم تطير للمستوى
+    const xpv = p.level * 1e7 + p.xp;
+    if (this.last.xpv !== undefined && xpv > this.last.xpv) this.flyGain('✨', 2, document.querySelector('#hud .avatar'), 18);
+    this.last.xpv = xpv;
     const wd = time.weekday(s);
     set('dayName', `${WEEKDAY_ICONS[wd]} ${WEEKDAYS[wd]}`);
     const rainy = g.rainLevel && g.rainLevel() > 0;
@@ -170,6 +187,9 @@ export class UI {
     set('actIcon', info.icon);
     set('actLabel', info.label);
     $('actionBtn').classList.toggle('pulse', !!g.target);
+    $('actionBtn').classList.toggle('tapme', !!g.tapHint && !this.blocking());
+    const storeBtn = document.querySelector('#dock [data-open="store"]');
+    if (storeBtn) storeBtn.classList.toggle('tapme', !!g.storeHint && !this.blocking());
     if (g.placing) {
       const pl = g.placing;
       set('pbName', `${PLACEABLES[pl.type].icon} ${placement.info(pl.type).name}`);
@@ -206,7 +226,13 @@ export class UI {
       this.last.halfSec = Math.floor(g.t * 2);
       this.dirty = false;
       const now = g.now();
+      // الأزرار اللي ما انفتحت للحين ما تطلع
+      for (const el of document.querySelectorAll('#sidebar [data-open], #dock [data-open]')) el.classList.toggle('lockhide', !unlocks.isUnlocked(s, el.dataset.open));
       const pend = retention.pendingRewardsCount(s, now);
+      const dsx = retention.dailyStatus(s, now);
+      const streak = dsx.available ? (dsx.broken ? 0 : dsx.streak - 1) : dsx.streak;
+      $('streakChip').textContent = streak >= 2 ? `🔥${streak}` : '';
+      $('streakChip').classList.toggle('on', streak >= 2);
       const b = $('badgeRewards');
       b.textContent = pend;
       b.classList.toggle('on', pend > 0);
@@ -222,7 +248,7 @@ export class UI {
       const evReady = events.canClaimTier(s) || (EVENTS.find(e => e.id === s.event.id).game && events.playsLeft(s, g.now()) > 0);
       $('badgeEvents').textContent = evReady ? '!' : '';
       $('badgeEvents').classList.toggle('on', !!evReady);
-      const adv = advice(g).filter(a => !a.go.travel).length;
+      const adv = Math.min(3, advice(g).filter(a => !a.go.travel).length);
       $('badgeManage').textContent = adv;
       $('badgeManage').classList.toggle('on', adv > 0);
       const offers = market.openOffersCount(s);
@@ -250,15 +276,35 @@ export class UI {
   }
 
   // ---------- تنبيهات ----------
+  // الإشعارات بطابور: ثنتين بس على الشاشة، وما يتكرر نفس الكلام خلال 5 ثواني
   toast(text, cls = '', life = 3) {
-    const el = document.createElement('div');
-    el.className = 'toast ' + cls;
-    el.style.setProperty('--life', life + 's');
-    el.textContent = text;
+    const now = performance.now();
+    this.recentToasts = this.recentToasts || new Map();
+    if (this.recentToasts.get(text) > now - 5000) return;
+    this.recentToasts.set(text, now);
+    if (this.recentToasts.size > 40) for (const [k, t] of this.recentToasts) if (t < now - 5000) this.recentToasts.delete(k);
+    this.toastQ = this.toastQ || [];
+    this.toastQ.push({ text, cls, life: Math.min(life, 5) });
+    // لو تكدّست، نخلي أهمها (الإنجازات والمكاسب) ونشيل العادي القديم
+    while (this.toastQ.length > 4) {
+      const i = this.toastQ.findIndex(t => !t.cls);
+      this.toastQ.splice(i >= 0 ? i : 0, 1);
+    }
+    this.pumpToasts();
+  }
+
+  pumpToasts() {
     const box = $('toasts');
-    box.appendChild(el);
-    while (box.children.length > 3) box.firstChild.remove();
-    setTimeout(() => el.remove(), (life + 0.5) * 1000);
+    while (this.toastQ.length && box.children.length < 2) {
+      const t = this.toastQ.shift();
+      const life = this.toastQ.length ? Math.min(t.life, 2.2) : t.life;
+      const el = document.createElement('div');
+      el.className = 'toast ' + t.cls;
+      el.style.setProperty('--life', life + 's');
+      el.textContent = t.text;
+      box.appendChild(el);
+      setTimeout(() => { el.remove(); this.pumpToasts(); }, (life + 0.45) * 1000);
+    }
   }
 
   gainToast(gains) {
@@ -266,10 +312,61 @@ export class UI {
     this.toast(gains.map(x => `${x.icon} ${x.text}`).join('  '), 'gain');
   }
 
-  achievementToast(ach, tier) {
-    this.audio.play('chest');
-    this.toast(`🏅 إنجاز ${ACH_TIER_NAMES[tier]}: ${ach.name}! استلمه من المكافآت`, 'ach', 4);
+  // أيقونات تطير من اللاعب (أو من وسط الشاشة لو فيه نافذة) للعداد
+  flyGain(icon, amount, toEl, size = 22) {
+    const g = this.g;
+    if (!this.flyer || !toEl || !g || !g.renderer) return;
+    let from;
+    if (this.blocking()) from = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    else from = g.renderer.worldToScreen(g.state.player.x, g.state.player.y - 18);
+    const n = amount < 10 ? 2 : amount < 100 ? 4 : amount < 1000 ? 6 : 8;
+    this.flyer.fly(icon, from, toEl, { n: icon === '🪙' ? n : Math.min(n, amount), size, onArrive: (i, c) => { if (icon === '🪙' && (i === 0 || i === c - 1)) this.audio.play('coin'); } });
+  }
+
+  // غرض يطير من مكانه بالعالم للحقيبة
+  flyItem(icon, n, wx, wy) {
+    const g = this.g;
+    if (!this.flyer || !g.renderer) return;
+    this.flyer.fly(icon, g.renderer.worldToScreen(wx, wy), $('bagBtn'), { n: Math.min(3, n), size: 20 });
+  }
+
+  // بطاقة «أول مرة!» تنزل من فوق وتختفي لحالها (ما توقف اللعب)
+  firstTime(f, gains) {
+    this.audio.play('first');
+    this.vibrate(40);
+    const el = document.createElement('div');
+    el.className = 'firstcard';
+    el.innerHTML = `<div class="fic">${f.icon}</div><div class="ftx"><small>🌟 أول مرة!</small><b>${esc(f.title)}</b><span>${esc(f.text)}</span></div>${this.gainsHtml(gains || [])}`;
+    $('game').appendChild(el);
+    setTimeout(() => el.classList.add('out'), 3800);
+    setTimeout(() => el.remove(), 4400);
     this.refresh();
+  }
+
+  // زر جديد انفتح: ينطط ويلمع ومكتوب فوقه «جديد!»
+  announceUnlock(u) {
+    const el = document.querySelector(`#sidebar [data-open="${u.id}"], #dock [data-open="${u.id}"]`);
+    this.audio.play('magic');
+    this.toast(`🔓 انفتح لك: ${u.icon} ${u.name}!`, 'ach', 4);
+    if (!el) return;
+    el.classList.remove('lockhide');
+    el.classList.add('newbtn');
+    el.addEventListener('click', () => el.classList.remove('newbtn'), { once: true });
+    setTimeout(() => el.classList.remove('newbtn'), 20000);
+  }
+
+  // الإنجازات اللي تجي مع بعض تنجمع بإشعار واحد
+  achievementToast(ach, tier) {
+    (this.achQ = this.achQ || []).push({ ach, tier });
+    clearTimeout(this.achTimer);
+    this.achTimer = setTimeout(() => {
+      const list = this.achQ; this.achQ = [];
+      if (!list.length) return;
+      this.audio.play('chest');
+      if (list.length === 1) this.toast(`🏅 إنجاز ${ACH_TIER_NAMES[list[0].tier]}: ${list[0].ach.name}! استلمه من المكافآت`, 'ach', 4);
+      else this.toast(`🏅 ${list.length} إنجازات جديدة! استلمها من 🎁 المكافآت`, 'ach', 4);
+      this.refresh();
+    }, 400);
   }
 
   // ---------- الحوار ----------
@@ -726,6 +823,9 @@ export class UI {
       title: '⚙️ الإعدادات', cls: 'small',
       render: (m) => {
         const st = s.settings;
+        const nb = window.MuzareNative;
+        let privacyOpts = false;
+        try { privacyOpts = !!(nb && nb.privacyOptionsRequired && nb.privacyOptionsRequired()); } catch { /* ما يهم */ }
         const card = (id, icon, name, on, onTxt, offTxt) => `<button class="setcard ${on ? 'on' : ''}" data-a="${id}"><span class="si">${icon}</span><b>${name}</b><span class="sv">${on ? '✅ ' + onTxt : '⛔ ' + offTxt}</span></button>`;
         m.body.innerHTML = `<div class="setgrid">
             ${card('sfx', '🔊', 'الأصوات', st.sfx, 'شغالة', 'طافية')}
@@ -734,9 +834,11 @@ export class UI {
             ${card('big', '🔤', 'حجم الكلام', !!st.bigText, 'كبير', 'عادي')}
             ${card('vib', '📳', 'الاهتزاز', st.vibrate !== false, 'شغال', 'طافي')}
             ${card('arrow', '🧭', 'سهم المهام', st.arrow !== false, 'يطلع', 'مخفي')}
+            ${card('notify', '🔔', 'إشعارات الجوال', st.notify !== false, 'زرعك جاهز، البيض، المكافأة', 'طافية')}
           </div>
           <button class="btn green big wide" data-a="help">📖 كيف ألعب؟</button>
-          <p class="muted center">المزارع — نسخة 1.1 • إعلانات اليوم الباقية: ${retention.adsLeft(s, g.now())}</p>
+          <div class="row center"><button class="btn" data-a="privacy">📄 سياسة الخصوصية</button>${privacyOpts ? '<button class="btn" data-a="privopts">🛡️ خيارات الخصوصية</button>' : ''}</div>
+          <p class="muted center">المزارع — نسخة 1.2 • إعلانات اليوم الباقية: ${retention.adsLeft(s, g.now())}</p>
           <div class="row center"><button class="btn tiny" data-a="reset" style="background:#e8b0a0">🗑️ ابدأ من جديد</button></div>`;
         const flip = (fn) => () => { fn(); this.audio.play('ui'); g.save(); m.rerender(); };
         m.handlers.music = flip(() => { st.music = !st.music; this.audio.setMusic(st.music); });
@@ -745,7 +847,10 @@ export class UI {
         m.handlers.big = flip(() => { st.bigText = !st.bigText; this.applyTextSize(); });
         m.handlers.vib = flip(() => { st.vibrate = st.vibrate === false; });
         m.handlers.arrow = flip(() => { st.arrow = st.arrow === false; });
+        m.handlers.notify = flip(() => { st.notify = st.notify === false; });
         m.handlers.help = () => { m.close(); this.openHelp(); };
+        m.handlers.privacy = () => this.openPrivacy();
+        m.handlers.privopts = () => { try { nb.showPrivacyOptions(); } catch { /* ما يهم */ } };
         m.handlers.reset = async () => {
           const ok = await this.confirm('متأكد؟ كل تقدمك بينمسح ومايرجع!');
           if (!ok) return;
@@ -754,6 +859,13 @@ export class UI {
           location.reload();
         };
       },
+    });
+  }
+
+  openPrivacy() {
+    this.modal({
+      title: '📄 سياسة الخصوصية', cls: 'store',
+      render: (m) => { m.body.innerHTML = '<iframe class="privframe" src="privacy.html" title="سياسة الخصوصية"></iframe>'; },
     });
   }
 
@@ -782,8 +894,10 @@ export class UI {
     const s = g.state;
     const now = g.now();
     retention.ensureDailyQuests(s, now);
+    retention.ensureWeekly(s, now);
     if (!tab) {
       if (retention.dailyStatus(s, now).available) tab = 'daily';
+      else if (!s.weekly.claimed && retention.weeklyDone(s)) tab = 'week';
       else if (retention.wheelStatus(s, now).free) tab = 'wheel';
       else if (s.daily.dq.some(q => !q.claimed && retention.dqProgress(s, q) >= q.target) || retention.dqBonusReady(s)) tab = 'dq';
       else if (retention.claimableAchievements(s).length) tab = 'ach';
@@ -800,11 +914,13 @@ export class UI {
           { id: 'daily', label: '📅 اليومية', badge: ds.available ? '!' : 0 },
           { id: 'wheel', label: '🎡 العجلة', badge: ws.free ? '!' : 0 },
           { id: 'dq', label: '✅ مهام اليوم', badge: dqReady },
+          { id: 'week', label: '🏆 تحدي الأسبوع', badge: !s.weekly.claimed && retention.weeklyDone(s) ? '!' : 0 },
           { id: 'ach', label: '🏅 الإنجازات', badge: achReady },
         ], tab, (v) => { tab = v; m.rerender(); });
         if (tab === 'daily') this.renderDaily(m, ds);
         else if (tab === 'wheel') this.renderWheel(m, ws);
         else if (tab === 'dq') this.renderDQ(m);
+        else if (tab === 'week') this.renderWeekly(m);
         else this.renderAch(m);
       },
     });
@@ -814,7 +930,13 @@ export class UI {
     const g = this.g;
     const s = g.state;
     const claimedIdx = ds.available ? ds.dayIndex - 1 : ds.dayIndex;
-    m.body.innerHTML = `<p class="streak center">🔥 سلسلة الدخول: ${ds.available ? ds.streak - 1 : ds.streak} يوم ${ds.broken ? '<small class="muted">(انقطعت السلسلة، ابدأ من جديد!)</small>' : ''}</p>
+    const canRestore = retention.canRestoreStreak(s, g.now()) && retention.adsLeft(s, g.now()) > 0;
+    m.handlers.restore = async () => {
+      if (!(await g.watchAd('streak'))) return;
+      if (retention.restoreStreak(s, g.now())) { this.audio.play('magic'); this.toast(`🔥 رجّعنا سلسلتك: ${s.daily.streak} يوم!`, 'gain', 3); g.save(); }
+      m.rerender();
+    };
+    m.body.innerHTML = `<p class="streak center">🔥 سلسلة الدخول: ${ds.available ? ds.streak - 1 : ds.streak} يوم ${ds.broken ? (canRestore ? `<small class="muted">(انقطعت! كانت ${s.daily.streak} يوم)</small> <button class="btn ad" data-a="restore">رجّع سلسلتك 🔥</button>` : '<small class="muted">(انقطعت السلسلة، ابدأ من جديد!)</small>') : ''}</p>
       <div class="calendar">${DAILY_CALENDAR.map((r, i) => {
         const icon = describeReward(r)[0].icon;
         return `<div class="cday ${i <= claimedIdx ? 'got' : ''} ${ds.available && i === ds.dayIndex ? 'today' : ''} ${i === 6 ? 'big' : ''}"><div class="n">اليوم ${i + 1}</div><div class="i">${icon}</div>${r.label}</div>`;
@@ -827,6 +949,31 @@ export class UI {
       const choice = await this.offer({ title: `🎁 هدية اليوم ${r.dayIndex + 1}`, subtitle: `سلسلة ${r.streak} يوم 🔥`, reward: r.reward, ad: 'daily_x2' });
       g.claimReward(choice === 'x2' ? doubleIt(r.reward) : r.reward, null, true);
       this.openRewards();
+    };
+  }
+
+  // تحدي الأسبوع: 5 أهداف وجايزة كبيرة
+  renderWeekly(m) {
+    const g = this.g;
+    const s = g.state;
+    const w = s.weekly;
+    const done = retention.weeklyDone(s);
+    const msLeft = (() => { const d = new Date(g.now()); const toSat = (6 - d.getDay() + 7) % 7 || 7; const e = new Date(d.getFullYear(), d.getMonth(), d.getDate() + toSat); return e - d; })();
+    const daysLeft = Math.ceil(msLeft / 86400000);
+    m.body.innerHTML = `<p class="howto">🏆 خلّص الخمس أهداف قبل نهاية الأسبوع (باقي ${daysLeft} يوم) وخذ <b>صندوق أسطوري 👑 + دراهم${s.built.stable ? ' + ناقة بخاصية نادرة ✨' : ''}</b>.</p>
+      ${w.goals.map(q => {
+        const pr = retention.weeklyProgress(s, q);
+        return `<div class="dq"><div class="t">${pr >= q.target ? '✅' : '🎯'} ${esc(q.name)}<div class="prog"><i style="width:${(pr / q.target) * 100}%"></i></div><small class="muted">${pr}/${q.target}</small></div></div>`;
+      }).join('')}
+      <div class="row center" style="margin-top:10px">${w.claimed ? '<p class="muted">استلمت جايزة الأسبوع ✔ تحدي جديد يبدأ السبت!</p>' : `<button class="btn green big" data-a="wclaim" ${done ? '' : 'disabled'}>🏆 استلم الجايزة الكبيرة</button>`}</div>`;
+    m.handlers.wclaim = () => {
+      const r = retention.claimWeekly(s);
+      if (!r) return;
+      m.close();
+      this.audio.play('rare');
+      g.fx.goldRain(s.player.x, s.player.y - 60, 220);
+      if (r.rareCamel) g.giftRareCamel();
+      g.claimReward({ coins: r.coins, chest: r.chest }, '🏆 بطل الأسبوع!');
     };
   }
 
@@ -1886,6 +2033,33 @@ export class UI {
     });
   }
 
+  // «وأنت غايب...»: ملخص اللي صار، وزر يستلم الكل
+  awayScreen(rep) {
+    const g = this.g;
+    return new Promise((resolve) => {
+      this.audio.play('chest');
+      const h = rep.hours >= 1 ? `${Math.floor(rep.hours)} ساعة` : `${Math.round(rep.hours * 60)} دقيقة`;
+      const rows = [];
+      if (rep.coins) rows.push(['🪙', `الخان جمع لك <b>${rep.coins.toLocaleString('en')}</b> درهم${rep.capped ? ' (الحد 8 ساعات)' : ''}`]);
+      if (rep.grown) rows.push(['🌱', `<b>${rep.grown}</b> حوض كبر وأنت غايب`]);
+      if (rep.ready) rows.push(['🧺', `<b>${rep.ready}</b> محصول جاهز للحصاد!`]);
+      if (rep.eggsTotal) rows.push(['🥚', `الدجاج باض <b>${rep.eggsTotal}</b> بيضة`]);
+      for (const [st, n] of Object.entries(rep.jobs)) rows.push([STATIONS[st].icon, `${STATIONS[st].name} خلّص <b>${n}</b> طلب`]);
+      if (rep.offers) rows.push(['📩', `<b>${rep.offers}</b> عرض على نياقك`]);
+      this.modal({
+        title: '🏜️ وأنت غايب...', cls: 'small', closable: false,
+        render: (m) => {
+          const canAd = rep.coins > 0 && retention.adsLeft(g.state, g.now()) > 0;
+          m.body.innerHTML = `<p class="center muted">غبت ${h}، ومزرعتك ما وقفت:</p>
+            <div class="awaylist">${rows.map(([ic, t], i) => `<div class="arow" style="animation-delay:${0.15 + i * 0.18}s"><span class="ic">${ic}</span><span class="nm">${t}</span></div>`).join('')}</div>
+            <div class="row center">${canAd ? '<button class="btn ad big" data-a="x2">ضاعف الدراهم ×2</button>' : ''}<button class="btn green big" data-a="x1">📥 استلم الكل</button></div>`;
+          m.handlers.x1 = () => { m.close(); resolve('x1'); };
+          m.handlers.x2 = async () => { const ok = await g.watchAd('offline_x2'); m.close(); resolve(ok ? 'x2' : 'x1'); };
+        },
+      });
+    });
+  }
+
   chest(rarity, contents) {
     const g = this.g;
     return new Promise((resolve) => {
@@ -1894,15 +2068,29 @@ export class UI {
         title: def.name, cls: 'small', closable: false,
         render: (m) => {
           const icon = rarity === 'legendary' ? '👑' : rarity === 'rare' ? '💎' : '📦';
-          m.body.innerHTML = `<div class="reveal shine rarity-${rarity}"><div class="big-ic">${icon}</div><p class="muted">جاري الفتح...</p></div>`;
-          setTimeout(() => {
-            if (m.closed) return;
+          // تفتحه بيدك: كل ضغطة يهتز أقوى، والثالثة ينفتح (ولو ما ضغطت ينفتح لحاله)
+          let taps = 0, opened = false;
+          m.body.innerHTML = `<div class="reveal shine rarity-${rarity}"><button class="chesttap" data-a="tap"><span class="big-ic">${icon}</span></button><p class="tapmsg">👆 اضغط الصندوق عشان تفتحه!</p></div>`;
+          m.handlers.tap = () => {
+            if (opened) return;
+            taps++;
+            const b = m.body.querySelector('.chesttap');
+            if (b) { b.className = 'chesttap t' + taps; void b.offsetWidth; }
+            this.audio.play('tick', 1 + taps * 0.25);
+            this.vibrate(20 * taps);
+            if (taps >= 3) open();
+          };
+          const open = () => {
+            if (opened || m.closed) return;
+            opened = true;
+            this.vibrate(60);
             this.audio.play('chest');
             g.fx.confetti(...g.fx.at(g.state.player.x, g.state.player.y, 20));
             const canAd = retention.adsLeft(g.state, g.now()) > 0;
             m.body.innerHTML = `<div class="reveal shine rarity-${rarity}"><div class="big-ic">✨${icon}✨</div>${this.gainsHtml(describeReward(contents))}</div>
               <div class="row center">${canAd ? '<button class="btn ad big" data-a="x2">ضاعف الصندوق</button>' : ''}<button class="btn green big" data-a="x1">خذها</button></div>`;
-          }, 900);
+          };
+          setTimeout(open, 3500);
           m.handlers.x1 = () => { m.close(); resolve('x1'); };
           m.handlers.x2 = async () => {
             const ok = await g.watchAd('chest_x2');
@@ -1929,13 +2117,29 @@ export class UI {
     });
   }
 
+  // طلوع المستوى: شاشة احتفال بأشعة ذهبية، والجوايز تنقلب وحدة وحدة، و«انفتح لك»
   levelUp(level, gains, chests) {
-    const all = [...gains];
-    for (const c of chests || []) all.push(...c.gains);
+    const raw = [...gains];
+    for (const c of chests || []) raw.push(...c.gains);
+    // لو طلعت كم مستوى مرة وحدة: نجمع الدراهم والنقاط ونشيل المكرر
+    const all = [];
+    for (const x of raw) {
+      const m = /^\+(\d+)$/.exec(String(x.text).trim().split(' ').pop()) && /^(.*?)\+(\d+)$/.exec(String(x.text).trim());
+      const same = all.find(y => y.icon === x.icon && (m ? /\+\d+$/.test(y.text) && y.text.replace(/\+\d+$/, '') === m[1] : y.text === x.text));
+      if (!same) all.push({ ...x });
+      else if (m) same.text = m[1] + '+' + (Number(/\+(\d+)$/.exec(same.text)[1]) + Number(m[2]));
+    }
+    const opened = unlocks.unlocksAtLevel(this.g.state, level, { seeds: SEEDS, zones: BUILD_ZONES });
+    this.vibrate(90);
+    all.forEach((_, i) => setTimeout(() => this.audio.play('tick'), 450 + i * 180));
     this.modal({
-      title: '⬆️ مستوى جديد!', cls: 'small',
+      title: '⬆️ مستوى جديد!', cls: 'small lvlmodal',
       render: (m) => {
-        m.body.innerHTML = `<div class="reveal shine"><div class="big-ic">🎉</div><h2 style="font:700 30px Kufi,Cairo;margin:4px 0;color:var(--red)">المستوى ${level}</h2>${this.gainsHtml(all)}</div><div class="row center"><button class="btn green big" data-a="close">يا سلام!</button></div>`;
+        m.body.innerHTML = `<div class="lvlup"><div class="rays"></div>
+          <div class="lvlnum"><small>المستوى</small><b>${level}</b></div>
+          ${this.gainsHtml(all)}
+          ${opened.length ? `<div class="opened"><b>🔓 انفتح لك:</b> ${opened.map(o => `<span>${o.icon} ${esc(o.name)}</span>`).join('')}</div>` : ''}
+          </div><div class="row center"><button class="btn green big" data-a="close">يا سلام! 🎉</button></div>`;
       },
     });
   }

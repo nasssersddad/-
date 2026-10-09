@@ -44,6 +44,9 @@ await tick(600);
 await shot('01-intro');
 await skip();
 await tick(300);
+// لاعب جديد: أزرار قليلة بس (الحقيبة، المتجر، كيف ألعب)
+const freshBtns = await ev(() => [...document.querySelectorAll('#sidebar [data-open], #dock [data-open]')].filter(e => e.offsetParent !== null).map(e => e.dataset.open).sort());
+console.log('fresh buttons:', freshBtns);
 
 // 1) كلّم الفانوس
 await ev(() => { const g = window.__game; const l = g.worldObjById.lamp; g.state.player.x = l.x + 14; g.state.player.y = l.y + 2; g.state.player.dir = 'left'; });
@@ -351,7 +354,14 @@ const wk = await ev(async () => {
   return { hired: s.workers.length, assigned, strikers, cost, back };
 });
 console.log('workers:', wk);
-await tick(2500);
+await tick(1000);
+// نستنى العمّال يطلعون بالعالم (لو فيه نافذة مفتوحة نسكّرها)
+for (let i = 0; i < 30; i++) {
+  const ok = await ev(() => { const g = window.__game; const w = g.state.workers[0]; return !!(g.workerRt && g.workerRt[w.id]); });
+  if (ok) break;
+  if (i === 5) console.log('waiting for workers, modals:', await ev(() => window.__game.ui.modals.map(m => m.el.querySelector('h2').textContent)));
+  await skip(); await closeModals(); await tick(250);
+}
 await ev(() => { const g = window.__game; const w = g.state.workers[0]; const rt = g.workerRt[w.id]; g.state.player.x = rt.x - 20; g.state.player.y = rt.y; });
 await tick(300);
 await closeModals();
@@ -739,22 +749,26 @@ const nf = await ev(async () => {
   return out;
 });
 console.log('new features:', nf);
-// روح للقن واستلم البيض بزر ✋
+// روح للقن واستلم البيض بزر ✋ (أول نسكّر أي نافذة، مثل احتفال المستوى اللي يطلع من خبرة البناء)
 await tick(600);
+await settle();
 const coopRun = await ev(async () => {
   const g = window.__game, s = g.state;
   const o = g.worldObjById['spot:coop'];
   if (!o) return { none: true };
+  for (const m of [...g.ui.modals]) { m.closable = true; m.close(); }
   g.placeAt({ x: o.x, y: o.y + 14 }); s.player.dir = 'up';
   await new Promise(r => setTimeout(r, 200));
   const t = g.findTarget();
   const kind = t && t.kind;
   const I = await import('./js/systems/inventory.js');
   const C = await import('./js/systems/coop.js');
+  // نفضّي شوي من الحقيبة (الجوايز العشوائية ممكن تعبّيها) عشان البيض يدخل
+  while (I.bagFree(s) < 20) { const [k] = Object.entries(s.inv).filter(([id]) => !id.startsWith('seed_')).sort((a, b) => b[1] - a[1])[0]; s.inv[k] = Math.floor(s.inv[k] / 2); }
   const before = I.total(s, 'egg');
   const inCoop = C.coop(s).eggs;
   g.doAction(t, true);
-  for (let k = 0; k < 80 && g.anim; k++) await new Promise(r => setTimeout(r, 50));
+  for (let k = 0; k < 80 && g.anim; k++) { for (const m of [...g.ui.modals]) { m.closable = true; m.close(); } await new Promise(r => setTimeout(r, 50)); }
   const got = I.total(s, 'egg') - before;
   if (got !== inCoop || C.coop(s).eggs !== 0) return { kind, got, inCoop, left: C.coop(s).eggs, bag: I.bagUsed(s), cap: I.bagCap(s) };
   // شكشوكة بالموقد
@@ -810,6 +824,75 @@ await tick(300);
 await shot('64-land-store');
 await closeModals();
 
+// 23) أمتع وأسهل: كومبو، أيقونات طايرة، احتفال المستوى، شاشة الغياب، الإشعارات، الخصوصية، تحدي الأسبوع
+await settle();
+const fun = await ev(async () => {
+  const g = window.__game, s = g.state;
+  const out = {};
+  out.allBtns = [...document.querySelectorAll('#sidebar [data-open], #dock [data-open]')].filter(e => e.offsetParent !== null).length;
+  const c0 = s.stats.combos || 0;
+  for (let i = 0; i < 5; i++) g.comboHit(s.player.x, s.player.y);
+  out.combo = (s.stats.combos || 0) - c0;
+  s.player.coins += 120;
+  await new Promise(r => setTimeout(r, 250));
+  out.flyers = document.querySelectorAll('#flyLayer .flyer').length;
+  out.firsts = Object.keys(s.flags.firsts || {}).length;
+  return out;
+});
+await tick(900);
+await ev(() => { const g = window.__game; const s = g.state; const need = 99999; s.player.xp = 0; g.gainXp(Math.min(need, 400 + s.player.level * 60), s.player.x, s.player.y); });
+await tick(700);
+fun.levelModal = await ev(() => !!document.querySelector('.lvlup .lvlnum'));
+await shot('65-level-up');
+await closeModals();
+await settle();
+// شاشة الغياب: نرجّع آخر دخول ساعتين ورا، وحوض مسقي يكبر
+const awayInfo = await ev(async () => {
+  const g = window.__game, s = g.state;
+  const id = Object.keys(s.plots).find(k => s.plots[k] && s.plots[k].stage < 1) || null;
+  const plotId = id || g.world.objects.find(o => o.kind === 'plot' && o.group === 1).id;
+  s.plots[plotId] = { seed: 'seed_wheat', stage: 0, watered: true };
+  s.lastSeen = g.now() - 2 * 3600000;
+  g.awayFlow();
+  await new Promise(r => setTimeout(r, 500));
+  return { plotId, shown: !!document.querySelector('.awaylist'), rows: document.querySelectorAll('.awaylist .arow').length };
+});
+await shot('66-away');
+await page.click('[data-a="x1"]');
+await tick(500);
+awayInfo.grown = await ev((id) => window.__game.state.plots[id].stage, awayInfo.plotId);
+await settle();
+// إشعارات الجوال (جسر أندرويد مزيّف) وخيارات الخصوصية
+const notif = await ev(() => {
+  const calls = [];
+  window.MuzareNative = { scheduleNotification: (...a) => calls.push(a), cancelNotifications: () => calls.push(['cancel']), privacyOptionsRequired: () => true, showPrivacyOptions: () => { window.__privShown = true; }, vibrate: () => {} };
+  // زرع مسقي بيجهز، ودجاج عنده أكل: لازم يطلع إشعار لكل واحد + المكافأة
+  const s = window.__game.state;
+  const pid = Object.keys(s.plots)[0];
+  s.plots[pid] = { seed: 'seed_wheat', stage: 2, watered: true };
+  s.coop.feedMin = 300;
+  const n = window.__game.scheduleNotifs();
+  window.__scheduleNotifs();
+  return { n, calls: calls.filter(c => c[0] !== 'cancel').length, cancels: calls.filter(c => c[0] === 'cancel').length, sample: calls.find(c => c[0] !== 'cancel') };
+});
+await ev(() => window.__game.ui.openSettings());
+await tick(300);
+notif.privBtn = await ev(() => !!document.querySelector('[data-a="privopts"]'));
+await page.click('[data-a="privopts"]');
+notif.privShown = await ev(() => !!window.__privShown);
+await page.click('[data-a="privacy"]');
+await tick(800);
+notif.policy = await ev(() => { const f = document.querySelector('.privframe'); return !!(f && f.contentDocument && /AdMob/.test(f.contentDocument.body.textContent)); });
+await shot('67-privacy');
+await closeModals();
+await ev(() => { delete window.MuzareNative; });
+await ev(() => window.__game.ui.openRewards('week'));
+await tick(300);
+fun.weekly = await ev(() => (window.__game.state.weekly || { goals: [] }).goals.length);
+await shot('68-weekly');
+await closeModals();
+console.log('fun:', fun, 'away:', awayInfo, 'notif:', notif);
+
 // حفظ وتحميل
 await settle();
 const saved = await ev(() => { window.__game.save(); return JSON.parse(localStorage.getItem('almuzare_save')).player.coins; });
@@ -831,6 +914,12 @@ server.close();
 const fatal = errors.filter(e => !/favicon/.test(e));
 if (fatal.length) {
   console.error('❌ أخطاء بالمتصفح:\n' + fatal.join('\n'));
+  process.exit(1);
+}
+if (freshBtns.join(',') !== 'help,inventory,store' || fun.allBtns < 10 || fun.combo !== 1 || fun.flyers < 1 || fun.firsts < 3 || !fun.levelModal || fun.weekly !== 5
+  || !awayInfo.shown || awayInfo.rows < 2 || awayInfo.grown !== 1
+  || notif.n !== 3 || notif.calls !== 6 || notif.cancels < 2 || !notif.privBtn || !notif.privShown || !notif.policy) {
+  console.error('❌ أمتع وأسهل / الغياب / الإشعارات / الخصوصية فيها مشكلة', { freshBtns, fun, awayInfo, notif });
   process.exit(1);
 }
 if (!nf.lockedBefore || !nf.opened || !nf.fieldInFarm2 || !nf.path || !nf.path.on || !nf.path.offRoad || !(nf.path.dPath > nf.path.dSand * 1.3) || !nf.coopZone || !nf.coopBuilt || nf.hens !== 3 || nf.eggs < 3

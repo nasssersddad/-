@@ -37,7 +37,7 @@
 
     <div id="minimap" data-open="map"><canvas></canvas><span class="mmtag">🗺️ الخريطة</span></div>
     <div id="sidebar">
-      <button class="sbtn" data-open="rewards">🎁<span class="badge" id="badgeRewards"></span><small>مكافآت</small></button>
+      <button class="sbtn" data-open="rewards">🎁<span class="badge" id="badgeRewards"></span><span class="streakchip" id="streakChip"></span><small>مكافآت</small></button>
       <button class="sbtn" data-open="events">🎪<span class="badge" id="badgeEvents"></span><small>فعاليات</small></button>
       <button class="sbtn" data-open="tech">🔮<span class="badge dot" id="badgeTech"></span><small>المعرفة</small></button>
       <button class="sbtn" data-open="relics">🏺<small>التحف</small></button>
@@ -79,6 +79,7 @@
     </div>
 
     <div id="toasts"></div>
+    <div id="flyLayer"></div>
     <div id="dialog" class="hidden">
       <canvas id="portrait" width="64" height="64"></canvas>
       <div class="dbody">

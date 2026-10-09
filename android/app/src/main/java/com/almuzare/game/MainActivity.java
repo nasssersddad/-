@@ -3,6 +3,7 @@ package com.almuzare.game;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.view.WindowManager;
@@ -12,6 +13,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
+import android.window.OnBackInvokedDispatcher;
 
 import androidx.webkit.WebViewAssetLoader;
 
@@ -65,6 +67,11 @@ public class MainActivity extends Activity {
         web.loadUrl(START_URL);
 
         Reminders.requestPermissionIfNeeded(this);
+
+        // أندرويد 13 وفوق (وإجباري مع targetSdk 36): زر الرجوع يجي عن طريق OnBackInvokedCallback
+        if (Build.VERSION.SDK_INT >= 33) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::handleBack);
+        }
     }
 
     @Override
@@ -74,14 +81,16 @@ public class MainActivity extends Activity {
         web.onResume();
         web.resumeTimers();
         Reminders.cancel(this);
+        web.evaluateJavascript("window.__onResume && window.__onResume()", null);
     }
 
     @Override
     protected void onPause() {
-        web.evaluateJavascript("window.__saveNow && window.__saveNow()", null);
+        // احتياط: تذكير المكافأة، واللعبة تبدّله بإشعاراتها (زرعك جاهز، البيض...) إذا اشتغل الكود
+        Reminders.schedule(this, REMINDER_DELAY_MS);
+        web.evaluateJavascript("window.__saveNow && window.__saveNow(); window.__scheduleNotifs && window.__scheduleNotifs()", null);
         web.onPause();
         web.pauseTimers();
-        Reminders.schedule(this, REMINDER_DELAY_MS);
         super.onPause();
     }
 
@@ -100,6 +109,10 @@ public class MainActivity extends Activity {
     @SuppressWarnings("deprecation")
     @Override
     public void onBackPressed() {
+        handleBack();
+    }
+
+    private void handleBack() {
         // اللعبة تسكّر النافذة المفتوحة، وإذا ما فيه شي مفتوح نطلب ضغطة ثانية للخروج
         web.evaluateJavascript("window.__androidBack ? window.__androidBack() : false", value -> {
             if ("true".equals(value)) return;

@@ -9,9 +9,12 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 
-/** يطلع إشعار "مكافأتك اليومية جاهزة". */
+/** يطلع إشعار التذكير (النص من اللعبة، أو "مكافأتك اليومية جاهزة" إذا ما فيه نص). */
 public class ReminderReceiver extends BroadcastReceiver {
     private static final String CHANNEL = "daily_reward";
+    static final String EXTRA_ID = "id";
+    static final String EXTRA_TITLE = "title";
+    static final String EXTRA_TEXT = "text";
 
     @SuppressWarnings("deprecation")
     @Override
@@ -23,6 +26,11 @@ public class ReminderReceiver extends BroadcastReceiver {
         Intent open = new Intent(context, MainActivity.class);
         open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent pi = PendingIntent.getActivity(context, 0, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        int id = intent.getIntExtra(EXTRA_ID, 1);
+        String title = intent.getStringExtra(EXTRA_TITLE);
+        String text = intent.getStringExtra(EXTRA_TEXT);
+        if (title == null) title = context.getString(R.string.reminder_title);
+        if (text == null) text = context.getString(R.string.reminder_text);
 
         Notification.Builder b;
         if (Build.VERSION.SDK_INT >= 26) {
@@ -33,10 +41,11 @@ public class ReminderReceiver extends BroadcastReceiver {
             b = new Notification.Builder(context);
         }
         b.setSmallIcon(R.drawable.ic_notify)
-                .setContentTitle(context.getString(R.string.reminder_title))
-                .setContentText(context.getString(R.string.reminder_text))
+                .setContentTitle(title)
+                .setContentText(text)
+                .setStyle(new Notification.BigTextStyle().bigText(text))
                 .setContentIntent(pi)
                 .setAutoCancel(true);
-        nm.notify(1, b.build());
+        nm.notify(id, b.build());
     }
 }

@@ -156,5 +156,79 @@ export function pendingRewardsCount(state, now) {
   n += state.daily.dq.filter(q => !q.claimed && dqProgress(state, q) >= q.target).length;
   if (dqBonusReady(state)) n++;
   n += claimableAchievements(state).length;
+  if (state.weekly && !state.weekly.claimed && weeklyDone(state)) n++;
   return n;
+}
+
+// ---------- سلسلة الأيام ----------
+// فوّت يوم؟ تقدر ترجّع سلسلتك بإعلان، مرة وحدة بالأسبوع
+export function canRestoreStreak(state, now) {
+  const st = dailyStatus(state, now);
+  return st.available && st.broken && state.daily.streak >= 2 && state.daily.restoreWeek !== weekIndex(now);
+}
+
+export function restoreStreak(state, now) {
+  if (!canRestoreStreak(state, now)) return false;
+  state.daily.lastClaim = dateKey(now - 86400000);
+  state.daily.restoreWeek = weekIndex(now);
+  return true;
+}
+
+// ---------- تحدي الأسبوع ----------
+// رقم الأسبوع (يبدأ السبت) بتوقيت الجوال
+export function weekIndex(now) {
+  const d = new Date(now);
+  const days = Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000);
+  return Math.floor((days + 5) / 7);
+}
+
+export const WEEKLY_POOL = [
+  { id: 'harvest', stat: 'harvested', name: 'احصد {n} محصول', range: [30, 50] },
+  { id: 'coins', stat: 'coinsEarned', name: 'اكسب {n} درهم', range: [1500, 3000] },
+  { id: 'requests', stat: 'requests', name: 'سلّم {n} طلبات جيران', range: [3, 6] },
+  { id: 'crafted', stat: 'crafted', name: 'اصنع {n} شي', range: [15, 30] },
+  { id: 'guests', stat: 'guests', name: 'قدّم لـ{n} ضيف', range: [8, 15] },
+  { id: 'combo', stat: 'combos', name: 'سوّ كومبو ×5 {n} مرات', range: [5, 10] },
+  { id: 'eggs', stat: 'eggs', name: 'اجمع {n} بيضة', range: [20, 40], needs: 'coop' },
+  { id: 'orders', stat: 'ordersDone', name: 'سلّم {n} طلبات قوافل', range: [4, 8], needs: 'orders_board' },
+  { id: 'milk', stat: 'milked', name: 'احلب {n} مرة', range: [8, 15], needs: 'stable' },
+];
+export const WEEKLY_COUNT = 5;
+
+export function ensureWeekly(state, now) {
+  const wk = weekIndex(now);
+  if (state.weekly && state.weekly.week === wk) return false;
+  const rng = mulberry32(hashString('week:' + wk + ':' + state.seed));
+  const pool = WEEKLY_POOL.filter(q => !q.needs || state.built[q.needs]);
+  const chosen = [];
+  while (chosen.length < WEEKLY_COUNT && pool.length) chosen.push(pool.splice(Math.floor(rng() * pool.length), 1)[0]);
+  const mul = difficulty(stage(state));
+  state.weekly = {
+    week: wk, claimed: false,
+    goals: chosen.map(q => {
+      const n = Math.max(1, Math.round(randInt(rng, q.range[0], q.range[1]) * mul));
+      return { id: q.id, stat: q.stat, name: q.name.replace('{n}', n), target: n, base: state.stats[q.stat] || 0 };
+    }),
+  };
+  return true;
+}
+
+export function weeklyProgress(state, g) {
+  return Math.max(0, Math.min(g.target, (state.stats[g.stat] || 0) - g.base));
+}
+
+export function weeklyDone(state) {
+  return !!state.weekly && state.weekly.goals.every(g => weeklyProgress(state, g) >= g.target);
+}
+
+// الجايزة الكبيرة: صندوق أسطوري ودراهم، وناقة بخاصية نادرة (لو عندك مراح)
+export function claimWeekly(state) {
+  if (!state.weekly || state.weekly.claimed || !weeklyDone(state)) return null;
+  state.weekly.claimed = true;
+  addWeeklyStat(state);
+  return { coins: Math.round(600 * rewardScale(stage(state))), chest: 'legendary', rareCamel: !!state.built.stable };
+}
+
+function addWeeklyStat(state) {
+  state.stats.weeklyDone = (state.stats.weeklyDone || 0) + 1;
 }

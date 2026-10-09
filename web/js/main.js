@@ -28,12 +28,16 @@ const particles = new Particles();
 const renderer = new Renderer($('world'), $('fx'), $('post'));
 const game = new Game({ ui, audio, input, particles, storage: safeStorage() });
 window.__game = game;
+game.renderer = renderer;
 const minimap = new Minimap($('minimap'));
 
 // زر الرجوع بالأندرويد
 window.__androidBack = () => ui.back();
 // الكود الأصلي ينادي هذي قبل ما يتوقف التطبيق
 window.__saveNow = () => game.save();
+// وقبل ما يطلع: يجدول إشعارات (زرعك جاهز، البيض، المكافأة)
+window.__scheduleNotifs = () => game.scheduleNotifs();
+window.__onResume = () => { if (started) game.onResume(); };
 
 window.addEventListener('resize', () => renderer.resize());
 // وضع البناء: الضغط (بدون سحب) على الخريطة يودّي الشبح لمكان الإصبع
@@ -50,8 +54,9 @@ $('touch').addEventListener('pointerup', (e) => {
   tapStart = null;
 });
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { game.save(); audio.suspend(); }
-  else audio.resume();
+  if (!started) return;
+  if (document.hidden) { game.save(); game.scheduleNotifs(); audio.suspend(); }
+  else { audio.resume(); game.onResume(); }
 });
 window.addEventListener('pagehide', () => game.save());
 

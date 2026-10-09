@@ -36,6 +36,7 @@ test('rain waters growing plots only, fills the trough and the herd drinks', () 
   assert.equal(s.plots.plot1.watered, false);
   assert.equal(s.trough.water, 3);
   assert.equal(s.camels[0].wateredDay, 4);
+  assert.equal(s.stats.watered, 1, 'rain watering counts, so the watering quest never gets stuck on a rainy day');
 });
 
 test('the home farm has plenty of trees, rocks and clay', () => {

@@ -99,6 +99,13 @@ export class Renderer {
     return [cam.x + (cx - r.left) / this.scale, cam.y + (cy - r.top) / this.scale];
   }
 
+  // من العالم لإحداثيات الشاشة (للأيقونات الطايرة)
+  worldToScreen(wx, wy) {
+    const r = this.fc.getBoundingClientRect();
+    const cam = this.cam || { x: 0, y: 0 };
+    return { x: r.left + (wx - cam.x) * this.scale, y: r.top + (wy - cam.y) * this.scale };
+  }
+
   camera(game) {
     const p = game.placing ? placement.anchor(game.placing) : game.arranging ? { x: game.arranging.cx, y: game.arranging.cy + 10 } : game.state.player;
     const mw = (game.mode === 'dungeon' ? DW : game.mode === 'open' ? OW_W : MAP_W) * TILE;
@@ -1170,6 +1177,8 @@ export class Renderer {
   }
 
   questArrow(game, cam, toScreen) {
+    game.tapHint = false;
+    game.storeHint = false;
     const q = currentQuest(game.state);
     if (!q || !q.target) return;
     let pos = null;
@@ -1196,6 +1205,7 @@ export class Renderer {
     if (!pos) {
       // المبنى ما انحط للحين: نذكّرك تفتح المتجر
       if (q.target.startsWith('spot:') && Object.values(PLACEABLES).some(d => d.spot === q.target.slice(5))) {
+        game.storeHint = true;
         const f = this.f, dpr = this.dpr, W = this.fc.width, H = this.fc.height;
         const bob = Math.sin(game.t * 4) * 3 * dpr;
         f.save();
@@ -1210,8 +1220,20 @@ export class Renderer {
       }
       return;
     }
-    if (game.target && Math.hypot(game.target.x - pos.x, game.target.y - pos.y) < 4) return;
+    // أول المهام: يد 👆 تنطط تحت الهدف، ولما توصله تدلّك على زر ✋
+    const early = s.quest.index < 6;
+    if (game.target && Math.hypot(game.target.x - pos.x, game.target.y - pos.y) < 4) { game.tapHint = early; return; }
     this.pointArrow(game, pos, toScreen, { label: q.title });
+    if (early && this.visible(pos.x, pos.y, cam, 0)) {
+      const [x, y] = toScreen(pos.x, pos.y + 6);
+      const f = this.f, dpr = this.dpr;
+      f.save();
+      f.font = `${26 * dpr}px sans-serif`;
+      f.textAlign = 'center'; f.textBaseline = 'top';
+      f.shadowColor = 'rgba(0,0,0,.5)'; f.shadowBlur = 6 * dpr;
+      f.fillText('👆', x, y + Math.abs(Math.sin(game.t * 5)) * 8 * dpr);
+      f.restore();
+    }
   }
 
   // أقرب حيوان جديد لسه ماشي أو واصل توه

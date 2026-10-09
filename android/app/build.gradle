@@ -2,26 +2,57 @@ plugins {
     id 'com.android.application'
 }
 
+// القيم تجي من متغيرات البيئة (أسرار GitHub) أو من gradle.properties، وإذا ما فيه نرجع للافتراضي
+def cfg = { String key, String fallback = null ->
+    def v = System.getenv(key) ?: project.findProperty(key)
+    return v ? v.toString() : fallback
+}
+
+// ===== معرّفات AdMob =====
+// الافتراضي تجريبي رسمي من Google. حط معرّفاتك بأسرار GitHub باسم ADMOB_APP_ID و ADMOB_REWARDED_ID
+def testAdmobAppId = 'ca-app-pub-3940256099942544~3347511713'
+def testRewardedId = 'ca-app-pub-3940256099942544/5224354917'
+def admobAppId = cfg('ADMOB_APP_ID', testAdmobAppId)
+def admobRewardedId = cfg('ADMOB_REWARDED_ID', testRewardedId)
+
+// رقم النسخة يزيد مع كل بناء (البناء الآلي يحط VERSION_CODE = رقم التشغيل)
+def appVersionCode = cfg('VERSION_CODE', '1').toInteger()
+
+// مفتاح التوقيع لنسخة Google Play
+def keystorePath = cfg('KEYSTORE_FILE')
+def hasKeystore = keystorePath != null && file(keystorePath).exists()
+
 android {
     namespace 'com.almuzare.game'
-    compileSdk 35
+    compileSdk 36
 
     defaultConfig {
         applicationId 'com.almuzare.game'
         minSdk 24
-        targetSdk 35
-        versionCode 1
-        versionName '1.0'
+        targetSdk 36
+        versionCode appVersionCode
+        versionName "1.0.${appVersionCode}"
 
-        // ===== معرّفات AdMob =====
-        // هذي معرّفات تجريبية رسمية من Google. بدّلها بمعرّفاتك من حساب AdMob قبل النشر.
-        manifestPlaceholders = [admobAppId: 'ca-app-pub-3940256099942544~3347511713']
-        resValue 'string', 'admob_rewarded_id', 'ca-app-pub-3940256099942544/5224354917'
+        manifestPlaceholders = [admobAppId: admobAppId]
+        resValue 'string', 'admob_rewarded_id', admobRewardedId
+    }
+
+    signingConfigs {
+        if (hasKeystore) {
+            release {
+                storeFile file(keystorePath)
+                storePassword cfg('KEYSTORE_PASSWORD')
+                keyAlias cfg('KEY_ALIAS')
+                keyPassword cfg('KEY_PASSWORD')
+            }
+        }
     }
 
     buildTypes {
         release {
+            // نخليه بدون تصغير عشان جسر JavaScript (@JavascriptInterface) ما ينكسر
             minifyEnabled false
+            if (hasKeystore) signingConfig signingConfigs.release
         }
     }
 
@@ -38,7 +69,16 @@ android {
     }
 }
 
+// تنبيه واضح لو بنيت نسخة النشر وما زالت الإعلانات تجريبية أو بدون توقيع
+gradle.taskGraph.whenReady { graph ->
+    if (graph.allTasks.any { it.name.toLowerCase().contains('release') }) {
+        if (admobAppId == testAdmobAppId) logger.warn('⚠️  نسخة النشر فيها معرّفات AdMob تجريبية: الإعلانات ما بتجيب فلوس. حط ADMOB_APP_ID و ADMOB_REWARDED_ID.')
+        if (!hasKeystore) logger.warn('⚠️  نسخة النشر بدون مفتاح توقيع (KEYSTORE_FILE): Google Play ما يقبلها.')
+    }
+}
+
 dependencies {
     implementation 'androidx.webkit:webkit:1.12.1'
     implementation 'com.google.android.gms:play-services-ads:23.6.0'
+    implementation 'com.google.android.ump:user-messaging-platform:3.1.0'
 }

@@ -468,3 +468,69 @@ b.gold { color: #b07a10; }
 .ctag.ok { background: rgba(60,160,40,.2); color: #1a6a10; font-weight: 700; }
 .zreq { margin: 6px 0 10px; gap: 8px; }
 .zreq .ctag { font-size: 1.05em; padding: 4px 10px; }
+
+/* أزرار تنفتح مع التقدم */
+.lockhide { display: none !important; }
+.newbtn { animation: newbtn 1s ease-in-out infinite; position: relative; box-shadow: 0 0 0 3px #ffe07a, 0 0 18px 4px rgba(255,210,80,.8) !important; }
+.newbtn::after { content: 'جديد!'; position: absolute; top: -14px; left: 50%; transform: translateX(-50%); background: #e8342a; color: #fff; font: 700 10px Cairo, sans-serif; padding: 1px 6px; border-radius: 8px; white-space: nowrap; pointer-events: none; }
+@keyframes newbtn { 50% { transform: translateY(-5px) scale(1.08); } }
+.advice .arow.top { border: 2px solid var(--gold); background: rgba(255,230,140,.35); }
+/* يد تدلّك وين تضغط */
+.tapme { position: relative; }
+.tapme::after { content: '👉'; position: absolute; top: 50%; left: -46px; font-size: 34px; transform: translateY(-50%); animation: tapme .8s ease-in-out infinite; pointer-events: none; filter: drop-shadow(0 2px 3px rgba(0,0,0,.6)); }
+@keyframes tapme { 50% { transform: translate(10px, -50%); } }
+
+/* أيقونات طايرة */
+#flyLayer { position: absolute; inset: 0; pointer-events: none; z-index: 60; overflow: hidden; }
+.flyer { position: absolute; pointer-events: none; line-height: 1; filter: drop-shadow(0 2px 2px rgba(0,0,0,.55)); will-change: transform; }
+.bump { animation: bump .28s ease-out; }
+@keyframes bump { 40% { transform: scale(1.18); } }
+
+/* الجوايز تنقلب وحدة وحدة */
+.reveal .gains span, .lvlup .gains span { font-size: 14px; padding: 4px 10px; box-shadow: 0 3px 0 rgba(107,63,31,.35); animation: cardflip .5s backwards cubic-bezier(.2,.8,.3,1.3); }
+@keyframes cardflip { 0% { transform: perspective(300px) rotateY(90deg) scale(.6); opacity: 0; } 100% { transform: none; opacity: 1; } }
+
+/* شاشة طلوع المستوى */
+.panel.lvlmodal .pbody { overflow-x: hidden; }
+.lvlup { position: relative; text-align: center; padding: 6px 0; }
+.lvlup .rays { position: absolute; left: 50%; top: 46px; width: 420px; height: 420px; margin: -210px 0 0 -210px; border-radius: 50%; background: repeating-conic-gradient(rgba(255,210,80,.38) 0 10deg, transparent 10deg 20deg); animation: rays 9s linear infinite; pointer-events: none; mask-image: radial-gradient(circle, #000 25%, transparent 70%); -webkit-mask-image: radial-gradient(circle, #000 25%, transparent 70%); }
+@keyframes rays { to { transform: rotate(360deg); } }
+.lvlup .lvlnum { position: relative; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; width: 84px; height: 84px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #ffe68a, #e0a020); border: 4px solid #fff3c4; box-shadow: 0 0 24px rgba(255,200,60,.9), 0 4px 0 #8a5a10; animation: lvlpop .7s cubic-bezier(.2,.9,.3,1.5) backwards; }
+.lvlup .lvlnum small { font: 700 11px Cairo; color: #6a3a08; margin-bottom: -6px; }
+.lvlup .lvlnum b { font: 700 44px Kufi, Cairo; color: #5a2a00; line-height: 1.1; }
+@keyframes lvlpop { 0% { transform: scale(0) rotate(-30deg); } 100% { transform: none; } }
+.lvlup .gains { position: relative; }
+.lvlup .opened { position: relative; margin-top: 6px; font-size: 13px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; align-items: center; }
+.lvlup .opened span { background: linear-gradient(#d8f5c0, #a8e080); border: 2px solid #5a9a2f; border-radius: 10px; padding: 2px 8px; font-weight: 700; animation: cardflip .5s .8s backwards; }
+
+/* بطاقة «أول مرة!» */
+.firstcard { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); z-index: 35; display: flex; align-items: center; gap: 10px; padding: 8px 14px; min-width: 300px; max-width: min(560px, 80vw); border-radius: 16px; background: linear-gradient(135deg, #fff3c4, #ffd870); border: 3px solid #fff; box-shadow: 0 0 0 3px #e0a020, 0 8px 22px rgba(0,0,0,.45); pointer-events: none; animation: firstin .55s cubic-bezier(.2,.9,.3,1.3); }
+.firstcard.out { animation: firstout .5s ease-in forwards; }
+.firstcard .fic { font-size: 40px; animation: wobble .6s 2; }
+.firstcard .ftx { display: flex; flex-direction: column; color: #4a2a08; flex: 1; }
+.firstcard .ftx small { font: 700 11px Cairo; color: #b0600a; }
+.firstcard .ftx b { font: 700 18px Kufi, Cairo; }
+.firstcard .ftx span { font-size: 12px; }
+.firstcard .gains { margin: 0; flex-wrap: nowrap; }
+.firstcard .gains span { animation: cardflip .5s .35s backwards; }
+@keyframes firstin { 0% { transform: translate(-50%, -140%) scale(.8); opacity: 0; } 100% { transform: translateX(-50%); opacity: 1; } }
+@keyframes firstout { to { transform: translate(-50%, -140%); opacity: 0; } }
+
+/* صندوق تفتحه بيدك */
+.chesttap { background: none; border: 0; padding: 6px; cursor: pointer; }
+.chesttap .big-ic { animation: chestidle 1.2s ease-in-out infinite; }
+.chesttap.t1 .big-ic { animation: chestshake .25s 2; }
+.chesttap.t2 .big-ic { animation: chestshake .18s 4; filter: drop-shadow(0 0 12px #ffd24a); }
+@keyframes chestidle { 50% { transform: translateY(-6px) rotate(-3deg); } }
+@keyframes chestshake { 25% { transform: rotate(-14deg) scale(1.12); } 75% { transform: rotate(14deg) scale(1.12); } }
+.tapmsg { font-weight: 700; color: #8a4a10; animation: pop 1s infinite; margin: 2px 0; }
+
+/* شاشة الغياب */
+.awaylist { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 8px; }
+.awaylist .arow { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,.5); border: 2px solid rgba(107,63,31,.3); border-radius: 12px; padding: 2px 10px; animation: cardflip .45s backwards; }
+.awaylist .ic { font-size: 20px; }
+.awaylist + .row .btn.big { padding-top: 6px; padding-bottom: 6px; }
+.awaylist .nm { font-size: 14px; }
+.streakchip { position: absolute; left: -8px; bottom: 6px; display: none; background: linear-gradient(#ff9a3a, #e0501a); color: #fff; font: 700 9px Cairo, sans-serif; padding: 0 4px; border-radius: 8px; border: 1px solid #fff3c4; line-height: 14px; }
+.streakchip.on { display: block; }
+.privframe { width: 100%; height: 62vh; border: 0; border-radius: 10px; background: #f6ead2; }

@@ -115,6 +115,7 @@ node scripts/store-assets.mjs   # صور صفحة المتجر (الغلاف و�
 - `web/`: اللعبة نفسها (HTML5 Canvas + JavaScript بدون أدوات بناء).
 - `android/`: غلاف أندرويد (WebView + AdMob + إشعارات).
 - `scripts/make-icons.mjs`: يولّد أيقونة التطبيق.
+- `roblox/`: لعبة روبلوكس منفصلة «🙃 أوبي المقلوب» ([التفاصيل](roblox/README.md)).
 
 للنشر على Google Play تحتاج نسخة release موقّعة بمفتاحك، وسياسة خصوصية، ونافذة موافقة UMP لمستخدمي أوروبا.
 

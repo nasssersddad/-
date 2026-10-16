@@ -1,0 +1,1500 @@
+<roblox version="4">
+  <Item class="ReplicatedStorage" referent="0">
+    <Properties>
+      <string name="Name">ReplicatedStorage</string>
+    </Properties>
+    <Item class="Folder" referent="1">
+      <Properties>
+        <string name="Name">Shared</string>
+      </Properties>
+      <Item class="ModuleScript" referent="2">
+        <Properties>
+          <string name="Name">Config</string>
+          <string name="Source"><![CDATA[-- إعدادات أوبي المقلوب: العوالم، المراحل، والأرقام
+
+local Config = {}
+
+Config.SaveKey = "FlippedObby_v1"
+Config.AutosaveSeconds = 120
+Config.JumpPower = 50
+Config.LowGravity = 60 -- الجاذبية العادية 196.2
+Config.DefaultGravity = 196.2
+
+-- كل عالم له حركة (twist) تتغير فيها اللعبة
+Config.Worlds = {
+	{
+		name = "البداية",
+		icon = "🟢",
+		desc = "سخّن! نطّ وانتبه من الحمم",
+		twist = "none",
+		colors = { Color3.fromRGB(110, 205, 120), Color3.fromRGB(80, 170, 235) },
+	},
+	{
+		name = "القمر",
+		icon = "🌙",
+		desc = "الجاذبية خفيفة… نطّتك صارت طويلة!",
+		twist = "lowGravity",
+		gapScale = 2.6, -- الفراغات أوسع لأن النطّة أبعد
+		colors = { Color3.fromRGB(160, 160, 185), Color3.fromRGB(120, 105, 185) },
+	},
+	{
+		name = "المعكوس",
+		icon = "🔄",
+		desc = "التحكم معكوس! قدّام يوديك ورا ويمين يوديك يسار",
+		twist = "invert",
+		colors = { Color3.fromRGB(80, 220, 230), Color3.fromRGB(240, 110, 200) },
+	},
+	{
+		name = "الدنيا مقلوبة",
+		icon = "🙃",
+		desc = "الكاميرا مقلوبة راس على عقب!",
+		twist = "flipCamera",
+		colors = { Color3.fromRGB(250, 170, 60), Color3.fromRGB(250, 220, 80) },
+	},
+	{
+		name = "الوقت المعكوس",
+		icon = "⏪",
+		desc = "المنصات تختفي وترجع… انتبه للتوقيت!",
+		twist = "rewind",
+		colors = { Color3.fromRGB(195, 155, 105), Color3.fromRGB(150, 115, 85) },
+	},
+}
+
+-- المراحل: كل مرحلة تبدأ بنقطة حفظ وبعدها عقبات
+-- أنواع العقبات: jumps, lava, beam, zigzag, mover, spinner, truss, vanish, pad
+Config.Stages = {
+	-- 🟢 البداية
+	{ world = 1, segments = { { type = "jumps", count = 4, gap = 4 }, { type = "lava", stones = 4 } } },
+	{ world = 1, segments = { { type = "beam", length = 14, width = 2 }, { type = "jumps", count = 4, gap = 5, rise = 1 } } },
+	{ world = 1, segments = { { type = "mover", span = 18 }, { type = "zigzag", count = 5 } } },
+	{ world = 1, segments = { { type = "spinner", radius = 9, speed = 1.4 }, { type = "truss", height = 12 } } },
+	-- 🌙 القمر
+	{ world = 2, segments = { { type = "jumps", count = 4, gap = 5 }, { type = "jumps", count = 3, gap = 5, rise = 4 } } },
+	{ world = 2, segments = { { type = "zigzag", count = 5, gap = 3 }, { type = "beam", length = 20, width = 1.4 } } },
+	{ world = 2, segments = { { type = "mover", span = 22, period = 5 }, { type = "lava", stones = 5, gap = 4 } } },
+	{ world = 2, segments = { { type = "spinner", radius = 10, speed = 2, bars = 2 }, { type = "jumps", count = 5, gap = 5, size = 4 } } },
+	-- 🔄 المعكوس
+	{ world = 3, segments = { { type = "jumps", count = 5, gap = 3 }, { type = "beam", length = 12, width = 2.5 } } },
+	{ world = 3, segments = { { type = "zigzag", count = 5, gap = 2 }, { type = "lava", stones = 4, gap = 3 } } },
+	{ world = 3, segments = { { type = "mover", span = 16 }, { type = "spinner", radius = 9, speed = 1.2 } } },
+	{ world = 3, segments = { { type = "beam", length = 18, width = 1.6 }, { type = "truss", height = 14 } } },
+	-- 🙃 الدنيا مقلوبة
+	{ world = 4, segments = { { type = "jumps", count = 5, gap = 4 }, { type = "lava", stones = 4, gap = 3 } } },
+	{ world = 4, segments = { { type = "zigzag", count = 6, gap = 2.5 }, { type = "beam", length = 16, width = 1.8 } } },
+	{ world = 4, segments = { { type = "spinner", radius = 9, speed = 1.6 }, { type = "mover", span = 18 } } },
+	{ world = 4, segments = { { type = "truss", height = 14 }, { type = "jumps", count = 5, gap = 4, rise = 1 } } },
+	-- ⏪ الوقت المعكوس
+	{ world = 5, segments = { { type = "vanish", count = 5 }, { type = "jumps", count = 3, gap = 5 } } },
+	{ world = 5, segments = { { type = "pad", height = 16 }, { type = "vanish", count = 6 } } },
+	{ world = 5, segments = { { type = "mover", span = 18, period = 4 }, { type = "vanish", count = 5 }, { type = "spinner", radius = 9, speed = 2 } } },
+	{ world = 5, segments = { { type = "vanish", count = 8, period = 2.8 }, { type = "pad", height = 18 } } },
+}
+
+Config.FinalStage = #Config.Stages
+Config.FinishedStage = #Config.Stages + 1 -- يعني خلّص الأوبي
+
+function Config.worldIndexForStage(stage: number): number?
+	local def = Config.Stages[stage]
+	return if def then def.world else nil
+end
+
+-- هل هذي المرحلة أول مرحلة في عالمها؟
+function Config.isWorldStart(stage: number): boolean
+	local def = Config.Stages[stage]
+	if not def then
+		return false
+	end
+	local prev = Config.Stages[stage - 1]
+	return prev == nil or prev.world ~= def.world
+end
+
+return Config
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="3">
+        <Properties>
+          <string name="Name">Format</string>
+          <string name="Source"><![CDATA[-- تنسيق الوقت: 83.4 ثانية ← 1:23.4
+
+local Format = {}
+
+function Format.time(seconds: number): string
+	seconds = math.max(0, seconds)
+	local minutes = math.floor(seconds / 60)
+	local rest = seconds - minutes * 60
+	return string.format("%d:%04.1f", minutes, rest)
+end
+
+return Format
+]]></string>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="ServerScriptService" referent="4">
+    <Properties>
+      <string name="Name">ServerScriptService</string>
+    </Properties>
+    <Item class="Folder" referent="5">
+      <Properties>
+        <string name="Name">Server</string>
+      </Properties>
+      <Item class="ModuleScript" referent="6">
+        <Properties>
+          <string name="Name">CourseBuilder</string>
+          <string name="Source"><![CDATA[-- يبني الأوبي كامل بالكود: اللوبي، المراحل، نقاط الحفظ، والنهاية
+-- الأشياء اللي تتحرك (منصات، مراوح، منصات تختفي) يحرّكها الكلاينت عشان تكون ناعمة
+
+local CollectionService = game:GetService("CollectionService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+
+local CourseBuilder = {}
+
+local START_Y = 12
+local THICK = 2 -- سماكة المنصات
+local LAVA_COLOR = Color3.fromRGB(255, 85, 30)
+local BEAM_COLOR = Color3.fromRGB(150, 100, 60)
+local MOVER_COLOR = Color3.fromRGB(240, 240, 255)
+local CHECKPOINT_COLOR = Color3.fromRGB(235, 235, 235)
+local PAD_COLOR = Color3.fromRGB(60, 255, 120)
+local STONE_COLOR = Color3.fromRGB(70, 70, 82)
+
+type Ctx = {
+	x: number, -- نهاية آخر منصة (على محور x)
+	y: number, -- سطح آخر منصة
+	folder: Instance,
+	gapScale: number,
+	colors: { Color3 },
+	count: number,
+}
+
+local function makePart(parent: Instance, size: Vector3, cframe: CFrame, color: Color3, material: Enum.Material?): Part
+	local p = Instance.new("Part")
+	p.Anchored = true
+	p.Size = size
+	p.CFrame = cframe
+	p.Color = color
+	p.Material = material or Enum.Material.SmoothPlastic
+	p.TopSurface = Enum.SurfaceType.Smooth
+	p.BottomSurface = Enum.SurfaceType.Smooth
+	p.Parent = parent
+	return p
+end
+
+local function scaled(ctx: Ctx, gap: number): number
+	return gap * ctx.gapScale
+end
+
+type PlatformOpts = {
+	gap: number?,
+	rise: number?,
+	z: number?,
+	color: Color3?,
+	material: Enum.Material?,
+}
+
+-- منصة تبدأ بعد آخر منصة بمسافة gap، وتصير هي "آخر منصة"
+local function platform(ctx: Ctx, length: number, width: number, opts: PlatformOpts?): Part
+	local o: PlatformOpts = opts or {}
+	local nearX = ctx.x + (o.gap or 0)
+	local top = ctx.y + (o.rise or 0)
+	ctx.count += 1
+	local color = o.color or ctx.colors[ctx.count % #ctx.colors + 1]
+	local p = makePart(
+		ctx.folder,
+		Vector3.new(length, THICK, width),
+		CFrame.new(nearX + length / 2, top - THICK / 2, o.z or 0),
+		color,
+		o.material
+	)
+	ctx.x = nearX + length
+	ctx.y = top
+	return p
+end
+
+local function addLabel(adornee: BasePart, text: string, size: UDim2, offsetY: number, color: Color3, maxDistance: number?)
+	local gui = Instance.new("BillboardGui")
+	gui.Size = size
+	gui.StudsOffset = Vector3.new(0, offsetY, 0)
+	gui.AlwaysOnTop = false
+	gui.MaxDistance = maxDistance or 120
+	gui.Adornee = adornee
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.TextScaled = true
+	label.Font = Enum.Font.GothamBlack
+	label.TextColor3 = color
+	label.TextStrokeTransparency = 0.2
+	label.Parent = gui
+	gui.Parent = adornee
+end
+
+local Segments = {}
+
+-- نطّات عادية
+function Segments.jumps(ctx: Ctx, s)
+	local size = s.size or 5
+	for i = 1, s.count or 4 do
+		platform(ctx, size, size, {
+			gap = scaled(ctx, s.gap or 4),
+			rise = s.rise or 0,
+			z = math.sin(i * 1.7) * 2,
+		})
+	end
+	platform(ctx, 6, 6, { gap = scaled(ctx, s.gap or 4) })
+end
+
+-- حمم وحجار تنط عليها
+function Segments.lava(ctx: Ctx, s)
+	local startX = ctx.x
+	local baseY = ctx.y
+	local gap = scaled(ctx, s.gap or 3)
+	for i = 1, s.stones or 4 do
+		platform(ctx, 3, 3, {
+			gap = gap,
+			z = if i % 2 == 0 then 2 else -2,
+			color = STONE_COLOR,
+			material = Enum.Material.Slate,
+		})
+	end
+	local endX = ctx.x + gap
+	local lava = makePart(
+		ctx.folder,
+		Vector3.new(endX - startX, 1, 16),
+		CFrame.new((startX + endX) / 2, baseY - THICK - 0.5, 0),
+		LAVA_COLOR,
+		Enum.Material.Neon
+	)
+	lava.Name = "Lava"
+	CollectionService:AddTag(lava, "Kill")
+	platform(ctx, 6, 8, { gap = gap })
+end
+
+-- خشبة رفيعة تمشي عليها
+function Segments.beam(ctx: Ctx, s)
+	platform(ctx, s.length or 14, s.width or 1.5, { color = BEAM_COLOR, material = Enum.Material.WoodPlanks })
+	platform(ctx, 6, 6)
+end
+
+-- منصات يمين ويسار
+function Segments.zigzag(ctx: Ctx, s)
+	local gap = scaled(ctx, s.gap or 2.5)
+	for i = 1, s.count or 5 do
+		platform(ctx, 4, 4, { gap = gap, z = if i % 2 == 0 then 4 else -4 })
+	end
+	platform(ctx, 6, 6, { gap = gap })
+end
+
+-- منصة تروح وترجع فوق فراغ
+function Segments.mover(ctx: Ctx, s)
+	local span = s.span or 18
+	local size = 6
+	local startCenter = ctx.x + size / 2 + 0.5
+	local endCenter = ctx.x + span - size / 2 - 0.5
+	local origin = CFrame.new(startCenter, ctx.y - THICK / 2, 0)
+	local p = makePart(ctx.folder, Vector3.new(size, THICK, size), origin, MOVER_COLOR, Enum.Material.DiamondPlate)
+	p.Name = "Mover"
+	p:SetAttribute("Origin", origin)
+	p:SetAttribute("Offset", Vector3.new(endCenter - startCenter, 0, 0))
+	p:SetAttribute("Period", s.period or 6)
+	CollectionService:AddTag(p, "Mover")
+	ctx.x += span
+	platform(ctx, 6, 8)
+end
+
+-- دائرة فوقها عصا حمرا تدور، نطّ فوقها
+function Segments.spinner(ctx: Ctx, s)
+	local r = s.radius or 9
+	local gap = scaled(ctx, 3)
+	local cx = ctx.x + gap + r
+	local top = ctx.y
+	ctx.count += 1
+	local disk = makePart(
+		ctx.folder,
+		Vector3.new(THICK, r * 2, r * 2),
+		CFrame.new(cx, top - THICK / 2, 0) * CFrame.Angles(0, 0, math.pi / 2),
+		ctx.colors[ctx.count % #ctx.colors + 1]
+	)
+	disk.Shape = Enum.PartType.Cylinder
+	local bars = s.bars or 1
+	for b = 1, bars do
+		local center = CFrame.new(cx, top + 1.2, 0)
+		local bar = makePart(ctx.folder, Vector3.new(r * 2 - 0.5, 1, 1), center, LAVA_COLOR, Enum.Material.Neon)
+		bar.Name = "SpinnerBar"
+		bar.CanCollide = false
+		bar:SetAttribute("Center", center)
+		bar:SetAttribute("Speed", s.speed or 1.5)
+		bar:SetAttribute("Phase", (b - 1) * math.pi / bars)
+		CollectionService:AddTag(bar, "Kill")
+		CollectionService:AddTag(bar, "Spinner")
+	end
+	ctx.x = cx + r
+	ctx.y = top
+	platform(ctx, 6, 6, { gap = gap })
+end
+
+-- سلّم تتسلقه لفوق
+function Segments.truss(ctx: Ctx, s)
+	local h = s.height or 12
+	h -= h % 2 -- لازم يكون زوجي
+	platform(ctx, 6, 6, { gap = scaled(ctx, 4) })
+	local truss = Instance.new("TrussPart")
+	truss.Anchored = true
+	truss.Size = Vector3.new(2, h, 2)
+	truss.CFrame = CFrame.new(ctx.x + 1, ctx.y + h / 2, 0)
+	truss.Color = Color3.fromRGB(90, 90, 100)
+	truss.Parent = ctx.folder
+	ctx.x += 2
+	platform(ctx, 8, 8, { rise = h })
+end
+
+-- منصات تختفي وترجع (مجموعتين بالتناوب)
+function Segments.vanish(ctx: Ctx, s)
+	local period = s.period or 3.2
+	local gap = scaled(ctx, s.gap or 3.5)
+	for i = 1, s.count or 6 do
+		local p = platform(ctx, 5, 5, {
+			gap = gap,
+			color = if i % 2 == 0 then Color3.fromRGB(120, 200, 255) else Color3.fromRGB(255, 160, 220),
+			material = Enum.Material.Glass,
+		})
+		p.Name = "Vanish"
+		p:SetAttribute("Period", period)
+		p:SetAttribute("Offset", if i % 2 == 0 then period / 2 else 0)
+		p:SetAttribute("Visible", 0.72)
+		CollectionService:AddTag(p, "Vanish")
+	end
+	platform(ctx, 6, 8, { gap = gap })
+end
+
+-- منصة قفز خارق توديك لفوق
+function Segments.pad(ctx: Ctx, s)
+	local h = s.height or 16
+	platform(ctx, 8, 8, { gap = scaled(ctx, 4) })
+	local pad = makePart(ctx.folder, Vector3.new(4, 0.4, 4), CFrame.new(ctx.x - 3, ctx.y + 0.2, 0), PAD_COLOR, Enum.Material.Neon)
+	pad.Name = "JumpPad"
+	pad:SetAttribute("LaunchHeight", h + 9)
+	CollectionService:AddTag(pad, "JumpPad")
+	addLabel(pad, "⬆️", UDim2.fromOffset(60, 60), 3, PAD_COLOR, 60)
+	platform(ctx, 8, 8, { gap = 4, rise = h })
+end
+
+local function buildCheckpoint(ctx: Ctx, stage: number, gap: number): (BasePart, CFrame)
+	local plat = platform(ctx, 10, 10, { gap = gap, color = Color3.fromRGB(60, 60, 70), material = Enum.Material.Concrete })
+	local pad = makePart(
+		ctx.folder,
+		Vector3.new(7, 0.3, 7),
+		plat.CFrame * CFrame.new(0, THICK / 2 + 0.15, 0),
+		CHECKPOINT_COLOR,
+		Enum.Material.Neon
+	)
+	pad.Name = "Checkpoint"
+	pad:SetAttribute("Stage", stage)
+	CollectionService:AddTag(pad, "Checkpoint")
+	addLabel(pad, tostring(stage), UDim2.fromOffset(80, 80), 5, Color3.new(1, 1, 1))
+	-- مكان الرسبون فوق النقطة ووجهك للمرحلة
+	local spawnCf = CFrame.lookAt(pad.Position + Vector3.new(0, 4, 0), pad.Position + Vector3.new(10, 4, 0))
+	return pad, spawnCf
+end
+
+local function buildWorldSign(parent: Instance, position: Vector3, world, index: number)
+	local anchor = makePart(parent, Vector3.new(1, 1, 1), CFrame.new(position), Color3.new(1, 1, 1))
+	anchor.Transparency = 1
+	anchor.CanCollide = false
+	anchor.CanTouch = false
+	anchor.Name = "WorldSign"
+	addLabel(
+		anchor,
+		string.format("%s العالم %d: %s", world.icon, index, world.name),
+		UDim2.fromOffset(420, 70),
+		0,
+		world.colors[1],
+		200
+	)
+	local desc = makePart(parent, Vector3.new(1, 1, 1), CFrame.new(position - Vector3.new(0, 4, 0)), Color3.new(1, 1, 1))
+	desc.Transparency = 1
+	desc.CanCollide = false
+	desc.CanTouch = false
+	addLabel(desc, world.desc, UDim2.fromOffset(420, 40), 0, Color3.new(1, 1, 1), 200)
+end
+
+local function buildLobby(root: Instance, ctx: Ctx): SpawnLocation
+	local lobby = Instance.new("Folder")
+	lobby.Name = "Lobby"
+	lobby.Parent = root
+	ctx.folder = lobby
+	ctx.x = -44
+	local floor = platform(ctx, 44, 44, { color = Color3.fromRGB(95, 95, 110), material = Enum.Material.Concrete })
+
+	local spawn = Instance.new("SpawnLocation")
+	spawn.Anchored = true
+	spawn.Neutral = true
+	spawn.Duration = 0
+	spawn.Size = Vector3.new(8, 1, 8)
+	spawn.CFrame = CFrame.new(floor.Position.X - 10, ctx.y + 0.5, 0)
+	spawn.Color = Color3.fromRGB(255, 200, 60)
+	spawn.Material = Enum.Material.Neon
+	spawn.TopSurface = Enum.SurfaceType.Smooth
+	spawn.Parent = lobby
+
+	-- لوحة العنوان
+	local title = makePart(lobby, Vector3.new(1, 1, 1), CFrame.new(floor.Position.X, ctx.y + 16, 0), Color3.new(1, 1, 1))
+	title.Transparency = 1
+	title.CanCollide = false
+	title.CanTouch = false
+	addLabel(title, "🙃 أوبي المقلوب", UDim2.fromOffset(500, 100), 0, Color3.fromRGB(255, 220, 80), 300)
+	local how = makePart(lobby, Vector3.new(1, 1, 1), CFrame.new(floor.Position.X, ctx.y + 10, 0), Color3.new(1, 1, 1))
+	how.Transparency = 1
+	how.CanCollide = false
+	how.CanTouch = false
+	addLabel(how, "5 عوالم وكل عالم يقلب اللعبة! ← روح يمين وابدأ", UDim2.fromOffset(480, 40), 0, Color3.new(1, 1, 1), 300)
+
+	-- أعمدة زينة
+	for i = 0, 3 do
+		local angle = i * math.pi / 2 + math.pi / 4
+		local pos = floor.Position + Vector3.new(math.cos(angle) * 18, THICK / 2 + 5, math.sin(angle) * 18)
+		local pillar = makePart(lobby, Vector3.new(2, 10, 2), CFrame.new(pos), Color3.fromRGB(255, 200, 60), Enum.Material.Neon)
+		pillar.Name = "Pillar"
+	end
+	return spawn
+end
+
+local function buildFinish(root: Instance, ctx: Ctx): (BasePart, CFrame)
+	local folder = Instance.new("Folder")
+	folder.Name = "Finish"
+	folder.Parent = root
+	ctx.folder = folder
+	local floor = platform(ctx, 24, 24, { gap = 4, color = Color3.fromRGB(255, 215, 80), material = Enum.Material.Marble })
+
+	local base = makePart(folder, Vector3.new(6, 3, 6), floor.CFrame * CFrame.new(4, THICK / 2 + 1.5, 0), Color3.fromRGB(60, 60, 70), Enum.Material.Marble)
+	base.Name = "TrophyBase"
+	local cup = makePart(folder, Vector3.new(3, 5, 3), base.CFrame * CFrame.new(0, 4, 0), Color3.fromRGB(255, 200, 40), Enum.Material.Foil)
+	cup.Name = "Trophy"
+	cup.Shape = Enum.PartType.Cylinder
+	cup.CFrame = base.CFrame * CFrame.new(0, 4, 0) * CFrame.Angles(0, 0, math.pi / 2)
+	addLabel(cup, "🏆 النهاية!", UDim2.fromOffset(260, 70), 5, Color3.fromRGB(255, 220, 80), 200)
+
+	local pad = makePart(folder, Vector3.new(16, 0.3, 16), floor.CFrame * CFrame.new(-2, THICK / 2 + 0.15, 0), Color3.fromRGB(255, 240, 150), Enum.Material.Neon)
+	pad.Name = "FinishPad"
+	CollectionService:AddTag(pad, "Finish")
+
+	local spawnCf = CFrame.lookAt(floor.Position + Vector3.new(-6, 5, 0), floor.Position + Vector3.new(10, 5, 0))
+	return pad, spawnCf
+end
+
+-- بحر حمم تحت المسار كامل
+local function buildLavaSea(root: Instance, fromX: number, toX: number)
+	local chunk = 512
+	local x = fromX
+	while x < toX do
+		local len = math.min(chunk, toX - x)
+		local sea = makePart(root, Vector3.new(len, 1, 400), CFrame.new(x + len / 2, 0, 0), LAVA_COLOR, Enum.Material.Neon)
+		sea.Name = "LavaSea"
+		sea.Transparency = 0.15
+		CollectionService:AddTag(sea, "Kill")
+		x += len
+	end
+end
+
+export type Course = {
+	spawn: SpawnLocation,
+	checkpoints: { CFrame },
+	checkpointPads: { BasePart },
+	finishPad: BasePart,
+	finishSpawn: CFrame,
+}
+
+function CourseBuilder.build(): Course
+	local root = Instance.new("Folder")
+	root.Name = "Course"
+	root.Parent = Workspace
+
+	local ctx: Ctx = {
+		x = 0,
+		y = START_Y,
+		folder = root,
+		gapScale = 1,
+		colors = Config.Worlds[1].colors,
+		count = 0,
+	}
+
+	local spawn = buildLobby(root, ctx)
+	local checkpoints = {}
+	local checkpointPads = {}
+
+	for stage, def in Config.Stages do
+		local folder = Instance.new("Folder")
+		folder.Name = string.format("Stage%02d", stage)
+		folder.Parent = root
+		ctx.folder = folder
+
+		-- الفراغ قبل نقطة الحفظ يتبع العالم اللي قبلها (لأن اللاعب لسا فيه)
+		local gap = if stage == 1 then 0 else scaled(ctx, 4)
+		checkpointPads[stage], checkpoints[stage] = buildCheckpoint(ctx, stage, gap)
+
+		local world = Config.Worlds[def.world]
+		ctx.gapScale = world.gapScale or 1
+		ctx.colors = world.colors
+		if Config.isWorldStart(stage) then
+			buildWorldSign(folder, Vector3.new(ctx.x - 5, ctx.y + 14, 0), world, def.world)
+		end
+
+		for _, segment in def.segments do
+			local build = Segments[segment.type]
+			if build then
+				build(ctx, segment)
+			else
+				warn("نوع عقبة غير معروف:", segment.type)
+			end
+		end
+	end
+
+	local finishPad, finishSpawn = buildFinish(root, ctx)
+	buildLavaSea(root, -80, ctx.x + 60)
+
+	return {
+		spawn = spawn,
+		checkpoints = checkpoints,
+		checkpointPads = checkpointPads,
+		finishPad = finishPad,
+		finishSpawn = finishSpawn,
+	}
+end
+
+return CourseBuilder
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="7">
+        <Properties>
+          <string name="Name">Data</string>
+          <string name="Source"><![CDATA[-- حفظ وتحميل تقدّم اللاعب (المرحلة، عدد مرات الفوز، أفضل وقت)
+-- لو اللعبة مو منشورة أو الـ API مقفّل في Studio، اللعبة تشتغل عادي بس ما تحفظ
+
+local DataStoreService = game:GetService("DataStoreService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+
+export type Profile = {
+	stage: number,
+	wins: number,
+	best: number?,
+}
+
+local Data = {}
+
+local store: DataStore? = nil
+do
+	local ok, result = pcall(function()
+		return DataStoreService:GetDataStore(Config.SaveKey)
+	end)
+	if ok then
+		store = result
+	else
+		warn("[Data] الحفظ مقفّل:", result)
+	end
+end
+
+local function key(userId: number): string
+	return "player_" .. userId
+end
+
+function Data.default(): Profile
+	return { stage = 1, wins = 0, best = nil }
+end
+
+function Data.load(userId: number): Profile
+	local profile = Data.default()
+	if not store then
+		return profile
+	end
+	local ok, result = pcall(function()
+		return store:GetAsync(key(userId))
+	end)
+	if not ok then
+		warn("[Data] ما قدرت أحمّل:", result)
+		return profile
+	end
+	if type(result) == "table" then
+		profile.stage = math.clamp(tonumber(result.stage) or 1, 1, Config.FinishedStage)
+		profile.wins = tonumber(result.wins) or 0
+		profile.best = tonumber(result.best)
+	end
+	return profile
+end
+
+function Data.save(userId: number, profile: Profile)
+	if not store then
+		return
+	end
+	local ok, err = pcall(function()
+		store:SetAsync(key(userId), {
+			stage = profile.stage,
+			wins = profile.wins,
+			best = profile.best,
+		})
+	end)
+	if not ok then
+		warn("[Data] ما قدرت أحفظ:", err)
+	end
+end
+
+return Data
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="Script" referent="8">
+        <Properties>
+          <string name="Name">Main</string>
+          <token name="RunContext">0</token>
+          <string name="Source"><![CDATA[-- السيرفر: يبني الأوبي، يتابع نقاط الحفظ والفوز، ويحفظ التقدّم
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Lighting = game:GetService("Lighting")
+local StarterPlayer = game:GetService("StarterPlayer")
+local Workspace = game:GetService("Workspace")
+
+local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+local Format = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Format"))
+local CourseBuilder = require(script.Parent:WaitForChild("CourseBuilder"))
+local Data = require(script.Parent:WaitForChild("Data"))
+
+-- إعدادات عامة
+StarterPlayer.CharacterUseJumpPower = true
+StarterPlayer.CharacterJumpPower = Config.JumpPower
+Workspace.Gravity = Config.DefaultGravity
+Lighting.ClockTime = 14
+Lighting.Brightness = 2
+Lighting.OutdoorAmbient = Color3.fromRGB(150, 150, 170)
+if not Lighting:FindFirstChildOfClass("Atmosphere") then
+	local atmosphere = Instance.new("Atmosphere")
+	atmosphere.Density = 0.3
+	atmosphere.Haze = 1
+	atmosphere.Color = Color3.fromRGB(200, 215, 255)
+	atmosphere.Parent = Lighting
+end
+
+local course = CourseBuilder.build()
+
+-- قنوات التواصل مع الكلاينت
+local remotes = Instance.new("Folder")
+remotes.Name = "Remotes"
+local restartRemote = Instance.new("RemoteEvent")
+restartRemote.Name = "Restart"
+restartRemote.Parent = remotes
+local notifyRemote = Instance.new("RemoteEvent")
+notifyRemote.Name = "Notify"
+notifyRemote.Parent = remotes
+remotes.Parent = ReplicatedStorage
+
+local profiles: { [Player]: Data.Profile } = {}
+
+-- أسماء الأعمدة في لوحة اللاعبين
+local STAGE_STAT = "المرحلة"
+local WINS_STAT = "الفوز"
+
+local function stageText(stage: number): string
+	return if stage >= Config.FinishedStage then "🏆" else tostring(stage)
+end
+
+local function setStage(player: Player, stage: number)
+	local profile = profiles[player]
+	if not profile then
+		return
+	end
+	profile.stage = stage
+	player:SetAttribute("Stage", stage)
+	local stats = player:FindFirstChild("leaderstats")
+	local value = stats and stats:FindFirstChild(STAGE_STAT)
+	if value and value:IsA("StringValue") then
+		value.Value = stageText(stage)
+	end
+end
+
+local function startRun(player: Player, fullRun: boolean)
+	player:SetAttribute("RunStart", Workspace:GetServerTimeNow())
+	player:SetAttribute("FullRun", fullRun)
+end
+
+local function playerFromHit(hit: BasePart): Player?
+	local model = hit:FindFirstAncestorOfClass("Model")
+	if not model or not model:FindFirstChildOfClass("Humanoid") then
+		return nil
+	end
+	return Players:GetPlayerFromCharacter(model)
+end
+
+local function spawnCFrame(stage: number): CFrame?
+	if stage >= Config.FinishedStage then
+		return course.finishSpawn
+	elseif stage > 1 then
+		return course.checkpoints[stage]
+	end
+	return nil -- المرحلة الأولى: يطلع من اللوبي
+end
+
+local function onCharacterAdded(player: Player, character: Model)
+	local humanoid = character:WaitForChild("Humanoid", 10)
+	if humanoid and humanoid:IsA("Humanoid") then
+		humanoid.UseJumpPower = true
+		humanoid.JumpPower = Config.JumpPower
+	end
+	local profile = profiles[player]
+	local cf = spawnCFrame(if profile then profile.stage else 1)
+	if cf and character:WaitForChild("HumanoidRootPart", 10) then
+		task.wait() -- نخلي الشخصية تكمّل تحميل قبل النقل
+		character:PivotTo(cf)
+	end
+end
+
+local function onPlayerAdded(player: Player)
+	local profile = Data.load(player.UserId)
+	if not player.Parent then
+		return -- طلع قبل ما نخلص
+	end
+	profiles[player] = profile
+
+	local stats = Instance.new("Folder")
+	stats.Name = "leaderstats"
+	local stageValue = Instance.new("StringValue")
+	stageValue.Name = STAGE_STAT
+	stageValue.Parent = stats
+	local winsValue = Instance.new("IntValue")
+	winsValue.Name = WINS_STAT
+	winsValue.Value = profile.wins
+	winsValue.Parent = stats
+	stats.Parent = player
+
+	player:SetAttribute("Wins", profile.wins)
+	player:SetAttribute("BestTime", profile.best)
+	setStage(player, profile.stage)
+	startRun(player, profile.stage == 1)
+
+	player.CharacterAdded:Connect(function(character)
+		onCharacterAdded(player, character)
+	end)
+	if player.Character then
+		task.spawn(onCharacterAdded, player, player.Character)
+	end
+end
+
+local function onPlayerRemoving(player: Player)
+	local profile = profiles[player]
+	if profile then
+		Data.save(player.UserId, profile)
+		profiles[player] = nil
+	end
+end
+
+-- نقاط الحفظ
+for stage, pad in course.checkpointPads do
+	pad.Touched:Connect(function(hit)
+		local player = playerFromHit(hit)
+		local profile = player and profiles[player]
+		if not player or not profile then
+			return
+		end
+		-- نسمح بس بالتقدّم، ما نرجّعه لورا
+		if stage > profile.stage and profile.stage < Config.FinishedStage then
+			setStage(player, stage)
+		end
+	end)
+end
+
+-- النهاية
+course.finishPad.Touched:Connect(function(hit)
+	local player = playerFromHit(hit)
+	local profile = player and profiles[player]
+	if not player or not profile or profile.stage ~= Config.FinalStage then
+		return
+	end
+	local elapsed = Workspace:GetServerTimeNow() - (player:GetAttribute("RunStart") or Workspace:GetServerTimeNow())
+	local fullRun = player:GetAttribute("FullRun") == true
+	local newBest = false
+	if fullRun and (profile.best == nil or elapsed < profile.best) then
+		profile.best = elapsed
+		newBest = true
+		player:SetAttribute("BestTime", elapsed)
+	end
+	profile.wins += 1
+	player:SetAttribute("Wins", profile.wins)
+	local stats = player:FindFirstChild("leaderstats")
+	local winsValue = stats and stats:FindFirstChild(WINS_STAT)
+	if winsValue and winsValue:IsA("IntValue") then
+		winsValue.Value = profile.wins
+	end
+	setStage(player, Config.FinishedStage)
+
+	notifyRemote:FireClient(player, {
+		kind = "win",
+		time = elapsed,
+		fullRun = fullRun,
+		best = profile.best,
+		newBest = newBest,
+		wins = profile.wins,
+	})
+	local text = if fullRun
+		then string.format("🏆 %s خلّص أوبي المقلوب بوقت %s!", player.DisplayName, Format.time(elapsed))
+		else string.format("🏆 %s خلّص أوبي المقلوب!", player.DisplayName)
+	for _, other in Players:GetPlayers() do
+		if other ~= player then
+			notifyRemote:FireClient(other, { kind = "message", text = text })
+		end
+	end
+end)
+
+-- ابدأ من جديد
+local lastRestart: { [Player]: number } = {}
+restartRemote.OnServerEvent:Connect(function(player)
+	if not profiles[player] then
+		return
+	end
+	local now = os.clock()
+	if lastRestart[player] and now - lastRestart[player] < 2 then
+		return
+	end
+	lastRestart[player] = now
+	setStage(player, 1)
+	startRun(player, true)
+	player:LoadCharacter()
+end)
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+Players.PlayerRemoving:Connect(function(player)
+	onPlayerRemoving(player)
+	lastRestart[player] = nil
+end)
+for _, player in Players:GetPlayers() do
+	task.spawn(onPlayerAdded, player)
+end
+
+-- حفظ تلقائي
+task.spawn(function()
+	while true do
+		task.wait(Config.AutosaveSeconds)
+		for player, profile in profiles do
+			Data.save(player.UserId, profile)
+		end
+	end
+end)
+
+game:BindToClose(function()
+	for player, profile in profiles do
+		Data.save(player.UserId, profile)
+	end
+end)
+]]></string>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="StarterPlayer" referent="9">
+    <Properties>
+      <string name="Name">StarterPlayer</string>
+    </Properties>
+    <Item class="StarterPlayerScripts" referent="10">
+      <Properties>
+        <string name="Name">StarterPlayerScripts</string>
+      </Properties>
+      <Item class="Folder" referent="11">
+        <Properties>
+          <string name="Name">Client</string>
+        </Properties>
+        <Item class="LocalScript" referent="12">
+          <Properties>
+            <string name="Name">Hud</string>
+            <string name="Source"><![CDATA[-- الواجهة: المرحلة والعالم، المؤقت، لافتة العالم الجديد، زر البداية، وشاشة الفوز
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local SoundService = game:GetService("SoundService")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+
+local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+local Format = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Format"))
+
+local player = Players.LocalPlayer
+local remotes = ReplicatedStorage:WaitForChild("Remotes")
+local restartRemote = remotes:WaitForChild("Restart") :: RemoteEvent
+local notifyRemote = remotes:WaitForChild("Notify") :: RemoteEvent
+
+local FONT = Enum.Font.GothamBold
+local WHITE = Color3.new(1, 1, 1)
+local DARK = Color3.fromRGB(20, 20, 30)
+
+-- ========== أدوات صغيرة ==========
+
+local function corner(parent: GuiObject, radius: number)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, radius)
+	c.Parent = parent
+end
+
+local function stroke(parent: GuiObject, color: Color3, thickness: number)
+	local s = Instance.new("UIStroke")
+	s.Color = color
+	s.Thickness = thickness
+	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	s.Parent = parent
+end
+
+local function label(parent: Instance, text: string, size: UDim2, position: UDim2, textColor: Color3?): TextLabel
+	local l = Instance.new("TextLabel")
+	l.BackgroundTransparency = 1
+	l.Size = size
+	l.Position = position
+	l.Text = text
+	l.TextScaled = true
+	l.Font = FONT
+	l.TextColor3 = textColor or WHITE
+	l.Parent = parent
+	return l
+end
+
+local function button(parent: Instance, text: string, size: UDim2, position: UDim2, color: Color3): TextButton
+	local b = Instance.new("TextButton")
+	b.Size = size
+	b.Position = position
+	b.BackgroundColor3 = color
+	b.Text = text
+	b.TextScaled = true
+	b.Font = FONT
+	b.TextColor3 = WHITE
+	b.AutoButtonColor = true
+	b.Parent = parent
+	corner(b, 12)
+	local pad = Instance.new("UIPadding")
+	pad.PaddingTop = UDim.new(0, 6)
+	pad.PaddingBottom = UDim.new(0, 6)
+	pad.PaddingLeft = UDim.new(0, 8)
+	pad.PaddingRight = UDim.new(0, 8)
+	pad.Parent = b
+	return b
+end
+
+local function playSound(id: string, volume: number)
+	local s = Instance.new("Sound")
+	s.SoundId = id
+	s.Volume = volume
+	s.Parent = SoundService
+	s:Play()
+	s.Ended:Once(function()
+		s:Destroy()
+	end)
+end
+
+-- ========== الشاشة ==========
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "ObbyHud"
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = player:WaitForChild("PlayerGui")
+
+-- لوحة فوق: العالم والمرحلة
+local top = Instance.new("Frame")
+top.AnchorPoint = Vector2.new(0.5, 0)
+top.Position = UDim2.new(0.5, 0, 0, 8)
+top.Size = UDim2.new(0.5, 0, 0, 78)
+top.BackgroundColor3 = DARK
+top.BackgroundTransparency = 0.25
+top.Parent = gui
+corner(top, 14)
+local topLimit = Instance.new("UISizeConstraint")
+topLimit.MinSize = Vector2.new(260, 78)
+topLimit.MaxSize = Vector2.new(460, 78)
+topLimit.Parent = top
+
+local worldLabel = label(top, "", UDim2.new(1, -16, 0, 30), UDim2.fromOffset(8, 6))
+local descLabel = label(top, "", UDim2.new(1, -16, 0, 18), UDim2.fromOffset(8, 36), Color3.fromRGB(210, 210, 225))
+local timerLabel = label(top, "", UDim2.new(1, -16, 0, 16), UDim2.fromOffset(8, 56), Color3.fromRGB(255, 220, 120))
+
+-- شريط التقدّم تحت اللوحة
+local progressBack = Instance.new("Frame")
+progressBack.AnchorPoint = Vector2.new(0.5, 0)
+progressBack.Position = UDim2.new(0.5, 0, 0, 90)
+progressBack.Size = UDim2.new(0.5, 0, 0, 8)
+progressBack.BackgroundColor3 = DARK
+progressBack.BackgroundTransparency = 0.3
+progressBack.Parent = gui
+corner(progressBack, 4)
+local progressLimit = topLimit:Clone()
+progressLimit.MinSize = Vector2.new(260, 8)
+progressLimit.MaxSize = Vector2.new(460, 8)
+progressLimit.Parent = progressBack
+local progressFill = Instance.new("Frame")
+progressFill.Size = UDim2.fromScale(0, 1)
+progressFill.BackgroundColor3 = Color3.fromRGB(90, 255, 130)
+progressFill.Parent = progressBack
+corner(progressFill, 4)
+
+-- لافتة كبيرة بالنص
+local banner = Instance.new("Frame")
+banner.AnchorPoint = Vector2.new(0.5, 0.5)
+banner.Position = UDim2.fromScale(0.5, 0.35)
+banner.Size = UDim2.fromScale(0.7, 0.18)
+banner.BackgroundTransparency = 1
+banner.Visible = false
+banner.Parent = gui
+local bannerTitle = label(banner, "", UDim2.fromScale(1, 0.62), UDim2.fromScale(0, 0))
+bannerTitle.Font = Enum.Font.GothamBlack
+local bannerStroke = Instance.new("UIStroke")
+bannerStroke.Thickness = 3
+bannerStroke.Color = DARK
+bannerStroke.Parent = bannerTitle
+local bannerDesc = label(banner, "", UDim2.fromScale(1, 0.32), UDim2.fromScale(0, 0.66))
+local descStroke = bannerStroke:Clone()
+descStroke.Thickness = 2
+descStroke.Parent = bannerDesc
+
+-- رسالة صغيرة (نقطة حفظ / أخبار)
+local toast = label(gui, "", UDim2.new(0.6, 0, 0, 34), UDim2.new(0.2, 0, 0, 108), WHITE)
+toast.TextTransparency = 1
+local toastStroke = bannerStroke:Clone()
+toastStroke.Thickness = 2
+toastStroke.Parent = toast
+
+-- زر "من البداية"
+local restartButton = button(gui, "↩️ من البداية", UDim2.fromOffset(150, 46), UDim2.fromOffset(12, 8), Color3.fromRGB(70, 70, 90))
+stroke(restartButton, WHITE, 1)
+
+-- نافذة تأكيد
+local confirm = Instance.new("Frame")
+confirm.AnchorPoint = Vector2.new(0.5, 0.5)
+confirm.Position = UDim2.fromScale(0.5, 0.5)
+confirm.Size = UDim2.fromOffset(320, 170)
+confirm.BackgroundColor3 = DARK
+confirm.Visible = false
+confirm.Parent = gui
+corner(confirm, 16)
+stroke(confirm, Color3.fromRGB(255, 220, 80), 2)
+label(confirm, "ترجع للمرحلة 1؟", UDim2.new(1, -20, 0, 36), UDim2.fromOffset(10, 14))
+label(confirm, "المؤقت يبدأ من جديد عشان تسجّل أفضل وقت", UDim2.new(1, -20, 0, 22), UDim2.fromOffset(10, 54), Color3.fromRGB(210, 210, 225))
+local yesButton = button(confirm, "✅ إيه", UDim2.fromOffset(130, 46), UDim2.fromOffset(20, 106), Color3.fromRGB(60, 170, 90))
+local noButton = button(confirm, "❌ لا", UDim2.fromOffset(130, 46), UDim2.fromOffset(170, 106), Color3.fromRGB(170, 60, 70))
+
+-- شاشة الفوز
+local winPanel = Instance.new("Frame")
+winPanel.AnchorPoint = Vector2.new(0.5, 0.5)
+winPanel.Position = UDim2.fromScale(0.5, 0.5)
+winPanel.Size = UDim2.fromOffset(360, 260)
+winPanel.BackgroundColor3 = DARK
+winPanel.Visible = false
+winPanel.Parent = gui
+corner(winPanel, 18)
+stroke(winPanel, Color3.fromRGB(255, 215, 80), 3)
+label(winPanel, "🏆 خلّصت أوبي المقلوب!", UDim2.new(1, -20, 0, 44), UDim2.fromOffset(10, 16), Color3.fromRGB(255, 220, 80))
+local winTime = label(winPanel, "", UDim2.new(1, -20, 0, 30), UDim2.fromOffset(10, 70))
+local winBest = label(winPanel, "", UDim2.new(1, -20, 0, 24), UDim2.fromOffset(10, 106), Color3.fromRGB(210, 210, 225))
+local winCount = label(winPanel, "", UDim2.new(1, -20, 0, 24), UDim2.fromOffset(10, 136), Color3.fromRGB(210, 210, 225))
+local againButton = button(winPanel, "🔁 العب من جديد", UDim2.fromOffset(200, 50), UDim2.new(0.5, -100, 1, -70), Color3.fromRGB(60, 170, 90))
+
+-- ========== التحديث ==========
+
+local shownStage: number? = nil
+local finishedTime: number? = nil
+
+local function showToast(text: string)
+	toast.Text = text
+	toast.TextTransparency = 0
+	toastStroke.Transparency = 0
+	local info = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 2.2)
+	TweenService:Create(toast, info, { TextTransparency = 1 }):Play()
+	TweenService:Create(toastStroke, info, { Transparency = 1 }):Play()
+end
+
+local function showBanner(title: string, desc: string, color: Color3)
+	bannerTitle.Text = title
+	bannerTitle.TextColor3 = color
+	bannerDesc.Text = desc
+	banner.Visible = true
+	banner.Size = UDim2.fromScale(0.35, 0.09)
+	TweenService:Create(banner, TweenInfo.new(0.35, Enum.EasingStyle.Back), { Size = UDim2.fromScale(0.7, 0.18) }):Play()
+	task.delay(3.2, function()
+		if bannerTitle.Text == title then
+			banner.Visible = false
+		end
+	end)
+end
+
+local function updateStage()
+	local stage = player:GetAttribute("Stage") or 1
+	local finished = stage >= Config.FinishedStage
+	local worldIndex = Config.worldIndexForStage(math.min(stage, Config.FinalStage)) or 1
+	local world = Config.Worlds[worldIndex]
+
+	if finished then
+		worldLabel.Text = "🏆 خلّصت كل العوالم!"
+		descLabel.Text = "تقدر تلعب من جديد وتكسر وقتك"
+	else
+		worldLabel.Text = string.format("%s %s — المرحلة %d / %d", world.icon, world.name, stage, Config.FinalStage)
+		descLabel.Text = world.desc
+	end
+	worldLabel.TextColor3 = if finished then Color3.fromRGB(255, 220, 80) else world.colors[1]
+	local done = math.clamp((stage - 1) / Config.FinalStage, 0, 1)
+	TweenService:Create(progressFill, TweenInfo.new(0.4), { Size = UDim2.fromScale(done, 1) }):Play()
+
+	restartButton.Visible = stage > 1
+	if not finished then
+		winPanel.Visible = false
+		finishedTime = nil
+	end
+
+	-- أول مرة نعرض المرحلة (لما يدخل اللعبة) ما نعرض رسايل
+	if shownStage ~= nil and stage > shownStage and not finished then
+		playSound("rbxasset://sounds/electronicpingshort.wav", 0.6)
+		if Config.isWorldStart(stage) then
+			showBanner(string.format("%s العالم %d: %s", world.icon, worldIndex, world.name), world.desc, world.colors[1])
+		else
+			showToast(string.format("✅ المرحلة %d!", stage))
+		end
+	elseif shownStage == nil and not finished then
+		showBanner(string.format("%s %s", world.icon, world.name), world.desc, world.colors[1])
+	end
+	shownStage = stage
+end
+
+player:GetAttributeChangedSignal("Stage"):Connect(updateStage)
+updateStage()
+
+-- المؤقت
+task.spawn(function()
+	while true do
+		local start = player:GetAttribute("RunStart")
+		if finishedTime then
+			timerLabel.Text = "⏱️ " .. Format.time(finishedTime)
+		elseif type(start) == "number" then
+			local best = player:GetAttribute("BestTime")
+			local text = "⏱️ " .. Format.time(Workspace:GetServerTimeNow() - start)
+			if type(best) == "number" then
+				text ..= "   🥇 " .. Format.time(best)
+			end
+			timerLabel.Text = text
+		end
+		task.wait(0.1)
+	end
+end)
+
+-- الأزرار
+restartButton.Activated:Connect(function()
+	confirm.Visible = true
+end)
+noButton.Activated:Connect(function()
+	confirm.Visible = false
+end)
+yesButton.Activated:Connect(function()
+	confirm.Visible = false
+	restartRemote:FireServer()
+end)
+againButton.Activated:Connect(function()
+	winPanel.Visible = false
+	restartRemote:FireServer()
+end)
+
+-- رسايل السيرفر
+notifyRemote.OnClientEvent:Connect(function(data)
+	if type(data) ~= "table" then
+		return
+	end
+	if data.kind == "win" then
+		finishedTime = data.time
+		winTime.Text = if data.fullRun then "⏱️ وقتك: " .. Format.time(data.time) else "⏱️ ما بدأت من المرحلة 1، فالوقت ما ينحسب"
+		winBest.Text = if data.newBest
+			then "🎉 رقم قياسي جديد!"
+			elseif type(data.best) == "number" then "🥇 أفضل وقت: " .. Format.time(data.best)
+			else ""
+		winCount.Text = string.format("🏅 عدد مرات الفوز: %d", data.wins or 1)
+		winPanel.Visible = true
+		winPanel.Size = UDim2.fromOffset(180, 130)
+		TweenService:Create(winPanel, TweenInfo.new(0.4, Enum.EasingStyle.Back), { Size = UDim2.fromOffset(360, 260) }):Play()
+		playSound("rbxasset://sounds/electronicpingshort.wav", 1)
+	elseif data.kind == "message" and type(data.text) == "string" then
+		showToast(data.text)
+	end
+end)
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="LocalScript" referent="13">
+          <Properties>
+            <string name="Name">Mechanics</string>
+            <string name="Source"><![CDATA[-- جهة اللاعب: تحريك المنصات، الموت من الحمم، منصات القفز، وحركات كل عالم
+-- (الجاذبية الخفيفة، التحكم المعكوس، الكاميرا المقلوبة، والوقت المعكوس)
+
+local CollectionService = game:GetService("CollectionService")
+local Lighting = game:GetService("Lighting")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+
+local player = Players.LocalPlayer
+
+-- ========== تتبّع الأشياء المتحركة ==========
+
+local function track(tag: string): { BasePart }
+	local list: { BasePart } = {}
+	local function add(inst: Instance)
+		if inst:IsA("BasePart") and not table.find(list, inst) then
+			table.insert(list, inst)
+		end
+	end
+	for _, inst in CollectionService:GetTagged(tag) do
+		add(inst)
+	end
+	CollectionService:GetInstanceAddedSignal(tag):Connect(add)
+	CollectionService:GetInstanceRemovedSignal(tag):Connect(function(inst)
+		local i = table.find(list, inst :: any)
+		if i then
+			table.remove(list, i)
+		end
+	end)
+	return list
+end
+
+local movers = track("Mover")
+local spinners = track("Spinner")
+local vanishers = track("Vanish")
+
+local TAU = math.pi * 2
+
+-- نستخدم وقت السيرفر عشان كل اللاعبين يشوفون المنصات بنفس المكان تقريباً
+RunService.Stepped:Connect(function()
+	local t = Workspace:GetServerTimeNow()
+
+	for _, p in movers do
+		local origin = p:GetAttribute("Origin")
+		local offset = p:GetAttribute("Offset")
+		local period = p:GetAttribute("Period")
+		if typeof(origin) == "CFrame" and typeof(offset) == "Vector3" and type(period) == "number" then
+			local phase = (t % period) / period * TAU
+			local alpha = 0.5 - 0.5 * math.cos(phase)
+			p.CFrame = origin + offset * alpha
+			-- السرعة تخلي اللاعب يمشي مع المنصة بدل ما يزحلق
+			p.AssemblyLinearVelocity = offset * (0.5 * math.sin(phase) * TAU / period)
+		end
+	end
+
+	for _, p in spinners do
+		local center = p:GetAttribute("Center")
+		local speed = p:GetAttribute("Speed")
+		local phase = p:GetAttribute("Phase") or 0
+		if typeof(center) == "CFrame" and type(speed) == "number" then
+			p.CFrame = center * CFrame.Angles(0, (t * speed) % TAU + phase, 0)
+		end
+	end
+
+	for _, p in vanishers do
+		local period = p:GetAttribute("Period")
+		local offset = p:GetAttribute("Offset") or 0
+		local visible = p:GetAttribute("Visible") or 0.7
+		if type(period) == "number" then
+			local f = ((t + offset) % period) / period
+			local shown = f < visible
+			local warning = shown and f > visible - 0.15
+			p.CanCollide = shown
+			p.Transparency = if not shown then 0.85 elseif warning then 0.5 else 0
+		end
+	end
+end)
+
+-- ========== الموت ومنصات القفز ==========
+
+local overlap = OverlapParams.new()
+overlap.FilterType = Enum.RaycastFilterType.Include
+
+local lastLaunch = 0
+
+local function kill(humanoid: Humanoid)
+	if humanoid.Health > 0 then
+		humanoid.Health = 0
+	end
+end
+
+local function launch(root: BasePart, humanoid: Humanoid, pad: BasePart)
+	local now = os.clock()
+	if now - lastLaunch < 0.4 then
+		return
+	end
+	lastLaunch = now
+	local height = pad:GetAttribute("LaunchHeight") or 20
+	local vy = math.sqrt(2 * Workspace.Gravity * height)
+	humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+	local v = root.AssemblyLinearVelocity
+	root.AssemblyLinearVelocity = Vector3.new(v.X, vy, v.Z)
+end
+
+local function onCharacter(character: Model)
+	local humanoid = character:WaitForChild("Humanoid") :: Humanoid
+	local root = character:WaitForChild("HumanoidRootPart") :: BasePart
+	overlap.FilterDescendantsInstances = { character }
+
+	humanoid.Touched:Connect(function(other: BasePart)
+		if CollectionService:HasTag(other, "Kill") then
+			kill(humanoid)
+		elseif CollectionService:HasTag(other, "JumpPad") then
+			launch(root, humanoid, other)
+		end
+	end)
+
+	local connection
+	connection = RunService.Heartbeat:Connect(function()
+		if not character.Parent or humanoid.Health <= 0 then
+			connection:Disconnect()
+			return
+		end
+		-- لو طاح تحت المسار
+		if root.Position.Y < -5 then
+			kill(humanoid)
+			return
+		end
+		-- العصي اللي تدور ما تطلق Touched دايماً، فنفحصها بأنفسنا
+		for _, bar in spinners do
+			if (bar.Position - root.Position).Magnitude < bar.Size.X then
+				if #Workspace:GetPartsInPart(bar, overlap) > 0 then
+					kill(humanoid)
+					return
+				end
+			end
+		end
+	end)
+end
+
+player.CharacterAdded:Connect(onCharacter)
+if player.Character then
+	task.spawn(onCharacter, player.Character)
+end
+
+-- ========== حركات العوالم ==========
+
+local controls = nil
+task.spawn(function()
+	local ok, result = pcall(function()
+		local module = require(player:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule") :: ModuleScript) :: any
+		return module:GetControls()
+	end)
+	if ok then
+		controls = result
+	else
+		warn("[Obby] ما لقيت التحكم:", result)
+	end
+end)
+
+local sepia = Instance.new("ColorCorrectionEffect")
+sepia.Name = "RewindTint"
+sepia.Enabled = false
+sepia.Saturation = -0.75
+sepia.Contrast = 0.15
+sepia.TintColor = Color3.fromRGB(255, 225, 185)
+sepia.Parent = Lighting
+
+local baseClock = Lighting.ClockTime
+local currentTwist: string? = nil
+
+local function unbind(name: string)
+	pcall(function()
+		RunService:UnbindFromRenderStep(name)
+	end)
+end
+
+local function clearTwist()
+	Workspace.Gravity = Config.DefaultGravity
+	unbind("ObbyInvert")
+	unbind("ObbyFlipCamera")
+	sepia.Enabled = false
+	Lighting.ClockTime = baseClock
+end
+
+local function applyTwist(twist: string)
+	if twist == currentTwist then
+		return
+	end
+	clearTwist()
+	currentTwist = twist
+
+	if twist == "lowGravity" then
+		Workspace.Gravity = Config.LowGravity
+		Lighting.ClockTime = 0 -- ليل عشان القمر
+	elseif twist == "invert" then
+		-- نشتغل بعد سكربت التحكم ونعكس اتجاه المشي
+		RunService:BindToRenderStep("ObbyInvert", Enum.RenderPriority.Input.Value + 1, function()
+			local character = player.Character
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			if humanoid and controls then
+				local move: Vector3 = controls:GetMoveVector()
+				if move.Magnitude > 0 then
+					humanoid:Move(-move, true)
+				end
+			end
+		end)
+	elseif twist == "flipCamera" then
+		-- نلف الكاميرا 180 درجة بعد ما تتحدّث
+		RunService:BindToRenderStep("ObbyFlipCamera", Enum.RenderPriority.Camera.Value + 1, function()
+			local camera = Workspace.CurrentCamera
+			if camera then
+				camera.CFrame = camera.CFrame * CFrame.Angles(0, 0, math.pi)
+			end
+		end)
+	elseif twist == "rewind" then
+		sepia.Enabled = true
+	end
+end
+
+local function refresh()
+	local stage = player:GetAttribute("Stage") or 1
+	local worldIndex = Config.worldIndexForStage(stage)
+	local world = worldIndex and Config.Worlds[worldIndex]
+	applyTwist(if world then world.twist else "none")
+end
+
+player:GetAttributeChangedSignal("Stage"):Connect(refresh)
+refresh()
+
+-- ========== تلوين نقاط الحفظ اللي وصلتها ==========
+
+local REACHED = Color3.fromRGB(90, 255, 130)
+local NOT_REACHED = Color3.fromRGB(235, 235, 235)
+
+local function colorCheckpoint(pad: Instance)
+	if not pad:IsA("BasePart") then
+		return
+	end
+	local stage = player:GetAttribute("Stage") or 1
+	local padStage = pad:GetAttribute("Stage") or 0
+	pad.Color = if padStage <= stage then REACHED else NOT_REACHED
+end
+
+local function colorAll()
+	for _, pad in CollectionService:GetTagged("Checkpoint") do
+		colorCheckpoint(pad)
+	end
+end
+
+CollectionService:GetInstanceAddedSignal("Checkpoint"):Connect(colorCheckpoint)
+player:GetAttributeChangedSignal("Stage"):Connect(colorAll)
+colorAll()
+]]></string>
+          </Properties>
+        </Item>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="Workspace" referent="14">
+    <Properties>
+      <string name="Name">Workspace</string>
+      <bool name="NeedsPivotMigration">false</bool>
+      <bool name="StreamingEnabled">false</bool>
+    </Properties>
+  </Item>
+</roblox>

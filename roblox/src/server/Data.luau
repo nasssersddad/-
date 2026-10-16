@@ -1,4 +1,4 @@
--- حفظ وتحميل تقدّم اللاعب (المرحلة، عدد مرات الفوز، أفضل وقت)
+-- حفظ وتحميل تقدّم اللاعب (المرحلة، عدد مرات الفوز، أفضل وقت، والفوز التعاوني)
 -- لو اللعبة مو منشورة أو الـ API مقفّل في Studio، اللعبة تشتغل عادي بس ما تحفظ
 
 local DataStoreService = game:GetService("DataStoreService")
@@ -10,6 +10,7 @@ export type Profile = {
 	stage: number,
 	wins: number,
 	best: number?,
+	coopWins: number,
 }
 
 local Data = {}
@@ -31,7 +32,7 @@ local function key(userId: number): string
 end
 
 function Data.default(): Profile
-	return { stage = 1, wins = 0, best = nil }
+	return { stage = 1, wins = 0, best = nil, coopWins = 0 }
 end
 
 function Data.load(userId: number): Profile
@@ -50,6 +51,7 @@ function Data.load(userId: number): Profile
 		profile.stage = math.clamp(tonumber(result.stage) or 1, 1, Config.FinishedStage)
 		profile.wins = tonumber(result.wins) or 0
 		profile.best = tonumber(result.best)
+		profile.coopWins = tonumber(result.coopWins) or 0
 	end
 	return profile
 end
@@ -63,6 +65,7 @@ function Data.save(userId: number, profile: Profile)
 			stage = profile.stage,
 			wins = profile.wins,
 			best = profile.best,
+			coopWins = profile.coopWins,
 		})
 	end)
 	if not ok then

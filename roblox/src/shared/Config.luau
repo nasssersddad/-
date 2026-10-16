@@ -81,6 +81,36 @@ Config.Stages = {
 Config.FinalStage = #Config.Stages
 Config.FinishedStage = #Config.Stages + 1 -- يعني خلّص الأوبي
 
+-- 🪢 الوضع التعاوني: لاعبين مربوطين بحبل في مسار خاص
+Config.Coop = {
+	name = "درب الحبل",
+	icon = "🪢",
+	desc = "انتو مربوطين! لو واحد طاح الثنين يرجعون",
+	colors = { Color3.fromRGB(255, 150, 90), Color3.fromRGB(255, 205, 120) },
+	courseZ = 320, -- مكان المسار التعاوني (بعيد عن المسار العادي)
+	ropeLength = 16, -- طول الحبل العادي
+	minRopeLength = 6, -- أقصر طول لما تسحب
+	reelSpeed = 10, -- كم ستد بالثانية يقصر لما تسحب
+	releaseSpeed = 4, -- كم ستد بالثانية يرجع لطوله
+	pullStrength = 10, -- قوة السحب لكل ستد زيادة عن طول الحبل
+	maxPull = 45, -- أقصى سرعة سحب
+	snapDistance = 60, -- لو أبعد من كذا (مثلاً واحد رسبن) ما نسحب
+	pairSeconds = 3, -- كم ثانية توقفون على الدوائر قبل ما تنربطون
+	bridgeGap = 10, -- فراغ الجسر (أبعد من النطّة عشان لازم الزر)
+	stages = {
+		{ segments = { { type = "jumps", count = 4, gap = 4, size = 7 } } },
+		{ segments = { { type = "bridge" } } },
+		{ segments = { { type = "lanes", length = 36 }, { type = "jumps", count = 3, gap = 4, size = 6 } } },
+		{ segments = { { type = "mover", span = 20, size = 9 }, { type = "lava", stones = 4 } } },
+		{ segments = { { type = "bridge" }, { type = "spinner", radius = 10, speed = 1.3 } } },
+		{ segments = { { type = "lanes", length = 44 }, { type = "jumps", count = 4, gap = 4, size = 6, rise = 1 } } },
+		{ segments = { { type = "truss", height = 12, width = 4 }, { type = "bridge" } } },
+		{ segments = { { type = "vanish", count = 5, size = 7 }, { type = "jumps", count = 3, gap = 4, size = 7 } } },
+	},
+}
+Config.Coop.FinalStage = #Config.Coop.stages
+Config.Coop.FinishedStage = #Config.Coop.stages + 1
+
 function Config.worldIndexForStage(stage: number): number?
 	local def = Config.Stages[stage]
 	return if def then def.world else nil

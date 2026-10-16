@@ -1,4 +1,5 @@
 -- السيرفر: يبني الأوبي، يتابع نقاط الحفظ والفوز، ويحفظ التقدّم
+-- (الوضع التعاوني 🪢 في Coop.luau)
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -10,11 +11,13 @@ local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Co
 local Format = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Format"))
 local CourseBuilder = require(script.Parent:WaitForChild("CourseBuilder"))
 local Data = require(script.Parent:WaitForChild("Data"))
+local Coop = require(script.Parent:WaitForChild("Coop"))
 
 -- إعدادات عامة
 StarterPlayer.CharacterUseJumpPower = true
 StarterPlayer.CharacterJumpPower = Config.JumpPower
 Workspace.Gravity = Config.DefaultGravity
+Players.RespawnTime = 1.5 -- رجعة سريعة بعد الطيحة
 Lighting.ClockTime = 14
 Lighting.Brightness = 2
 Lighting.OutdoorAmbient = Color3.fromRGB(150, 150, 170)
@@ -37,13 +40,35 @@ restartRemote.Parent = remotes
 local notifyRemote = Instance.new("RemoteEvent")
 notifyRemote.Name = "Notify"
 notifyRemote.Parent = remotes
-remotes.Parent = ReplicatedStorage
 
 local profiles: { [Player]: Data.Profile } = {}
 
 -- أسماء الأعمدة في لوحة اللاعبين
 local STAGE_STAT = "المرحلة"
 local WINS_STAT = "الفوز"
+local COOP_STAT = "🪢"
+
+Coop.init({
+	course = course.coop,
+	lobby = course.lobby,
+	remotes = remotes,
+	notify = notifyRemote,
+	onCoopWin = function(player: Player, _elapsed: number): number
+		local profile = profiles[player]
+		if not profile then
+			return 0
+		end
+		profile.coopWins += 1
+		player:SetAttribute("CoopWins", profile.coopWins)
+		local stats = player:FindFirstChild("leaderstats")
+		local value = stats and stats:FindFirstChild(COOP_STAT)
+		if value and value:IsA("IntValue") then
+			value.Value = profile.coopWins
+		end
+		return profile.coopWins
+	end,
+})
+remotes.Parent = ReplicatedStorage
 
 local function stageText(stage: number): string
 	return if stage >= Config.FinishedStage then "🏆" else tostring(stage)
@@ -91,8 +116,9 @@ local function onCharacterAdded(player: Player, character: Model)
 		humanoid.UseJumpPower = true
 		humanoid.JumpPower = Config.JumpPower
 	end
+	task.spawn(Coop.onCharacterAdded, player, character)
 	local profile = profiles[player]
-	local cf = spawnCFrame(if profile then profile.stage else 1)
+	local cf = Coop.spawnCFrame(player) or spawnCFrame(if profile then profile.stage else 1)
 	if cf and character:WaitForChild("HumanoidRootPart", 10) then
 		task.wait() -- نخلي الشخصية تكمّل تحميل قبل النقل
 		character:PivotTo(cf)
@@ -115,10 +141,15 @@ local function onPlayerAdded(player: Player)
 	winsValue.Name = WINS_STAT
 	winsValue.Value = profile.wins
 	winsValue.Parent = stats
+	local coopValue = Instance.new("IntValue")
+	coopValue.Name = COOP_STAT
+	coopValue.Value = profile.coopWins
+	coopValue.Parent = stats
 	stats.Parent = player
 
 	player:SetAttribute("Wins", profile.wins)
 	player:SetAttribute("BestTime", profile.best)
+	player:SetAttribute("CoopWins", profile.coopWins)
 	setStage(player, profile.stage)
 	startRun(player, profile.stage == 1)
 
@@ -131,6 +162,7 @@ local function onPlayerAdded(player: Player)
 end
 
 local function onPlayerRemoving(player: Player)
+	Coop.onPlayerRemoving(player)
 	local profile = profiles[player]
 	if profile then
 		Data.save(player.UserId, profile)
@@ -143,7 +175,7 @@ for stage, pad in course.checkpointPads do
 	pad.Touched:Connect(function(hit)
 		local player = playerFromHit(hit)
 		local profile = player and profiles[player]
-		if not player or not profile then
+		if not player or not profile or Coop.isTeamed(player) then
 			return
 		end
 		-- نسمح بس بالتقدّم، ما نرجّعه لورا
@@ -157,7 +189,7 @@ end
 course.finishPad.Touched:Connect(function(hit)
 	local player = playerFromHit(hit)
 	local profile = player and profiles[player]
-	if not player or not profile or profile.stage ~= Config.FinalStage then
+	if not player or not profile or profile.stage ~= Config.FinalStage or Coop.isTeamed(player) then
 		return
 	end
 	local elapsed = Workspace:GetServerTimeNow() - (player:GetAttribute("RunStart") or Workspace:GetServerTimeNow())
@@ -198,7 +230,7 @@ end)
 -- ابدأ من جديد
 local lastRestart: { [Player]: number } = {}
 restartRemote.OnServerEvent:Connect(function(player)
-	if not profiles[player] then
+	if not profiles[player] or Coop.isTeamed(player) then
 		return
 	end
 	local now = os.clock()

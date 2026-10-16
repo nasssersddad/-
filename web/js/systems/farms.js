@@ -7,6 +7,7 @@ import { PERSONAS, LINES, fmt } from './market.js';
 import { makeCamel, camelValue, capacity } from './camels.js';
 import { add, addStat, has, remove } from './inventory.js';
 import { mulberry32, hashString, pick, randInt } from './util.js';
+import { getSheepMul } from './shop.js';
 
 function line(rng, key, vars = {}) {
   let s = pick(rng, LINES[key]);
@@ -21,7 +22,7 @@ function round(n) {
 }
 
 export function sheepPrice(sh) {
-  return round(SHEEP_BREEDS[sh.breed].base * (sh.ageDays >= 2 ? 1 : 0.6));
+  return round(SHEEP_BREEDS[sh.breed].base * (sh.ageDays >= 2 ? 1 : 0.6) * getSheepMul());
 }
 
 export function farmState(state, id) {

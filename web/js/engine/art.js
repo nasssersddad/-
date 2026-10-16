@@ -1143,3 +1143,55 @@ export function hen(color = 0, frame = 0) {
     R(ctx, 4, 5, 3, 1, 'rgba(0,0,0,0.12)');
   });
 }
+
+// ---------- زينة المواسم ----------
+// فانوس رمضان: جسم ذهبي بزجاج ملون وضو يرف
+export function ramadanLantern(t = 0, hue = 0) {
+  const f = Math.floor(t * 5) % 2;
+  const glass = ['#ffcf4a', '#ff8a5a', '#7ad0ff'][hue % 3];
+  return cached(`rlantern:${hue % 3}:${f}`, 9, 14, (ctx) => {
+    R(ctx, 4, 0, 1, 2, '#6e4a28');
+    R(ctx, 2, 2, 5, 1, '#c8962a'); R(ctx, 3, 1, 3, 1, '#e8b53a');
+    R(ctx, 1, 3, 7, 7, '#c8962a');
+    R(ctx, 2, 4, 5, 5, f ? glass : '#fff3c4');
+    R(ctx, 4, 4, 1, 5, '#c8962a');
+    R(ctx, 1, 10, 7, 1, '#e8b53a'); R(ctx, 2, 11, 5, 1, '#c8962a'); R(ctx, 3, 12, 3, 1, '#e8b53a'); P(ctx, 4, 13, '#c8962a');
+  });
+}
+
+// بالونة العيد بخيطها
+export function balloon(color = 0) {
+  const c = ['#e8342a', '#2a8ad8', '#4fb83a', '#f0c030', '#c04ad0'][color % 5];
+  return cached(`balloon:${color % 5}`, 8, 18, (ctx) => {
+    for (let y = 0; y < 8; y++) { const w = Math.round(Math.sqrt(16 - (y - 3.5) ** 2) * 1.6); R(ctx, 4 - Math.ceil(w / 2), y, w, 1, c); }
+    P(ctx, 2, 2, 'rgba(255,255,255,0.7)'); P(ctx, 3, 9, c);
+    for (let y = 10; y < 18; y++) P(ctx, 3 + (y % 3 === 0 ? 1 : 0), y, '#e8e0d0');
+  });
+}
+
+// فقع طالع بالرمل بعد المطر: كومة رمل مشقوقة وفقعة تطل
+export function truffleMound(t = 0) {
+  const sh = Math.floor(t * 2) % 2;
+  return cached(`truffle:${sh}`, 14, 9, (ctx) => {
+    ellipse(ctx, 7, 7, 6, 2, 'rgba(0,0,0,0.18)');
+    ellipse(ctx, 7, 6, 6, 2.5, '#e2bf82');
+    R(ctx, 3, 5, 3, 1, '#b8924e'); R(ctx, 8, 4, 3, 1, '#b8924e'); P(ctx, 6, 6, '#b8924e');
+    ellipse(ctx, 7, 4, 2.5, 2, '#7a5634'); P(ctx, 6, 3, '#9a7048'); P(ctx, 8, 4, '#5e3f22');
+    if (sh) P(ctx, 10, 2, '#fff6c0');
+  });
+}
+
+// شبّة نار الكشتة: حجار وحطب ونار تتحرك ودلّة
+export function campfire(t = 0) {
+  const f = Math.floor(t * 8) % 3;
+  return cached(`campfire:${f}`, 22, 18, (ctx) => {
+    ellipse(ctx, 11, 15, 10, 3, 'rgba(0,0,0,0.25)');
+    for (const [x, y] of [[3, 13], [6, 15], [10, 16], [14, 15], [17, 13], [18, 11], [3, 11]]) { R(ctx, x, y, 3, 2, '#8a8478'); P(ctx, x, y, '#b0aa9c'); }
+    line(ctx, 6, 14, 15, 10, '#5e3a1f', 2); line(ctx, 15, 14, 6, 10, '#6e4a28', 2);
+    const h = 6 + f;
+    R(ctx, 8, 12 - h, 6, h, '#e85a1a'); R(ctx, 9, 11 - h, 4, h - 1, '#ffa030'); R(ctx, 10, 10 - h + f, 2, h - 3, '#ffe68a');
+    P(ctx, 11 + (f - 1), 4 - f, '#ffd24a');
+    // دلّة على طرف النار
+    R(ctx, 17, 7, 3, 4, '#d8a040'); R(ctx, 17, 6, 3, 1, '#e8c060'); P(ctx, 20, 8, '#d8a040'); P(ctx, 16, 9, '#b8862a');
+  });
+}

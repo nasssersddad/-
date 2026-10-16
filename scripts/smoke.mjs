@@ -37,7 +37,7 @@ const tick = (ms = 300) => page.waitForTimeout(ms);
 const settle = async () => { for (let i = 0; i < 25; i++) { await skip(); await closeModals(); await page.waitForTimeout(250); const busy = await ev(() => window.__game.ui.blocking() || window.__game.checking); if (!busy) { await page.waitForTimeout(300); await page.waitForTimeout(700); if (!(await ev(() => window.__game.ui.blocking()))) return; } } };
 
 await page.goto(url);
-await page.evaluate(() => { window.__fastAds = true; localStorage.clear(); });
+await page.evaluate(() => { window.__fastAds = true; localStorage.clear(); window.__game.seasonOverride = 'none'; });
 await shot('00-title');
 await page.click('#startBtn');
 await tick(600);
@@ -893,9 +893,124 @@ await shot('68-weekly');
 await closeModals();
 console.log('fun:', fun, 'away:', awayInfo, 'notif:', notif);
 
-// حفظ وتحميل
+// 24) الثبات، المواسم، والأداء
 await settle();
-const saved = await ev(() => { window.__game.save(); return JSON.parse(localStorage.getItem('almuzare_save')).player.coins; });
+// خطأ متعمّد بإطار: اللعبة لازم تكمّل وما تتجمد
+const crash = await ev(async () => {
+  const g = window.__game;
+  const orig = g.update;
+  let once = true;
+  g.update = function (dt) { if (once) { once = false; throw new Error('SMOKE_TEST_ERROR'); } return orig.call(this, dt); };
+  const t0 = g.t;
+  await new Promise(r => setTimeout(r, 1200));
+  delete g.update;
+  return { advanced: g.t > t0, logged: /SMOKE_TEST_ERROR/.test(localStorage.getItem('almuzare_lasterror') || ''), toast: [...document.querySelectorAll('.toast')].some(e => /خطأ صغير/.test(e.textContent)) };
+});
+console.log('crash recovery:', crash);
+await settle();
+// رمضان: ضيوف الفطور العصر، ويدفعون، والعداد يزيد
+const ram = await ev(async () => {
+  const g = window.__game, s = g.state;
+  const { IFTAR_WANTS } = await import('./js/data/seasons.js');
+  g.seasonOverride = 'ramadan'; g._season = null;
+  g.guestRt = []; s.guests.day = -1; s.time.minute = 16 * 60 + 20;
+  g.clockTick();
+  await new Promise(r => setTimeout(r, 400));
+  const welcome = !!document.querySelector('.season-ramadan');
+  for (const m of [...g.ui.modals]) { m.closable = true; m.close(); }
+  await new Promise(r => setTimeout(r, 600));
+  const wants = g.guestRt.map(x => x.want);
+  const gg = g.guestRt[0];
+  let iftar = 0;
+  if (gg) { s.inv[gg.want] = (s.inv[gg.want] || 0) + 1; gg.moving = false; gg.leaving = false; g.serveGuest(gg); iftar = g.seasonState().iftar; }
+  return { welcome, n: wants.length, allIftar: wants.length > 0 && wants.every(w => IFTAR_WANTS.includes(w)), iftar };
+});
+await ev(() => { const g = window.__game; g.state.time.minute = 20 * 60 + 30; g.placeAt({ x: 32 * 16, y: 30 * 16 }); g.state.player.dir = 'up'; for (const m of [...g.ui.modals]) { m.closable = true; m.close(); } });
+await tick(1200);
+await shot('69-ramadan-lanterns');
+await settle();
+// عيد الفطر: ترحيب، وبعده عيدية، وبشت العيد
+const eid = await ev(async () => {
+  const g = window.__game, s = g.state;
+  g.seasonOverride = 'eid_fitr'; g._season = null;
+  s.time.minute = 10 * 60;
+  const c0 = s.player.coins;
+  g.clockTick();
+  await new Promise(r => setTimeout(r, 300));
+  const welcome = !!document.querySelector('.season-eid_fitr');
+  for (const m of [...g.ui.modals]) { m.closable = true; m.close(); }
+  g.clockTick();
+  await new Promise(r => setTimeout(r, 300));
+  const eidiyaModal = g.ui.modals.some(m => /عيديتك/.test(m.el.textContent));
+  for (const m of [...g.ui.modals]) { m.closable = true; m.close(); }
+  return { welcome, eidiyaModal, coins: s.player.coins - c0, outfit: !!s.flags.eidOutfit, sheepMul: (await import('./js/systems/shop.js')).getSheepMul() };
+});
+await ev(() => { const g = window.__game; g.placeAt({ x: 32 * 16, y: 29 * 16 + 8 }); g.state.player.dir = 'up'; });
+await tick(1000);
+await shot('70-eid');
+await settle();
+// الشتاء: مطر، فقع يتحفر، وشبّة نار تعطي طاقة
+const win = await ev(async () => {
+  const g = window.__game, s = g.state;
+  g.seasonOverride = 'winter'; g._season = null;
+  g.wxOverride = { rain: true, start: 0, end: 24, heavy: false };
+  g.clockTick();
+  for (const m of [...g.ui.modals]) { m.closable = true; m.close(); }
+  const spots = g.seasonSpots();
+  const f0 = (s.inv.faqa || 0);
+  s.player.energy = 50;
+  if (spots[0]) { g.placeAt({ x: spots[0].x, y: spots[0].y + 12 }); g.digTruffle(spots[0]); for (let k = 0; k < 80 && g.anim; k++) { for (const m of [...g.ui.modals]) { m.closable = true; m.close(); } await new Promise(r => setTimeout(r, 50)); } }
+  const faqa = (s.inv.faqa || 0) - f0;
+  const e0 = s.player.energy;
+  g.campfireAction();
+  const warm = s.player.energy - e0;
+  g.campfireAction();
+  const again = s.player.energy - e0;
+  g.wxOverride = null;
+  return { spots: spots.length, faqa, warm, again };
+});
+await ev(() => { const g = window.__game; const c = g.campfirePos(); g.state.time.minute = 21 * 60; g.placeAt({ x: c.x - 26, y: c.y + 14 }); g.state.player.dir = 'right'; });
+await tick(1200);
+await shot('71-winter-campfire');
+await settle();
+// زر «جرّب المواسم» بالإعدادات، وبعدين نرجع للتاريخ الحقيقي
+const pv = await ev(async () => {
+  const g = window.__game;
+  g.seasonOverride = null; g._season = null;
+  g.ui.openSettings();
+  await new Promise(r => setTimeout(r, 200));
+  document.querySelector('[data-a="seasonpv"]').click();
+  const id = g.seasonPreview;
+  // التجربة ما تأثر على الموسم الحقيقي
+  const pvSafe = g.state.season && g.state.season.id === 'winter';
+  for (const m of [...g.ui.modals]) { m.closable = true; m.close(); }
+  g.seasonPreview = null; g._season = null; g.seasonOverride = 'none';
+  return { id, pvSafe };
+});
+// الأداء: التخفيف التلقائي يطفي الشيدرز ويقلل الدقة
+const perfRes = await ev(() => {
+  const g = window.__game;
+  const st = g.state.settings;
+  st.hq = true; delete g.state.flags.autoLite;
+  const did = g.autoLite();
+  const res = { did, hq: st.hq, lite: !!g.renderer.lite, dpr: g.renderer.dpr };
+  st.hq = true; st.lite = false; g.renderer.lite = false; g.renderer.resize();
+  return res;
+});
+console.log('seasons:', { ram, eid, win, pv }, 'perf:', perfRes);
+
+// حفظ وتحميل (ونخرّب ملف الحفظ: لازم يرجع من النسخة الاحتياطية)
+await settle();
+const saved = await ev(() => {
+  const g = window.__game; g.backupNow = true; g.save();
+  const c = JSON.parse(localStorage.getItem('almuzare_save')).player.coins;
+  // نخرّبه بعد آخر حفظ تسويه اللعبة وقت الإغلاق (المستمع هذا يشتغل بعدها)
+  const breakIt = () => localStorage.setItem('almuzare_save', '{"player": {"x": 1, "y"');
+  window.addEventListener('pagehide', breakIt);
+  document.addEventListener('visibilitychange', breakIt);
+  window.addEventListener('unload', breakIt);
+  return c;
+});
 console.log('saved coins:', saved);
 const questIdx = await ev(() => window.__game.state.quest.index);
 console.log('qstats', await ev(() => { const s = window.__game.state; return { planted: s.stats.planted, watered: s.stats.watered, palms: s.stats.palms, plots: s.plots, seeds: s.inv.seed_wheat, water: s.inv.water, bed: s.built.my_bed }; }));
@@ -904,14 +1019,24 @@ await page.reload();
 await page.click('#startBtn');
 await tick(800);
 const loaded = await ev(() => window.__game.state.player.coins);
+const restored = await ev(() => !!localStorage.getItem('almuzare_save_corrupt'));
+await tick(1500);
+const restoredToast = await ev(() => [...document.querySelectorAll('.toast')].some(e => /النسخة الاحتياطية|نسخة احتياطية/.test(e.textContent)));
 await skip(); await closeModals();
-console.log('loaded coins:', loaded);
+console.log('loaded coins:', loaded, 'restored from backup:', restored, restoredToast);
 await shot('20-reloaded');
 
 await browser.close();
 server.close();
 
-const fatal = errors.filter(e => !/favicon/.test(e));
+const fatal = errors.filter(e => !/favicon/.test(e) && !/SMOKE_TEST_ERROR/.test(e));
+if (!crash.advanced || !crash.logged || !crash.toast) { console.error('❌ اللعبة تجمدت بعد خطأ', crash); process.exit(1); }
+if (!restored || !restoredToast) { console.error('❌ الحفظ الخربان ما رجع من النسخة الاحتياطية', { restored, restoredToast }); process.exit(1); }
+if (!ram.welcome || ram.n < 1 || !ram.allIftar || ram.iftar !== 1 || !eid.welcome || !eid.eidiyaModal || eid.coins <= 0 || !eid.outfit || win.spots < 1 || win.faqa < 1 || win.warm !== 15 || win.again !== 15 || pv.id !== 'ramadan' || !pv.pvSafe
+  || !perfRes.did || perfRes.hq !== false || !perfRes.lite || perfRes.dpr !== 1) {
+  console.error('❌ المواسم أو الأداء فيها مشكلة', { ram, eid, win, pv, perfRes });
+  process.exit(1);
+}
 if (fatal.length) {
   console.error('❌ أخطاء بالمتصفح:\n' + fatal.join('\n'));
   process.exit(1);

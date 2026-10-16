@@ -10,6 +10,7 @@ import { TECH, TECH_BY_ID, KP_TYPES } from './data/tech.js';
 import { NPCS, WEEKDAYS, WEEKDAY_ICONS } from './data/npcs.js';
 import * as unlocks from './systems/unlocks.js';
 import { BUILD_ZONES } from './data/zones.js';
+import { SEASONS, IFTAR_MILESTONES } from './data/seasons.js';
 import { Flyer } from './engine/flyer.js';
 import { MAIN_QUESTS } from './data/quests.js';
 import { DAILY_CALENDAR, WHEEL, CHESTS, ACHIEVEMENTS, ACH_TIER_NAMES, ACH_TIER_REWARDS, DAILY_QUEST_BONUS, AD_PLACEMENTS, AD_SECONDS } from './data/rewards.js';
@@ -20,7 +21,7 @@ import { describeReward, applyReward } from './systems/rewards.js';
 import * as retention from './systems/retention.js';
 import { currentQuest } from './systems/quests.js';
 import * as time from './systems/time.js';
-import { SAVE_KEY } from './systems/state.js';
+import { SAVE_KEY, BACKUP_KEY } from './systems/state.js';
 import { character, PLAYER_LOOK, DJINN_LOOK, SALEM_LOOK } from './engine/art.js';
 import { setAdSimulator } from './systems/ads.js';
 import * as workersSys from './systems/workers.js';
@@ -174,7 +175,8 @@ export class UI {
     if (this.last.xpv !== undefined && xpv > this.last.xpv) this.flyGain('✨', 2, document.querySelector('#hud .avatar'), 18);
     this.last.xpv = xpv;
     const wd = time.weekday(s);
-    set('dayName', `${WEEKDAY_ICONS[wd]} ${WEEKDAYS[wd]}`);
+    const sea = g.season ? g.season() : null;
+    set('dayName', `${WEEKDAY_ICONS[wd]} ${WEEKDAYS[wd]}${sea ? ' ' + sea.icon : ''}`);
     const rainy = g.rainLevel && g.rainLevel() > 0;
     const wxIcon = g.mode === 'dungeon' ? '' : rainy ? ' 🌧️' : g.rainbowLevel && g.rainbowLevel() > 0 ? ' 🌈' : time.isNight(s) ? ' 🌙' : ' ☀️';
     set('clock', time.clockText(s) + wxIcon);
@@ -831,33 +833,80 @@ export class UI {
             ${card('sfx', '🔊', 'الأصوات', st.sfx, 'شغالة', 'طافية')}
             ${card('music', '🎵', 'الموسيقى', st.music, 'شغالة', 'طافية')}
             ${card('hq', '✨', 'جودة الرسم', st.hq !== false, 'عالية', 'عادية (أخف)')}
+            ${card('fps30', '🔋', 'توفير البطارية', !!st.fps30, '30 إطار بالثانية', 'طافي')}
             ${card('big', '🔤', 'حجم الكلام', !!st.bigText, 'كبير', 'عادي')}
             ${card('vib', '📳', 'الاهتزاز', st.vibrate !== false, 'شغال', 'طافي')}
             ${card('arrow', '🧭', 'سهم المهام', st.arrow !== false, 'يطلع', 'مخفي')}
             ${card('notify', '🔔', 'إشعارات الجوال', st.notify !== false, 'زرعك جاهز، البيض، المكافأة', 'طافية')}
+            ${s.flags.eidOutfit ? card('outfit', '👘', 'بشت العيد', !!st.eidOutfit, 'لابسه دايم', 'بالعيد بس') : ''}
           </div>
           <button class="btn green big wide" data-a="help">📖 كيف ألعب؟</button>
-          <div class="row center"><button class="btn" data-a="privacy">📄 سياسة الخصوصية</button>${privacyOpts ? '<button class="btn" data-a="privopts">🛡️ خيارات الخصوصية</button>' : ''}</div>
-          <p class="muted center">المزارع — نسخة 1.2 • إعلانات اليوم الباقية: ${retention.adsLeft(s, g.now())}</p>
+          <div class="row center"><button class="btn" data-a="seasonpv">👀 جرّب المواسم${g.seasonPreview ? `: ${SEASONS.find(x => x.id === g.seasonPreview).icon}` : ''}</button><button class="btn" data-a="privacy">📄 سياسة الخصوصية</button>${privacyOpts ? '<button class="btn" data-a="privopts">🛡️ خيارات الخصوصية</button>' : ''}</div>
+          <p class="muted center">المزارع — نسخة 1.3 • إعلانات اليوم الباقية: ${retention.adsLeft(s, g.now())}${g.perf && g.perf.fps ? ` • 🎯 ${Math.round(g.perf.fps)} إطار/ث` : ''}</p>
           <div class="row center"><button class="btn tiny" data-a="reset" style="background:#e8b0a0">🗑️ ابدأ من جديد</button></div>`;
         const flip = (fn) => () => { fn(); this.audio.play('ui'); g.save(); m.rerender(); };
         m.handlers.music = flip(() => { st.music = !st.music; this.audio.setMusic(st.music); });
         m.handlers.sfx = flip(() => { st.sfx = !st.sfx; this.audio.sfx = st.sfx; });
-        m.handlers.hq = flip(() => { st.hq = st.hq === false; });
+        m.handlers.hq = flip(() => {
+          st.hq = st.hq === false;
+          // رجّعت الجودة العالية؟ نرجّع الدقة الكاملة بعد
+          st.lite = st.hq === false ? st.lite : false;
+          if (g.renderer) { g.renderer.lite = !!st.lite; g.renderer.resize(); }
+        });
+        m.handlers.fps30 = flip(() => { st.fps30 = !st.fps30; });
         m.handlers.big = flip(() => { st.bigText = !st.bigText; this.applyTextSize(); });
         m.handlers.vib = flip(() => { st.vibrate = st.vibrate === false; });
         m.handlers.arrow = flip(() => { st.arrow = st.arrow === false; });
         m.handlers.notify = flip(() => { st.notify = st.notify === false; });
+        m.handlers.outfit = flip(() => { st.eidOutfit = !st.eidOutfit; });
+        // تجربة المواسم قبل موعدها (بدون جوايز): ما فيه ← رمضان ← الفطر ← الأضحى ← الشتاء ← ما فيه
+        m.handlers.seasonpv = () => {
+          const ids = [null, 'ramadan', 'eid_fitr', 'eid_adha', 'winter'];
+          const next = ids[(ids.indexOf(g.seasonPreview || null) + 1) % ids.length];
+          g.seasonPreview = next;
+          g._season = null;
+          this.audio.play('ui');
+          const d = next ? SEASONS.find(x => x.id === next) : null;
+          this.toast(d ? `👀 تجربة: ${d.icon} ${d.name} (بدون جوايز)` : '👀 رجعنا للتاريخ الحقيقي', '', 3);
+          m.rerender(); this.refresh();
+        };
         m.handlers.help = () => { m.close(); this.openHelp(); };
         m.handlers.privacy = () => this.openPrivacy();
         m.handlers.privopts = () => { try { nb.showPrivacyOptions(); } catch { /* ما يهم */ } };
         m.handlers.reset = async () => {
           const ok = await this.confirm('متأكد؟ كل تقدمك بينمسح ومايرجع!');
           if (!ok) return;
-          try { g.storage.removeItem(SAVE_KEY); } catch { /* ما يهم */ }
+          try { g.storage.removeItem(SAVE_KEY); g.storage.removeItem(BACKUP_KEY); } catch { /* ما يهم */ }
           g.state = null;
           location.reload();
         };
+      },
+    });
+  }
+
+  // ترحيب بالموسم: مرة وحدة لكل موسم
+  seasonWelcome(def) {
+    const g = this.g;
+    this.audio.play('magic');
+    this.modal({
+      title: `${def.icon} ${def.greet}`, cls: 'small',
+      render: (m) => {
+        const ss = g.seasonState();
+        const extra = def.id === 'ramadan'
+          ? `<div class="gains">${IFTAR_MILESTONES.map(x => `<span>🌙 ${x.at} صايم: ${esc(x.label)}</span>`).join('')}</div><p class="center muted">فطّرت لين الحين: ${ss ? ss.iftar : 0}</p>`
+          : def.mods.eidiya ? '<p class="center">🎁 <b>عيديتك</b> تجيك أول ما تدخل كل يوم من أيام العيد.</p>' : '';
+        m.body.innerHTML = `<div class="reveal shine season-${def.id}"><div class="big-ic">${def.icon}</div><p>${esc(def.desc)}</p>${extra}</div>${g.seasonPreview ? '<p class="center muted">👀 هذي تجربة: الجوايز تنفتح بموعد الموسم الحقيقي</p>' : ''}<div class="row center"><button class="btn green big" data-a="close">يلا! ${def.icon}</button></div>`;
+      },
+    });
+  }
+
+  // أخطاء كثير ورا بعض: نوقف ونطلب إعادة تشغيل (الحفظ محفوظ قبلها)
+  crashScreen() {
+    this.modal({
+      title: '😓 اللعبة واجهت مشكلة', cls: 'small', closable: false,
+      render: (m) => {
+        m.body.innerHTML = '<div class="bmenu"><p class="center">صار خطأ وما قدرنا نكمّل. <b>تقدمك محفوظ</b>، أعد تشغيل اللعبة وتكمّل من مكانك.</p><div class="row center"><button class="btn green big" data-a="reload">🔄 أعد التشغيل</button></div></div>';
+        m.handlers.reload = () => location.reload();
       },
     });
   }

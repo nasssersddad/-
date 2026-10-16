@@ -6,10 +6,11 @@ import { TROUGH_CAP } from '../data/camels.js';
 export const RAIN_CHANCE = 0.3;
 
 // { rain, start, end (بالساعات), heavy }
-export function dayWeather(seed, day, stormy = false) {
+// chance: احتمال المطر (الشتاء يرفعه)
+export function dayWeather(seed, day, stormy = false, chance = RAIN_CHANCE) {
   const rng = mulberry32(hashString(`wx:${seed}:${day}`));
   const roll = rng();
-  if (stormy || roll >= RAIN_CHANCE) return { rain: false };
+  if (stormy || roll >= chance) return { rain: false };
   const start = randInt(rng, 6, 17);
   const len = randInt(rng, 2, 5);
   return { rain: true, start, end: start + len, heavy: rng() < 0.35 };

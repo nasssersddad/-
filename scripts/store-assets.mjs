@@ -36,7 +36,7 @@ const quiet = () => ev(async () => {
 });
 
 await page.goto(base + 'index.html');
-await ev(() => { window.__fastAds = true; localStorage.clear(); });
+await ev(() => { window.__fastAds = true; localStorage.clear(); window.__game.seasonOverride = 'none'; });
 await page.click('#startBtn');
 await wait(800);
 await quiet();

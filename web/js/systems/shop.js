@@ -16,9 +16,14 @@ export function unitValue(item) {
   return ITEMS[item] ? ITEMS[item].price : 0;
 }
 
+// سعر الغنم يتغير بالمواسم (عيد الأضحى يغليه). اللعبة تضبطه من الموسم الحالي
+let sheepMul = 1;
+export function setSheepMul(m) { sheepMul = m > 0 ? m : 1; }
+export function getSheepMul() { return sheepMul; }
+
 export function sheepValue(sh) {
   const b = SHEEP_BREEDS[sh.breed];
-  return Math.round(b.base * (sh.ageDays >= 2 ? 1 : 0.6));
+  return Math.round(b.base * (sh.ageDays >= 2 ? 1 : 0.6) * sheepMul);
 }
 
 // نطاق السعر المسموح بالبسطة

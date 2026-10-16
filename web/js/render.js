@@ -23,6 +23,7 @@ import { BUILD_ZONES, zonesFor, isZoneOpen } from './data/zones.js';
 import * as production from './systems/production.js';
 import { RECIPES } from './data/recipes.js';
 import * as coopSys from './systems/coop.js';
+import { EID_LOOK } from './data/seasons.js';
 
 export class Renderer {
   constructor(worldCanvas, fxCanvas, postCanvas) {
@@ -41,7 +42,8 @@ export class Renderer {
 
   resize() {
     const cw = window.innerWidth, ch = window.innerHeight;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    // الوضع الخفيف: دقة أقل (أسرع بواجد على الجوالات الضعيفة)
+    const dpr = Math.min(this.lite ? 1 : 2, window.devicePixelRatio || 1);
     this.dpr = dpr;
     // كل بكسل من الرسم = ds بكسل حقيقي بالشاشة (بكسلات أصغر = تفاصيل أكثر)
     const ds = Math.max(2, Math.round((ch * dpr) / 250));
@@ -350,6 +352,8 @@ export class Renderer {
         lights.push({ x: sp.x, y: sp.y - 8, r: 26, c: 'rgba(180,210,255,' });
       }
     }
+    // المواسم: الفقع، شبّة النار، وزينة الخان
+    this.collectSeason(game, list, lights);
     // صناديق على الأرض
     for (const c of s.groundChests || []) {
       const bob = Math.round(Math.sin(t * 4) * 1);
@@ -633,6 +637,44 @@ export class Renderer {
     }
   }
 
+  collectSeason(game, list, lights) {
+    if (game.mode !== 'world' || !game.season) return;
+    const t = game.t;
+    const night = game.state && darkness(game.state.time.minute) > 0.25;
+    for (const sp of game.seasonSpots()) {
+      this.sprite(list, art.truffleMound(t + sp.x), sp.x, sp.y + 2, sp.y - 6);
+    }
+    if (game.seasonMod('campfire')) {
+      const c = game.campfirePos();
+      this.sprite(list, art.campfire(t), c.x, c.y + 4, c.y);
+      lights.push({ x: c.x, y: c.y - 8, r: night ? 70 : 34, c: 'rgba(255,150,60,', flicker: true });
+    }
+    const kind = game.seasonMod('lights');
+    if (!kind) return;
+    // حبل زينة على سور الخان الجنوبي (جنب البوابة)
+    const y = (KHAN.y1 + 1) * TILE - 2;
+    const xs = [];
+    for (let tx = KHAN.x0 + 1; tx <= KHAN.x1 - 1; tx += 2) xs.push(tx * TILE + 8);
+    list.push({ y: y + 1, draw: (ctx, cam) => {
+      ctx.strokeStyle = 'rgba(80,50,20,0.8)'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      xs.forEach((x, i) => { const px = x - cam.x, py = y - 14 - cam.y + (i % 2 ? 2 : 0); if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py); });
+      ctx.stroke();
+      if (kind === 'eid') {
+        const cols = ['#ff5a5a', '#ffd24a', '#5ad0ff', '#7aff7a', '#ff8af0'];
+        xs.forEach((x, i) => { ctx.fillStyle = cols[(i + Math.floor(t * 3)) % cols.length]; ctx.fillRect(Math.round(x - cam.x) - 1, Math.round(y - 13 - cam.y + (i % 2 ? 2 : 0)), 3, 3); });
+      }
+    } });
+    if (kind === 'ramadan') {
+      xs.forEach((x, i) => { if (i % 2 === 0) this.sprite(list, art.ramadanLantern(t + i * 0.3, i / 2), x, y - 2 + (i % 4 ? 2 : 0), y + 2); });
+      if (night) xs.forEach((x, i) => { if (i % 2 === 0) lights.push({ x, y: y - 8, r: 26, c: 'rgba(255,200,90,', flicker: true }); });
+    } else {
+      const gx = (GATE.x0) * TILE, gx2 = (GATE.x1 + 1) * TILE;
+      [gx - 6, gx - 14, gx2 + 6, gx2 + 14].forEach((x, i) => this.sprite(list, art.balloon(i), x, y - 4 + Math.round(Math.sin(t * 2 + i) * 2), y + 3));
+      if (night) xs.forEach((x, i) => { if (i % 3 === 0) lights.push({ x, y: y - 12, r: 20, c: i % 2 ? 'rgba(255,120,200,' : 'rgba(120,200,255,' }); });
+    }
+  }
+
   collectHens(game, list) {
     const t = game.t;
     for (const rt of game.henRt || []) {
@@ -776,7 +818,9 @@ export class Renderer {
     const blink = game.hurtT > 0 && Math.floor(t * 20) % 2 === 0;
     const a = game.anim;
     const crouch = a && ['plant', 'milk', 'harvest', 'feed', 'shear'].includes(a.type);
-    const img = art.character(art.PLAYER_LOOK, a && (a.type === 'water' || a.type === 'pour' || crouch) ? (p.dir === 'up' || p.dir === 'down' ? p.dir : p.dir) : p.dir, frame, 'player');
+    // بشت العيد: يلبسه بالعيد، وبعده إذا اختاره من الإعدادات
+    const eid = s.flags.eidOutfit && (game.seasonMod('outfit') || s.settings.eidOutfit);
+    const img = art.character(eid ? EID_LOOK : art.PLAYER_LOOK, a && (a.type === 'water' || a.type === 'pour' || crouch) ? (p.dir === 'up' || p.dir === 'down' ? p.dir : p.dir) : p.dir, frame, eid ? 'player-eid' : 'player');
     list.push({
       y: p.y,
       draw: (ctx, cam) => {

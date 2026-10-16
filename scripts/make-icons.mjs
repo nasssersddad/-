@@ -9,7 +9,7 @@ const exe = process.env.CHROME || (fs.existsSync('/opt/pw-browsers/chromium') ? 
 const browser = await chromium.launch({ executablePath: exe });
 const page = await browser.newPage();
 
-const draw = async (size, round, square = false) => page.evaluate(({ size, round, square }) => {
+const draw = async (size, round, square = false, adaptive = false) => page.evaluate(({ size, round, square, adaptive }) => {
   const S = 48;
   const c = document.createElement('canvas');
   c.width = S; c.height = S;
@@ -53,19 +53,41 @@ const draw = async (size, round, square = false) => page.evaluate(({ size, round
   o.width = size; o.height = size;
   const ox = o.getContext('2d');
   ox.imageSmoothingEnabled = false;
+  if (adaptive) {
+    // أيقونة adaptive (أندرويد 8+): 108dp والظاهر منها 72dp بالنص، فنحط الرسمة بالنص ونمد أطرافها للحواف
+    const k = (size * 72 / 108) / S, off = Math.round((size - S * k) / 2), w = Math.round(S * k);
+    ox.drawImage(c, 0, 0, S, S, off, off, w, w);
+    ox.drawImage(c, 0, 0, 1, S, 0, off, off, w);                 // يسار
+    ox.drawImage(c, S - 1, 0, 1, S, off + w, off, size - off - w, w); // يمين
+    ox.drawImage(o, 0, off, size, 1, 0, 0, size, off);           // فوق
+    ox.drawImage(o, 0, off + w - 1, size, 1, 0, off + w, size, size - off - w); // تحت
+    return o.toDataURL('image/png').split(',')[1];
+  }
   if (square) { /* أيقونة Google Play: مربع كامل، والمتجر يدوّر الزوايا بنفسه */ }
   else if (round) { ox.beginPath(); ox.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2); ox.clip(); }
   else { const r = size * 0.18; ox.beginPath(); ox.roundRect(0, 0, size, size, r); ox.clip(); }
   ox.drawImage(c, 0, 0, size, size);
   return o.toDataURL('image/png').split(',')[1];
-}, { size, round, square });
+}, { size, round, square, adaptive });
 
 for (const [dir, size] of Object.entries(sizes)) {
   fs.mkdirSync(path.join(res, dir), { recursive: true });
+  // خلفية الأيقونة adaptive بمقاس 108dp لكل كثافة (2.25 × مقاس الأيقونة العادية 48dp)
+  fs.writeFileSync(path.join(res, dir, 'ic_launcher_background.png'), Buffer.from(await draw(Math.round(size * 2.25), false, false, true), 'base64'));
   fs.writeFileSync(path.join(res, dir, 'ic_launcher.png'), Buffer.from(await draw(size, false), 'base64'));
   fs.writeFileSync(path.join(res, dir, 'ic_launcher_round.png'), Buffer.from(await draw(size, true), 'base64'));
 }
 fs.mkdirSync('store', { recursive: true });
 fs.writeFileSync('store/icon-512.png', Buffer.from(await draw(512, false, true), 'base64'));
+// ملفات adaptive: الخلفية هي الرسمة، والواجهة شفافة
+const xml = `<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/ic_launcher_background" />
+    <foreground android:drawable="@android:color/transparent" />
+</adaptive-icon>
+`;
+fs.mkdirSync(path.join(res, 'mipmap-anydpi-v26'), { recursive: true });
+fs.writeFileSync(path.join(res, 'mipmap-anydpi-v26', 'ic_launcher.xml'), xml);
+fs.writeFileSync(path.join(res, 'mipmap-anydpi-v26', 'ic_launcher_round.xml'), xml);
 await browser.close();
 console.log('✅ icons written');

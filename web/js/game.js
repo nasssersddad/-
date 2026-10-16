@@ -1,11 +1,11 @@
 // قلب اللعبة: الحركة، التفاعل، الضيوف، السرداب، الأيام
-import { buildWorld, tileAt, SOLID_TILES, TILE, MAP_W, MAP_H, T, WALL_N, WALL_S, KHAN } from './data/map.js';
+import { buildWorld, tileAt, SOLID_TILES, TILE, MAP_W, MAP_H, T, WALL_N, WALL_S, KHAN, GATE } from './data/map.js';
 import { ITEMS, SEEDS, RELICS } from './data/items.js';
 import { BUILD_SPOTS } from './data/recipes.js';
 import { NPCS, GUEST_LOOKS, GUEST_NAMES, GUEST_WANTS, GUEST_LINES, WEEKDAYS } from './data/npcs.js';
 import { INTRO, LAMP_IDLE, MAIN_QUESTS } from './data/quests.js';
 import { GATHER_CHEST_CHANCE } from './data/rewards.js';
-import { newState, saveToStorage, loadFromStorage } from './systems/state.js';
+import { newState, saveToStorage, loadSave } from './systems/state.js';
 import { add, count, addStat, has, remove, bagFree } from './systems/inventory.js';
 import { applyReward, rollChestRarity, rollChest, doubleReward } from './systems/rewards.js';
 import { maxEnergy, maxHp, attackPower, coinMultiplier, stars, roomsBuilt } from './systems/progression.js';
@@ -37,6 +37,8 @@ import * as unlocks from './systems/unlocks.js';
 import { pendingFirsts, markFirst, seedFirsts } from './data/firsts.js';
 import { catchUp, worthShowing } from './systems/away.js';
 import { planNotifications } from './systems/notify.js';
+import * as seasonSys from './systems/seasons.js';
+import { IFTAR_WANTS } from './data/seasons.js';
 import { PLACEABLES } from './data/buildings.js';
 import { BUILD_ZONES, zonesFor, zoneCenter, isZoneOpen, unlockZone, zoneById } from './data/zones.js';
 
@@ -96,8 +98,11 @@ export class Game {
 
   // ---------- البداية ----------
   start() {
-    const loaded = loadFromStorage(this.storage, this.now());
+    const ld = loadSave(this.storage, this.now());
+    const loaded = ld.state;
     this.state = loaded || newState(this.now());
+    if (ld.source === 'backup') setTimeout(() => this.ui.toast('🛟 ملف الحفظ كان خربان، رجّعنا آخر نسخة احتياطية من تقدمك', 'gain', 6), 1200);
+    else if (ld.corrupt) setTimeout(() => this.ui.toast('⚠️ ملف الحفظ كان خربان فبدينا من جديد (احتفظنا بنسخة منه)', '', 6), 1200);
     for (const c of this.state.camels) camels.ensureTraits(c);
     const s = this.state;
     this.migrated = placement.migrate(s, this.world).moved;
@@ -160,6 +165,19 @@ export class Game {
     this.awayFlow();
   }
 
+  // الجوال بطيء: نطفي الشيدرز ونقلل الدقة (مرة وحدة، وترجعه من الإعدادات)
+  autoLite() {
+    const st = this.state && this.state.settings;
+    if (!st || st.hq === false || this.state.flags.autoLite) return false;
+    this.state.flags.autoLite = true;
+    st.hq = false;
+    st.lite = true;
+    if (this.renderer) { this.renderer.lite = true; this.renderer.resize(); }
+    this.ui.toast('⚡ خففنا الرسم عشان تمشي اللعبة أسلس (ترجّعه من الإعدادات)', 'gain', 5);
+    this.save();
+    return true;
+  }
+
   // يجدول إشعارات الجوال (الأندرويد بس) قبل ما تطلع من اللعبة
   scheduleNotifs() {
     const nb = typeof window !== 'undefined' ? window.MuzareNative : null;
@@ -200,7 +218,12 @@ export class Game {
     if (!this.state) return;
     this.state.lastSeen = this.now();
     this.state.guests.list = this.guestRt.map(g => ({ ...g }));
-    saveToStorage(this.state, this.storage);
+    // نسخة احتياطية أول حفظ، وبعدها كل 6 حفظات (تقريباً كل دقيقة)، وبكل يوم جديد
+    this.saveCount = (this.saveCount || 0) + 1;
+    const ok = saveToStorage(this.state, this.storage, { backup: this.saveCount % 6 === 1 || this.backupNow });
+    this.backupNow = false;
+    if (!ok && !this.saveWarned) { this.saveWarned = true; this.ui.toast('⚠️ ما قدرنا نحفظ اللعبة، يمكن مساحة الجوال مليانة', '', 6); }
+    return ok;
   }
 
   // ---------- الحلقة ----------
@@ -254,9 +277,11 @@ export class Game {
   updateWorld(dt) {
     const s = this.state;
     const h = time.hour(s);
-    if (s.guests.day !== s.time.day && h >= 7 && h < 17) this.spawnCaravan();
+    // رمضان: ضيوف الفطور يوصلون العصر ويمشون بعد العشا
+    const iftar = this.seasonMod('iftar');
+    if (s.guests.day !== s.time.day && (iftar ? h >= 16 && h < 19 : h >= 7 && h < 17)) this.spawnCaravan();
     for (const g of this.guestRt) {
-      if (h >= 19 && !g.leaving) g.leaving = true;
+      if (h >= (iftar ? 21 : 19) && !g.leaving) g.leaving = true;
       const tgt = g.leaving ? this.world.caravanEntry : g.spot;
       const dx = tgt.x - g.x, dy = tgt.y - g.y;
       const d = Math.hypot(dx, dy);
@@ -286,7 +311,8 @@ export class Game {
   weatherNow() {
     const s = this.state;
     if (this.wxOverride) return this.wxOverride;
-    if (!this.wx || this.wx.day !== s.time.day) this.wx = { day: s.time.day, w: weather.dayWeather(s.seed, s.time.day, !!this.eventMod('storm')) };
+    const chance = this.seasonMod('rainChance') || weather.RAIN_CHANCE;
+    if (!this.wx || this.wx.day !== s.time.day || this.wx.chance !== chance) this.wx = { day: s.time.day, chance, w: weather.dayWeather(s.seed, s.time.day, !!this.eventMod('storm'), chance) };
     return this.wx.w;
   }
 
@@ -344,6 +370,7 @@ export class Game {
     }
     if (s.built.orders_board) shop.ensureOrders(s, this.rng, nowMin);
     coopSys.coopTick(s, nowMin);
+    this.seasonTick();
   }
 
   // ---------- العالم المفتوح ----------
@@ -1265,6 +1292,113 @@ export class Game {
     return events.mod(this.state, this.now(), name);
   }
 
+  // ---------- المواسم (رمضان، العيدين، الشتاء) ----------
+  // seasonOverride للاختبار والرابط (?season=)، وseasonPreview لزر «جرّب المواسم» (بدون جوايز)
+  season() {
+    const id = this.seasonOverride || this.seasonPreview || null;
+    const now = this.now();
+    if (!this._season || this._season.id !== id || now - this._season.at > 60000) this._season = { id, at: now, def: seasonSys.currentSeason(now, id) };
+    return this._season.def;
+  }
+
+  seasonMod(name) {
+    const d = this.season();
+    return d && d.mods ? d.mods[name] : undefined;
+  }
+
+  // التجربة لها حالة مؤقتة لحالها، عشان ما تأثر على الموسم الحقيقي (الترحيب والتقدّم)
+  seasonState() {
+    const d = this.season();
+    if (!d) return null;
+    if (this.seasonPreview && !this.seasonOverride) {
+      const tmp = { season: this._pvSeason || null };
+      this._pvSeason = seasonSys.seasonState(tmp, d, this.now());
+      return this._pvSeason;
+    }
+    return seasonSys.seasonState(this.state, d, this.now());
+  }
+
+  // الجوايز والأسعار الموسمية بس بالموسم الحقيقي (مو بالتجربة)
+  seasonRewards() {
+    return !(this.seasonPreview && !this.seasonOverride);
+  }
+
+  // كل نبضة وقت: سعر الغنم، الترحيب بالموسم، والعيدية
+  seasonTick() {
+    const s = this.state;
+    shop.setSheepMul(this.seasonRewards() ? (this.seasonMod('sheepPrice') || 1) : 1);
+    const d = this.season();
+    if (!d || this.ui.blocking() || this.checking || s.quest.index < 2 || this.mode === 'dungeon') return;
+    const ss = this.seasonState();
+    if (!ss.greeted) { ss.greeted = true; this.ui.seasonWelcome(d); return; }
+    if (this.seasonMod('eidiya') && this.seasonRewards()) {
+      const r = seasonSys.eidiya(s, ss, this.now());
+      if (r) { this.audio.play('rare'); this.claimReward(r, `🎁 عيديتك! ${d.icon} ${d.name}`); }
+    }
+  }
+
+  // الفقع: يطلع بالرمل بيوم المطر واليوم اللي بعده (بالشتاء)
+  seasonSpots() {
+    const n = this.seasonMod('truffles');
+    if (!n || this.mode !== 'world') return [];
+    const s = this.state;
+    const ss = this.seasonState();
+    if (ss.spotsDay !== s.time.day) {
+      ss.spotsDay = s.time.day;
+      const chance = this.seasonMod('rainChance') || weather.RAIN_CHANCE;
+      const rained = this.weatherNow().rain || weather.dayWeather(s.seed, s.time.day - 1, false, chance).rain;
+      const list = [];
+      if (rained) {
+        const rng = mulberry32((s.seed ^ (s.time.day * 104729)) >>> 0);
+        for (let tries = 0; tries < 500 && list.length < n; tries++) {
+          const tx = 3 + Math.floor(rng() * (MAP_W - 6)), ty = 3 + Math.floor(rng() * (MAP_H - 6));
+          const t = tileAt(this.world.tiles, tx, ty);
+          if ((t !== T.SAND && t !== T.SAND2) || placement.insideKhan(tx, ty)) continue;
+          list.push({ x: tx * TILE + 8, y: ty * TILE + 12, got: false });
+        }
+      }
+      ss.spots = list;
+    }
+    return ss.spots.filter(x => !x.got);
+  }
+
+  digTruffle(spot) {
+    if (!this.seasonRewards()) { this.input.action = false; this.fx.float(...this.fx.at(spot.x, spot.y, 24), '👀 تجربة: الفقع الحقيقي بالشتاء', '#ffe0a0', 12); return; }
+    if (!this.hasRoom(2, 'faqa')) return;
+    if (!this.spendEnergy(2)) return;
+    this.startAnim('dig', spot, 0.8, 0.55, () => {
+      spot.got = true;
+      const n = 1 + (this.rng() < 0.35 ? 1 : 0);
+      this.audio.play('pick');
+      this.fx.burst(...this.fx.at(spot.x, spot.y, 4), ['#e2bf82', '#7a5634'], 14, 50, 0.6);
+      addStat(this.state, 'truffles', n);
+      this.gainItems({ faqa: n }, spot.x, spot.y, 22);
+      this.gainXp(3, spot.x, spot.y, 36);
+      this.ui.refresh();
+    });
+  }
+
+  // شبّة نار الكشتة جنب بوابة الخان
+  campfirePos() {
+    return { x: (GATE.x1 + 3) * TILE + 8, y: (GATE.y + 1) * TILE + 12 };
+  }
+
+  campfireAction() {
+    const s = this.state;
+    this.input.action = false;
+    const ss = this.seasonState();
+    const pos = this.campfirePos();
+    if (!this.seasonRewards()) { this.fx.float(...this.fx.at(pos.x, pos.y, 26), '👀 تجربة: الكشتة الحقيقية بالشتاء', '#ffe0a0', 12); return; }
+    if (!seasonSys.useCampfire(ss, this.now())) { this.fx.float(...this.fx.at(pos.x, pos.y, 26), 'دفّيت اليوم ✔ ارجع بكرة', '#ffe0a0', 12); return; }
+    const me = maxEnergy(s);
+    s.player.energy = Math.min(me, s.player.energy + seasonSys.CAMPFIRE_ENERGY);
+    this.audio.play('eat');
+    this.fx.burst(...this.fx.at(pos.x, pos.y, 10), ['#ffa030', '#ffe68a'], 14, 50, 0.7);
+    this.fx.float(...this.fx.at(pos.x, pos.y, 30), `🔥 دفّيت! ⚡ +${seasonSys.CAMPFIRE_ENERGY}`, '#ffe07a', 14);
+    addStat(s, 'campfires', 1);
+    this.ui.refresh();
+  }
+
   // تسريع الورش من الفعالية (أسبوع الورش)
   workshopMods() {
     return { workshopFast: this.eventMod('workshopFast') || 0 };
@@ -1494,6 +1628,8 @@ export class Game {
     }
     for (const c of s.groundChests || []) list.push({ kind: 'gchest', ref: c, x: c.x, y: c.y + 2 });
     for (const sp of this.eventSpots()) list.push({ kind: this.eventMod('buried') ? 'buried' : 'sparkle', ref: sp, x: sp.x, y: sp.y, r: 20 });
+    for (const sp of this.seasonSpots()) list.push({ kind: 'truffle', ref: sp, x: sp.x, y: sp.y, r: 20 });
+    if (this.seasonMod('campfire')) { const c = this.campfirePos(); list.push({ kind: 'campfire', ref: c, x: c.x, y: c.y, r: 24 }); }
     if (s.built.trough && this.worldObjById['spot:trough']) { const o = this.worldObjById['spot:trough']; list.push({ kind: 'trough', ref: o, x: o.x, y: o.y }); }
     if (s.built.coop && this.worldObjById['spot:coop']) { const o = this.worldObjById['spot:coop']; list.push({ kind: 'coop', ref: o, x: o.x, y: o.y }); }
     for (const [spot, kind] of [['stall_shop', 'shop'], ['orders_board', 'orders'], ['workers_house', 'whouse']]) {
@@ -1569,6 +1705,8 @@ export class Game {
       case 'worldexit': return { icon: '🗺️', label: 'اطلع للقرية' };
       case 'buried': return { icon: '⛏️', label: 'احفر الكنز' };
       case 'sparkle': return { icon: '✨', label: 'اجمع' };
+      case 'truffle': return { icon: '🍄', label: 'احفر الفقع' };
+      case 'campfire': return { icon: '🔥', label: 'دفّي' };
       case 'gohome': return { icon: '🏠', label: 'ارجع مزرعتي' };
       case 'owner': {
         const fs = farmsSys.farmState(s, t.ref.farm);
@@ -1669,6 +1807,8 @@ export class Game {
       case 'worldexit': this.input.action = false; this.travel('open'); break;
       case 'buried': this.input.action = false; this.digTreasure(t.ref); break;
       case 'sparkle': this.input.action = false; this.collectSparkle(t.ref); break;
+      case 'truffle': this.input.action = false; this.digTruffle(t.ref); break;
+      case 'campfire': this.campfireAction(); break;
       case 'gohome': this.input.action = false; this.travel('world'); break;
       case 'owner': this.input.action = false; this.audio.play('talk'); this.ui.openFarm(t.ref.farm); break;
       case 'farmstore': this.input.action = false; this.collectFarm(t.ref.farm); break;
@@ -1973,7 +2113,7 @@ export class Game {
     }
     add(s, g.want, -1);
     g.served = true;
-    const pay = Math.round(ITEMS[g.want].price * 2.4 * coinMultiplier(s) * (g.golden ? 3 : 1)) + stars(s) * 2;
+    const pay = Math.round(ITEMS[g.want].price * 2.4 * coinMultiplier(s) * (g.golden ? 3 : 1) * (this.seasonRewards() ? (this.seasonMod('guestPay') || 1) : 1)) + stars(s) * 2;
     addStat(s, 'guests', 1);
     this.audio.play('coin');
     this.fx.burst(...this.fx.at(g.x, g.y, 20), ['#ff6a8a', '#ffd24a'], 12, 60, 0.7);
@@ -1983,6 +2123,13 @@ export class Game {
     if (this.rng() < 0.3) s.kp.c = (s.kp.c || 0) + 1;
     this.ui.toast(`${g.name}: ${pick(this.rng, GUEST_LINES.thanks)}`);
     this.handleLevelUps(res);
+    // رمضان: كل ضيف = صايم فطّرته، وكل كم واحد جايزة
+    if (this.seasonMod('iftar')) {
+      const ss = this.seasonState();
+      const m = seasonSys.addIftar(ss);
+      this.fx.float(...this.fx.at(g.x, g.y, 56), `🌙 فطّرت ${ss.iftar} صايم`, '#fff3c4', 13);
+      if (m && this.seasonRewards()) this.claimReward(m.reward, `🌙 فطّرت ${m.at} صايم!`);
+    }
     setTimeout(() => { g.leaving = true; }, 2500);
     this.ui.refresh();
   }
@@ -1990,7 +2137,9 @@ export class Game {
   // ---------- القوافل ----------
   guestWantPool() {
     const s = this.state;
-    return GUEST_WANTS.filter(w => {
+    if (this.seasonMod('iftar')) return IFTAR_WANTS.filter(w => w !== 'bread' || s.tech.t_bread);
+    const extra = this.seasonMod('truffles') ? ['faqa'] : [];
+    return [...extra, ...GUEST_WANTS].filter(w => {
       if (w === 'bread') return !!s.tech.t_bread;
       if (w === 'melon') return !!s.tech.t_melon;
       if (w === 'coffee2') return !!s.tech.t_coffee2;
@@ -2046,6 +2195,7 @@ export class Game {
 
   onNewDay(n) {
     const s = this.state;
+    this.backupNow = true;
     farming.growPlots(s, n);
     addStat(s, 'days', n);
     const births = [];

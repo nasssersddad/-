@@ -54,6 +54,7 @@ export const ITEMS = {
   corn:      { name: 'ذرة',          icon: '🌽', price: 10, food: 10 },
   egg:       { name: 'بيض',          icon: '🥚', price: 6, food: 5 },
   shakshuka: { name: 'شكشوكة',       icon: '🍳', price: 24, food: 28 },
+  faqa:      { name: 'فقع',          icon: '🍄', price: 45, food: 15 },
 };
 
 export const SEEDS = {

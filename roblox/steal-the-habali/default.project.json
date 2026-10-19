@@ -1,0 +1,16 @@
+{
+  "name": "steal-the-habali",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Shared": {
+        "$path": "src/shared"
+      }
+    },
+    "ServerStorage": {
+      "Tools": {
+        "$path": "src/tools"
+      }
+    }
+  }
+}

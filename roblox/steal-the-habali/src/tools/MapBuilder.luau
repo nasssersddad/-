@@ -18,6 +18,9 @@ local DesertShape = require(Shared:WaitForChild("DesertShape")) :: any
 local VOXEL = 4 -- دقة التضاريس في روبلوكس
 local CHUNK = 32 -- كم voxel نكتب في كل دفعة (بكل اتجاه)
 local DEEP_LAYER = 12 -- تحت السطح بهالمسافة تصير الأرض حجر رملي
+-- روبلوكس ترسم سطح التضاريس أعلى بنص voxel من الـ occupancy، فننزّلها عشان السطح
+-- يجي بالضبط على HeightAt (والقواعد والدكان ما تندفن)
+local SURFACE_OFFSET = VOXEL / 2
 
 local COLORS = {
 	PlotFloor = Color3.fromRGB(214, 190, 150),
@@ -78,7 +81,10 @@ end
 local function buildTerrain(shape: any)
 	local terrain = Workspace.Terrain
 	terrain:Clear()
-	terrain.Decoration = false -- العشب المتحرك يثقل على الجوال
+	-- العشب المتحرك يثقل على الجوال. بعض نسخ Studio ما تسمح للسكربت يغيّره، فنتجاهل الخطأ
+	pcall(function()
+		(terrain :: any).Decoration = false
+	end)
 	terrain.WaterColor = Color3.fromRGB(40, 150, 140)
 	terrain.WaterTransparency = 0.6
 	terrain.WaterWaveSize = 0.05
@@ -124,12 +130,13 @@ local function buildTerrain(shape: any)
 					local height = shape.HeightAt(x, z)
 					local surface = toMaterial(shape.MaterialAt(x, z, height))
 					local wet = shape.IsWaterAt(x, z)
+					local surfaceY = height - SURFACE_OFFSET
 
 					for iy = 1, layers do
 						local bottom = minY + (iy - 1) * VOXEL
-						local fill = math.clamp((height - bottom) / VOXEL, 0, 1)
+						local fill = math.clamp((surfaceY - bottom) / VOXEL, 0, 1)
 						if fill > 0 then
-							materialColumn[iy][iz] = if height - bottom > DEEP_LAYER then Enum.Material.Sandstone else surface
+							materialColumn[iy][iz] = if surfaceY - bottom > DEEP_LAYER then Enum.Material.Sandstone else surface
 							occupancyColumn[iy][iz] = fill
 						elseif wet and bottom < waterLevel then
 							materialColumn[iy][iz] = Enum.Material.Water
@@ -405,6 +412,11 @@ function MapBuilder.Build()
 	local baseplate = Workspace:FindFirstChild("Baseplate")
 	if baseplate then
 		baseplate:Destroy()
+	end
+	-- مكان الطلوع اللي يجي مع قالب Baseplate (في نص الدكان). عندنا LobbySpawn بداله
+	local templateSpawn = Workspace:FindFirstChild("SpawnLocation")
+	if templateSpawn and templateSpawn:IsA("SpawnLocation") then
+		templateSpawn:Destroy()
 	end
 
 	print("[MapBuilder] أبني الصحراء... (تاخذ شوي)")

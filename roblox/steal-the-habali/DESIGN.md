@@ -59,8 +59,13 @@
 ## وين وصلنا
 - السكلات في `.claude/skills/` (roblox-brain وroblox-game-development) تنحمّل تلقائياً.
 - الخطوة الجاية: **نبني الخريطة داخل Studio ونتأكد منها**، وبعدها المرحلة 2.
-- **ربط Studio:** زر Assistant (اللي فيه إعداد MCP الرسمي) ما طلع عند صاحب اللعبة حتى بعد التحديث. الأمر الرسمي في PowerShell ما زبط بعد، وما عرفنا السبب.
-  - البديل اللي اقترحناه: إضافة **robloxstudio-mcp** (من boshyxd) من Toolbox، مع تفعيل Allow HTTP Requests، وبعدها:
+- **ربط Studio (انحل 2026-10-19):** الربط الرسمي شغّال الحين.
+  - المشروع منسوخ في `C:\steal-the-habali`، والجسر مسجّل لهذا المجلد بالأمر (من PowerShell، مو Git Bash لأنه يخرّب `/c`):
+    `claude mcp add Roblox_Studio -s local -- cmd.exe /c '%LOCALAPPDATA%\Roblox\mcp.bat'`
+  - زر Assistant يطلع بس لما يكون فيه مكان مفتوح، وهو تبويب رفيع مكتوب عليه Assistant على الحافة اليمين لنافذة Studio.
+  - التفعيل: Assistant ← `...` ← Settings ← MCP Servers ← شغّل "Enable Studio as MCP server".
+  - أدوات Studio تنحمّل بس في جلسة Claude تبدأ بعد الربط.
+  - البديل القديم (ما احتجناه): إضافة **robloxstudio-mcp** (من boshyxd) من Toolbox، مع تفعيل Allow HTTP Requests، وبعدها:
     `claude mcp add robloxstudio -- cmd /c npx -y robloxstudio-mcp@latest` (يحتاج Node.js).
   - وإذا ما زبط الربط، نبني الخريطة يدوياً: نلصق الملفات الثلاثة ونشغّل سطر واحد من Command Bar (الطريقة في README.md).
 - جهاز صاحب اللعبة: **ويندوز**.

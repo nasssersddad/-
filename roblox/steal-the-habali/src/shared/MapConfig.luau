@@ -10,6 +10,7 @@ export type Point = { X: number, Z: number }
 export type Zone = {
 	Id: string,
 	DisplayName: string,
+	Rarity: string, -- الندرة اللي تطلع في هالطبقة
 	MinRadius: number,
 	MaxRadius: number,
 	Material: string, -- مادة الرمل في هالطبقة (كل طبقة مادة مختلفة عشان يتغير لونها)
@@ -76,10 +77,10 @@ MapConfig.GasStation = {
 -- طبقات الصيد حسب البعد عن الديرة: كل ما بعدت، الهبالي أندر،
 -- والرجعة أطول وأخطر وتحتاج بنزين أكثر. كل طبقة رملها بلون.
 MapConfig.Zones = {
-	{ Id = "Common", DisplayName = "الشعبي", MinRadius = 260, MaxRadius = 1000, Material = "Sand", Color = { 226, 212, 180 } },
-	{ Id = "Rare", DisplayName = "النادر", MinRadius = 1000, MaxRadius = 1900, Material = "Limestone", Color = { 218, 186, 124 } },
-	{ Id = "VeryRare", DisplayName = "النادر مرة", MinRadius = 1900, MaxRadius = 2700, Material = "Salt", Color = { 204, 152, 104 } },
-	{ Id = "Legendary", DisplayName = "الأسطوري", MinRadius = 2700, MaxRadius = 3400, Material = "Sandstone", Color = { 176, 106, 76 } },
+	{ Id = "Common", DisplayName = "الثمامة", Rarity = "شعبي", MinRadius = 260, MaxRadius = 1000, Material = "Sand", Color = { 226, 212, 180 } },
+	{ Id = "Rare", DisplayName = "الدهناء", Rarity = "نادر", MinRadius = 1000, MaxRadius = 1900, Material = "Limestone", Color = { 218, 186, 124 } },
+	{ Id = "VeryRare", DisplayName = "النفود", Rarity = "نادر مرة", MinRadius = 1900, MaxRadius = 2700, Material = "Salt", Color = { 204, 152, 104 } },
+	{ Id = "Legendary", DisplayName = "الربع الخالي", Rarity = "أسطوري", MinRadius = 2700, MaxRadius = 3400, Material = "Sandstone", Color = { 176, 106, 76 } },
 } :: { Zone }
 
 -- عرض المنطقة اللي يتداخل فيها رمل طبقتين عند الحد (عشان ما يصير خط حاد).

@@ -70,7 +70,7 @@ for index = 1, plots.Count do
 end
 
 -- 2) الطرق: إسفلت (وكتف فاتح) مستوي بالعرض، ميلانه خفيف للسيارات، يمشي فوق الكثبان
---    مو في خندق، وكل طريق يوصل لمعلم في الأسطوري
+--    مو في خندق، وكل طريق يوصل لمعلم في الربع الخالي
 local legendary = MapConfig.Zones[#MapConfig.Zones]
 for roadIndex, path in roads.Paths do
 	local a, b = path[1], path[#path]
@@ -211,7 +211,7 @@ for i = 2, #zones do
 	check(inner > mixedSamples * 0.15 and outer > mixedSamples * 0.15, string.format("%s border is not blended (%d inner, %d outer of %d)", zones[i].Id, inner, outer, mixedSamples))
 end
 
--- 7) المعالم كلها داخل طبقة الأسطوري وما تلمس الحافة
+-- 7) المعالم كلها داخل طبقة الربع الخالي (الأسطوري) وما تلمس الحافة
 for _, landmark in MapConfig.Landmarks do
 	local r = radiusOf(landmark.X, landmark.Z)
 	check(MapConfig.GetZoneAt(r) == legendary, landmark.Id .. " is not in the legendary ring")

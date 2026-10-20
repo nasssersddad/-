@@ -52,14 +52,15 @@ end
 
 function DesertShape.new(config: any): Shape
 	local seed = config.Seed * 0.0137
-	local half = config.Size / 2
 	local base = config.BaseHeight
+	local edge = config.Edge
 	local town = config.Town
 	local roads = config.Roads
 	local canyon = config.Canyon
 	local oasis = config.GetLandmark("Oasis")
 	local tuwaiq = config.GetLandmark("Tuwaiq")
 	local junkyard = config.GetLandmark("Junkyard")
+	local outerZone = config.Zones[#config.Zones]
 
 	-- كثبان: موجة كبيرة بقمم حادة + تموجات صغيرة فوقها (0 إلى 1 تقريباً)
 	local function dunes(x: number, z: number): number
@@ -75,10 +76,11 @@ function DesertShape.new(config: any): Shape
 		if not tuwaiq then
 			return 0
 		end
-		local falloff = 1 - smoothstep(tuwaiq.Radius * 0.55, tuwaiq.Radius, distance(x, z, tuwaiq.X, tuwaiq.Z))
-		if falloff <= 0 then
+		local d = distance(x, z, tuwaiq.X, tuwaiq.Z)
+		if d >= tuwaiq.Radius then
 			return 0
 		end
+		local falloff = 1 - smoothstep(tuwaiq.Radius * 0.55, tuwaiq.Radius, d)
 		local ridged = 1 - math.abs(math.noise(x / 70 + seed, z / 70 - seed, 3.11) * 2)
 		return clamp01(ridged) ^ 2 * falloff
 	end
@@ -92,22 +94,26 @@ function DesertShape.new(config: any): Shape
 	end
 
 	local function heightAt(x: number, z: number): number
+		local fromCenter = distance(x, z, 0, 0)
 		local h = base + config.DuneHeight * dunes(x, z)
 
 		h += rockiness(x, z) * 85
 
-		-- الأطراف ترتفع وتقفل الخريطة
-		local edge = math.max(math.abs(x), math.abs(z))
-		h += smoothstep(half - config.EdgeWallWidth, half, edge) * config.EdgeWallHeight
+		-- حزام الكثبان على الحافة يرتفع ويقفل الخريطة
+		h += smoothstep(edge.Start, edge.Crest, fromCenter) * edge.Height
 
 		-- الوادي: نحفر مجرى عميق
 		local canyonDist = distanceToPath(x, z, canyon.Path)
-		h = lerp(base - canyon.Depth, h, smoothstep(canyon.Width * 0.35, canyon.Width, canyonDist))
+		if canyonDist < canyon.Width then
+			h = lerp(base - canyon.Depth, h, smoothstep(canyon.Width * 0.35, canyon.Width, canyonDist))
+		end
 
 		-- الواحة: حوض ينملي موية
 		if oasis then
 			local d = distance(x, z, oasis.X, oasis.Z)
-			h = lerp(config.WaterLevel - 8, h, smoothstep(oasis.Radius * 0.45, oasis.Radius, d))
+			if d < oasis.Radius then
+				h = lerp(config.WaterLevel - 8, h, smoothstep(oasis.Radius * 0.45, oasis.Radius, d))
+			end
 		end
 
 		-- مقبرة السيارات: ساحة مستوية
@@ -120,7 +126,7 @@ function DesertShape.new(config: any): Shape
 		h = lerp(base, h, smoothstep(roads.Width / 2, roads.Width / 2 + roads.Blend, roadDistance(x, z)))
 
 		-- الديرة: مستوية تماماً
-		h = lerp(base, h, smoothstep(town.Radius, town.Radius + town.Blend, distance(x, z, 0, 0)))
+		h = lerp(base, h, smoothstep(town.Radius, town.Radius + town.Blend, fromCenter))
 
 		return h
 	end
@@ -134,7 +140,7 @@ function DesertShape.new(config: any): Shape
 			return "Asphalt"
 		end
 		if fromCenter < town.Radius then
-			return "Ground"
+			return town.Material
 		end
 		if oasis then
 			local d = distance(x, z, oasis.X, oasis.Z)
@@ -145,15 +151,22 @@ function DesertShape.new(config: any): Shape
 			end
 		end
 		local rock = rockiness(x, z)
-		if rock > 0.45 then
+		if rock > 0.4 then
 			return "Rock"
 		elseif rock > 0.15 then
-			return "Sandstone"
+			return "Basalt"
 		end
-		if distanceToPath(x, z, canyon.Path) < canyon.Width then
-			return "Sandstone"
+		if distanceToPath(x, z, canyon.Path) < canyon.Width * 0.8 then
+			return "Slate"
 		end
-		return "Sand"
+		-- رمل الطبقة: بين الديرة وأول طبقة نحسبها شعبي، وحزام الحافة نفس آخر طبقة
+		local zone = config.GetZoneAt(fromCenter)
+		if zone then
+			return zone.Material
+		elseif fromCenter < config.Zones[1].MinRadius then
+			return config.Zones[1].Material
+		end
+		return outerZone.Material
 	end
 
 	local function isWaterAt(x: number, z: number): boolean

@@ -440,21 +440,22 @@ local function buildLandmarks(shape: any, parent: Instance)
 	folder.Parent = parent
 end
 
-local function buildPalm(position: Vector3, random: Random, parent: Instance)
+local function buildPalm(position: Vector3, height: number, random: Random, parent: Instance)
 	local palm = Instance.new("Model")
 	palm.Name = "Palm"
-	local height = random:NextNumber(14, 20)
+	local scale = height / 17 -- السعف والجذع يكبرون مع طول النخلة
 	local lean = CFrame.Angles(math.rad(random:NextNumber(-8, 8)), random:NextNumber(0, math.pi * 2), 0)
 	local root = CFrame.new(position) * lean
 
 	-- الأسطوانة في روبلوكس محورها X، فنلفها تصير واقفة
-	local trunk = newPart("Trunk", Vector3.new(height, 1.6, 1.6), root * CFrame.new(0, height / 2, 0) * CFrame.Angles(0, 0, math.rad(90)), Enum.Material.Wood, COLORS.PalmTrunk, palm)
+	local trunk = newPart("Trunk", Vector3.new(height, 1.6 * scale, 1.6 * scale), root * CFrame.new(0, height / 2, 0) * CFrame.Angles(0, 0, math.rad(90)), Enum.Material.Wood, COLORS.PalmTrunk, palm)
 	trunk.Shape = Enum.PartType.Cylinder
 	local crown = root * CFrame.new(0, height, 0)
+	local leafLength = 9 * scale
 	for i = 1, 6 do
 		local spin = CFrame.Angles(0, math.rad(i * 60), 0)
 		-- كل سعفة تطلع لبرا وتنزل شوي لتحت
-		newPart("Leaf", Vector3.new(2.4, 0.4, 9), crown * spin * CFrame.Angles(math.rad(-25), 0, 0) * CFrame.new(0, 0, -4.5), Enum.Material.Grass, COLORS.PalmLeaf, palm)
+		newPart("Leaf", Vector3.new(2.4 * scale, 0.4 * scale, leafLength), crown * spin * CFrame.Angles(math.rad(-25), 0, 0) * CFrame.new(0, 0, -leafLength / 2), Enum.Material.Grass, COLORS.PalmLeaf, palm)
 	end
 	for _, part in palm:GetChildren() do
 		(part :: BasePart).CanCollide = false
@@ -469,12 +470,16 @@ local function buildOasisPalms(shape: any, random: Random, parent: Instance)
 	end
 	local folder = Instance.new("Folder")
 	folder.Name = "OasisPalms"
-	for i = 1, 16 do
-		local angle = (i / 16) * math.pi * 2 + random:NextNumber(-0.12, 0.12)
-		local distance = oasis.Radius * random:NextNumber(0.68, 0.95)
+	local count = MapConfig.Oasis.Palms
+	local minHeight, maxHeight = MapConfig.Oasis.PalmHeight[1], MapConfig.Oasis.PalmHeight[2]
+	for i = 1, count do
+		local angle = (i / count) * math.pi * 2 + random:NextNumber(-0.08, 0.08)
+		-- صفين نخل حول البحيرة: داخلي قريب من الموية وخارجي على طرف العشب
+		local ring = if i % 2 == 0 then random:NextNumber(0.64, 0.78) else random:NextNumber(0.82, 0.98)
+		local distance = oasis.Radius * ring
 		local x = oasis.X + math.cos(angle) * distance
 		local z = oasis.Z + math.sin(angle) * distance
-		buildPalm(Vector3.new(x, shape.HeightAt(x, z) - 0.5, z), random, folder)
+		buildPalm(Vector3.new(x, shape.HeightAt(x, z) - 0.5, z), random:NextNumber(minHeight, maxHeight), random, folder)
 	end
 	folder.Parent = parent
 end
@@ -484,36 +489,66 @@ local function buildJunkyard(shape: any, random: Random, parent: Instance)
 	if not junkyard then
 		return
 	end
+	local config = MapConfig.Junkyard
+	local scale = config.WreckScale
+	local bodySize = Vector3.new(7, 3, 14) * scale
+	local cabinSize = Vector3.new(6, 2.5, 6) * scale
+	local cabinColor = COLORS.Rust:Lerp(Color3.new(0.3, 0.3, 0.3), 0.4)
 	local folder = Instance.new("Folder")
 	folder.Name = "Junk"
+
+	-- أكوام سيارات كبيرة: كل كومة من 1 إلى 3 سيارات فوق بعض
 	local placed: { Vector2 } = {}
+	local spacing = bodySize.Z * 1.1
 	local tries = 0
-	while #placed < 18 and tries < 300 do
+	while #placed < config.Stacks and tries < 400 do
 		tries += 1
 		local angle = random:NextNumber(0, math.pi * 2)
-		local distance = junkyard.Radius * math.sqrt(random:NextNumber(0.03, 0.9))
+		local distance = (junkyard.Radius - bodySize.Z / 2) * math.sqrt(random:NextNumber(0.05, 1))
 		local spot = Vector2.new(junkyard.X + math.cos(angle) * distance, junkyard.Z + math.sin(angle) * distance)
-		-- ما نبي السيارات فوق بعض
-		local clear = true
+		-- النص فاضي للرافعة
+		local clear = (spot - Vector2.new(junkyard.X, junkyard.Z)).Magnitude > spacing * 0.6
 		for _, other in placed do
-			if (other - spot).Magnitude < 17 then
+			if (other - spot).Magnitude < spacing then
 				clear = false
 				break
 			end
 		end
 		if clear then
 			table.insert(placed, spot)
+			local stack = Instance.new("Model")
+			stack.Name = "Stack" .. #placed
+			local cars = if random:NextNumber() < 0.5 then 3 elseif random:NextNumber() < 0.6 then 2 else 1
 			local y = shape.HeightAt(spot.X, spot.Y)
-			-- سيارة خربانة: جسم + كابينة، مايلة شوي
-			local tilt = CFrame.Angles(math.rad(random:NextNumber(-12, 12)), random:NextNumber(0, math.pi * 2), math.rad(random:NextNumber(-20, 20)))
-			local root = CFrame.new(spot.X, y + 1.6, spot.Y) * tilt
-			local car = Instance.new("Model")
-			car.Name = "Wreck" .. #placed
-			newPart("Body", Vector3.new(7, 3, 14), root, Enum.Material.CorrodedMetal, COLORS.Rust, car)
-			newPart("Cabin", Vector3.new(6, 2.5, 6), root * CFrame.new(0, 2.6, 1), Enum.Material.CorrodedMetal, COLORS.Rust:Lerp(Color3.new(0.3, 0.3, 0.3), 0.4), car)
-			car.Parent = folder
+			local yaw = random:NextNumber(0, math.pi * 2)
+			for level = 1, cars do
+				-- كل سيارة فوق اللي تحتها، ملفوفة شوي، واللي فوق مايلة
+				local tilt = if level == cars then math.rad(random:NextNumber(-8, 8)) else 0
+				local root = CFrame.new(spot.X, y + bodySize.Y / 2 + (level - 1) * bodySize.Y, spot.Y)
+					* CFrame.Angles(0, yaw + random:NextNumber(-0.35, 0.35), tilt)
+				newPart("Body", bodySize, root, Enum.Material.CorrodedMetal, COLORS.Rust, stack)
+				if level == cars then
+					newPart("Cabin", cabinSize, root * CFrame.new(0, (bodySize.Y + cabinSize.Y) / 2, scale), Enum.Material.CorrodedMetal, cabinColor, stack)
+				end
+			end
+			stack.Parent = folder
 		end
 	end
+
+	-- رافعة طويلة في نص المقبرة: تنشاف من بعيد
+	local craneHeight = config.CraneHeight
+	local ground = shape.HeightAt(junkyard.X, junkyard.Z)
+	local crane = Instance.new("Model")
+	crane.Name = "Crane"
+	local craneColor = Color3.fromRGB(230, 180, 40)
+	local towerTop = CFrame.new(junkyard.X, ground + craneHeight, junkyard.Z)
+	newPart("Tower", Vector3.new(4, craneHeight, 4), towerTop * CFrame.new(0, -craneHeight / 2, 0), Enum.Material.Metal, craneColor, crane)
+	newPart("Jib", Vector3.new(3, 3, 70), towerTop * CFrame.new(0, 1.5, -20), Enum.Material.Metal, craneColor, crane)
+	newPart("Counterweight", Vector3.new(6, 5, 8), towerTop * CFrame.new(0, 0.5, 14), Enum.Material.Concrete, COLORS.Concrete, crane)
+	newPart("Cable", Vector3.new(0.4, 30, 0.4), towerTop * CFrame.new(0, -15, -50), Enum.Material.Metal, COLORS.Post, crane)
+	newPart("Hook", Vector3.new(3, 3, 3), towerTop * CFrame.new(0, -31, -50), Enum.Material.Metal, COLORS.Post, crane)
+	crane.Parent = folder
+
 	folder.Parent = parent
 end
 

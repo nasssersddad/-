@@ -29,7 +29,7 @@ local MapConfig = {}
 -- نفس الرقم = نفس الصحراء بالضبط كل ما تبنيها. غيّره لو تبي شكل ثاني.
 MapConfig.Seed = 6767
 
-MapConfig.BaseHeight = 0 -- ارتفاع الأرض المستوية (الديرة والطرق)
+MapConfig.BaseHeight = 0 -- ارتفاع الأرض المستوية (الديرة)
 MapConfig.DuneHeight = 55 -- أعلى ارتفاع للكثبان العادية
 MapConfig.WaterLevel = -6
 
@@ -42,8 +42,8 @@ MapConfig.Edge = {
 }
 
 -- حدود الطبقات اللي تنكتب فيها الأرض (لازم تغطي أوطى وأعلى نقطة)
-MapConfig.MinY = -64
-MapConfig.MaxY = 224
+MapConfig.MinY = -96
+MapConfig.MaxY = 320
 
 -- الديرة: أرض مستوية في النص فيها القواعد والدكان ومحطة البنزين
 MapConfig.Town = {
@@ -76,44 +76,81 @@ MapConfig.GasStation = {
 -- طبقات الصيد حسب البعد عن الديرة: كل ما بعدت، الهبالي أندر،
 -- والرجعة أطول وأخطر وتحتاج بنزين أكثر. كل طبقة رملها بلون.
 MapConfig.Zones = {
-	{ Id = "Common", DisplayName = "الشعبي", MinRadius = 260, MaxRadius = 1000, Material = "Sand", Color = { 232, 214, 172 } },
-	{ Id = "Rare", DisplayName = "النادر", MinRadius = 1000, MaxRadius = 1900, Material = "Limestone", Color = { 226, 178, 96 } },
-	{ Id = "VeryRare", DisplayName = "النادر مرة", MinRadius = 1900, MaxRadius = 2700, Material = "Salt", Color = { 214, 132, 70 } },
-	{ Id = "Legendary", DisplayName = "الأسطوري", MinRadius = 2700, MaxRadius = 3400, Material = "Sandstone", Color = { 176, 78, 48 } },
+	{ Id = "Common", DisplayName = "الشعبي", MinRadius = 260, MaxRadius = 1000, Material = "Sand", Color = { 226, 212, 180 } },
+	{ Id = "Rare", DisplayName = "النادر", MinRadius = 1000, MaxRadius = 1900, Material = "Limestone", Color = { 218, 186, 124 } },
+	{ Id = "VeryRare", DisplayName = "النادر مرة", MinRadius = 1900, MaxRadius = 2700, Material = "Salt", Color = { 204, 152, 104 } },
+	{ Id = "Legendary", DisplayName = "الأسطوري", MinRadius = 2700, MaxRadius = 3400, Material = "Sandstone", Color = { 176, 106, 76 } },
 } :: { Zone }
 
--- المعالم الأربعة كلها داخل طبقة الأسطوري
+-- عرض المنطقة اللي يتداخل فيها رمل طبقتين عند الحد (عشان ما يصير خط حاد).
+-- اللوحات على الطرق هي الحد الدقيق.
+MapConfig.ZoneBlend = 110
+-- وفوقها تموج كبير بطيء عشان الحدود ما تطلع دواير كاملة (شكل هدف) من فوق
+MapConfig.ZoneWave = 90
+
+-- المعالم الأربعة كلها داخل طبقة الأسطوري. Radius = حجم المعلم تقريباً
 MapConfig.Landmarks = {
-	{ Id = "Oasis", DisplayName = "الواحة", X = 0, Z = -3050, Radius = 140 },
-	{ Id = "Canyon", DisplayName = "الوادي", X = 3050, Z = 0, Radius = 80 },
-	{ Id = "Tuwaiq", DisplayName = "جبال طويق", X = -3050, Z = 0, Radius = 260 },
-	{ Id = "Junkyard", DisplayName = "مقبرة السيارات", X = 0, Z = 3050, Radius = 110 },
+	{ Id = "Oasis", DisplayName = "الواحة", X = 0, Z = -3050, Radius = 260 },
+	{ Id = "Canyon", DisplayName = "الوادي", X = 3000, Z = 0, Radius = 200 },
+	{ Id = "Tuwaiq", DisplayName = "جبال طويق", X = -3040, Z = 0, Radius = 300 },
+	{ Id = "Junkyard", DisplayName = "مقبرة السيارات", X = 0, Z = 3050, Radius = 180 },
 } :: { Landmark }
 
--- مجرى الوادي: خط متكسّر شرق الخريطة (من الشمال للجنوب)، عرضه وعمقه تحت
-MapConfig.Canyon = {
-	Path = {
-		{ X = 3000, Z = -760 },
-		{ X = 3090, Z = -380 },
-		{ X = 3050, Z = 0 },
-		{ X = 2990, Z = 380 },
-		{ X = 3080, Z = 760 },
+-- جبال طويق: سلسلة طويلة من الشمال للجنوب (مو صخرة وحدة)، تنشاف من بعيد
+MapConfig.Tuwaiq = {
+	Ridge = {
+		{ X = -3000, Z = -650 },
+		{ X = -3070, Z = -250 },
+		{ X = -3010, Z = 150 },
+		{ X = -3080, Z = 600 },
 	} :: { Point },
-	Width = 80,
-	Depth = 40,
+	Width = 220, -- من خط القمة لأسفل الجبل
+	Peak = 210, -- أعلى ارتفاع فوق الكثبان
 }
 
--- الطرق: إسفلت من الديرة لكل معلم، خط مستقيم (شمال/شرق/جنوب/غرب) يمر بين القواعد.
--- الأرض حولها مستوية عشان السيارات، وتنحدر بهدوء للكثبان (Blend).
+-- الواحة: بحيرة في النص، عشب حولها، ونخل طويل ينشاف من بعيد
+MapConfig.Oasis = {
+	Palms = 36,
+	PalmHeight = { 26, 40 },
+}
+
+-- مجرى الوادي: خط متكسّر شرق الخريطة (من الشمال للجنوب)، عريض وعميق، وحوافه مرتفعة شوي
+MapConfig.Canyon = {
+	Path = {
+		{ X = 2940, Z = -900 },
+		{ X = 3040, Z = -450 },
+		{ X = 3000, Z = 0 },
+		{ X = 2930, Z = 450 },
+		{ X = 3020, Z = 900 },
+	} :: { Point },
+	Width = 200, -- من النص لبداية الحفر
+	Depth = 60,
+	RimHeight = 45, -- الحافة ترتفع فوق الكثبان عشان الوادي ينشاف
+	RimWidth = 120,
+}
+
+-- مقبرة السيارات: أكوام سيارات كبيرة فوق بعض، ورافعة طويلة تنشاف من بعيد
+MapConfig.Junkyard = {
+	Stacks = 16,
+	WreckScale = 2.2,
+	CraneHeight = 90,
+}
+
+-- الطرق: إسفلت غامق من الديرة لكل معلم، خط مستقيم (شمال/شرق/جنوب/غرب) يمر بين القواعد.
+-- على جنبه كتف فاتح عشان ينشاف، والطريق يمشي فوق الكثبان (مو في خندق).
 MapConfig.Roads = {
 	Width = 24,
-	Blend = 70,
+	Shoulder = 8, -- عرض الكتف الفاتح على كل جنب
+	Blend = 70, -- انحدار الأرض من الكتف للكثبان
+	Elevation = 0.85, -- الطريق يتبع شكل الكثبان العام (بدون التموجات الصغيرة)
+	Ramp = 320, -- بعد الديرة، كم stud ياخذ الطريق عشان يطلع لمستوى الكثبان (طلعة هادية)
+	EndFade = 320, -- آخر كم stud ينزل الطريق لمستوى الأرض عند المعلم
 	SignOffset = 6, -- بعد اللوحة عن حافة الإسفلت
 	Paths = {
-		{ { X = 0, Z = 0 }, { X = 0, Z = -2890 } }, -- الواحة (يوقف عند طرف العشب)
-		{ { X = 0, Z = 0 }, { X = 2950, Z = 0 } }, -- الوادي (يوقف على الحافة)
-		{ { X = 0, Z = 0 }, { X = -2780, Z = 0 } }, -- طويق
-		{ { X = 0, Z = 0 }, { X = 0, Z = 2930 } }, -- مقبرة السيارات
+		{ { X = 0, Z = 0 }, { X = 0, Z = -2770 } }, -- الواحة (يوقف عند طرف العشب)
+		{ { X = 0, Z = 0 }, { X = 2790, Z = 0 } }, -- الوادي (يوقف على الحافة)
+		{ { X = 0, Z = 0 }, { X = -2790, Z = 0 } }, -- طويق (يوقف عند سفح الجبل)
+		{ { X = 0, Z = 0 }, { X = 0, Z = 2870 } }, -- مقبرة السيارات
 	} :: { { Point } },
 }
 
@@ -122,7 +159,8 @@ MapConfig.MaterialColors = {
 	Slate = { 150, 96, 70 },
 	Basalt = { 96, 74, 64 },
 	Rock = { 120, 104, 96 },
-	Asphalt = { 70, 70, 74 },
+	Asphalt = { 38, 38, 42 },
+	Concrete = { 196, 190, 178 },
 } :: { [string]: { number } }
 
 function MapConfig.GetLandmark(id: string): Landmark?

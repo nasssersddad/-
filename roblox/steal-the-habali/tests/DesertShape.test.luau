@@ -90,7 +90,7 @@ for roadIndex, path in roads.Paths do
 		end
 		for _, side in { -1, 1 } do
 			local ex, ez = x + px * side * (roadFlat - 1), z + pz * side * (roadFlat - 1)
-			check(math.abs(shape.HeightAt(ex, ez) - h) < 0.05, string.format("road %d not flat across at (%.0f, %.0f)", roadIndex, x, z))
+			check(math.abs(shape.RoadLevelAt(ex, ez) - shape.RoadLevelAt(x, z)) < 0.05, string.format("road %d not flat across at (%.0f, %.0f)", roadIndex, x, z))
 		end
 		if previous then
 			check(math.abs(h - previous) / 8 < 0.3, string.format("road %d too steep at (%.0f, %.0f)", roadIndex, x, z))
@@ -99,8 +99,9 @@ for roadIndex, path in roads.Paths do
 		-- خندق؟ نقارن الطريق بالأرض اللي جنبه بعد الانحدار
 		if along > MapConfig.Town.Radius + MapConfig.Town.Blend and along < length - roads.EndFade then
 			for _, side in { -1, 1 } do
-				local ox, oz = x + px * side * (roadFlat + roads.Blend + 10), z + pz * side * (roadFlat + roads.Blend + 10)
-				local diff = shape.HeightAt(ox, oz) - h
+				local reach = roadFlat + roads.FlatMargin + roads.Blend + 10
+				local ox, oz = x + px * side * reach, z + pz * side * reach
+				local diff = shape.HeightAt(ox, oz) - shape.RoadLevelAt(x, z)
 				trenchSum += diff
 				trenchCount += 1
 				sides += 1

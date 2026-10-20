@@ -8,6 +8,7 @@ type RoadHit = { X: number, Z: number, DirX: number, DirZ: number, Along: number
 
 export type Shape = {
 	HeightAt: (x: number, z: number) -> number,
+	RoadLevelAt: (x: number, z: number) -> number, -- نفس HeightAt بس بدون فرشة الطريق
 	MaterialAt: (x: number, z: number, height: number) -> string,
 	IsWaterAt: (x: number, z: number) -> boolean,
 }
@@ -65,6 +66,7 @@ function DesertShape.new(config: any): Shape
 	local zones = config.Zones
 	local outerZone = zones[#zones]
 	local roadFlat = roads.Width / 2 + roads.Shoulder
+	local roadLevelEdge = roadFlat + roads.FlatMargin -- لين هنا الأرض على مستوى الطريق
 
 	-- طول كل طريق (عشان نعرف وين ينزل لمستوى الأرض عند آخره)
 	local roadLengths = {}
@@ -140,7 +142,7 @@ function DesertShape.new(config: any): Shape
 		return base + config.DuneHeight * roads.Elevation * (sum / 9) * fade
 	end
 
-	local function heightAt(x: number, z: number): number
+	local function surfaceAt(x: number, z: number, withBed: boolean): number
 		local fromCenter = distance(x, z, 0, 0)
 		local h = base + config.DuneHeight * dunes(x, z)
 
@@ -180,8 +182,13 @@ function DesertShape.new(config: any): Shape
 		-- الطرق آخر شي: الإسفلت والكتف مستويين على ارتفاع الطريق، وبعدها تنحدر للأرض حولها
 		-- (داخل الديرة ارتفاع الطريق = الأرض، فما يتغير شي)
 		local roadDistance, hit = nearestRoad(x, z)
-		if roadDistance < roadFlat + roads.Blend then
-			h = lerp(roadHeight(hit), h, smoothstep(roadFlat, roadFlat + roads.Blend, roadDistance))
+		if roadDistance < roadLevelEdge + roads.Blend then
+			h = lerp(roadHeight(hit), h, smoothstep(roadLevelEdge, roadLevelEdge + roads.Blend, roadDistance))
+			-- فرشة الطريق: برا الديرة الأرض تحت قطع الإسفلت أوطى شوي
+			if withBed and roadDistance < roadFlat then
+				h -= roads.Bed * (1 - smoothstep(roadFlat - 2, roadFlat, roadDistance))
+					* smoothstep(town.Radius, town.Radius + 8, fromCenter)
+			end
 		end
 
 		return h
@@ -240,7 +247,12 @@ function DesertShape.new(config: any): Shape
 	end
 
 	return {
-		HeightAt = heightAt,
+		HeightAt = function(x: number, z: number): number
+			return surfaceAt(x, z, true)
+		end,
+		RoadLevelAt = function(x: number, z: number): number
+			return surfaceAt(x, z, false)
+		end,
 		MaterialAt = materialAt,
 		IsWaterAt = isWaterAt,
 	}

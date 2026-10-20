@@ -518,7 +518,7 @@ local function buildJunkyard(shape: any, random: Random, parent: Instance)
 			table.insert(placed, spot)
 			local stack = Instance.new("Model")
 			stack.Name = "Stack" .. #placed
-			local cars = if random:NextNumber() < 0.5 then 3 elseif random:NextNumber() < 0.6 then 2 else 1
+			local cars = random:NextInteger(2, config.MaxStack)
 			local y = shape.HeightAt(spot.X, spot.Y)
 			local yaw = random:NextNumber(0, math.pi * 2)
 			for level = 1, cars do
@@ -542,13 +542,82 @@ local function buildJunkyard(shape: any, random: Random, parent: Instance)
 	crane.Name = "Crane"
 	local craneColor = Color3.fromRGB(230, 180, 40)
 	local towerTop = CFrame.new(junkyard.X, ground + craneHeight, junkyard.Z)
-	newPart("Tower", Vector3.new(4, craneHeight, 4), towerTop * CFrame.new(0, -craneHeight / 2, 0), Enum.Material.Metal, craneColor, crane)
+	newPart("Tower", Vector3.new(6, craneHeight, 6), towerTop * CFrame.new(0, -craneHeight / 2, 0), Enum.Material.Metal, craneColor, crane)
 	newPart("Jib", Vector3.new(3, 3, 70), towerTop * CFrame.new(0, 1.5, -20), Enum.Material.Metal, craneColor, crane)
 	newPart("Counterweight", Vector3.new(6, 5, 8), towerTop * CFrame.new(0, 0.5, 14), Enum.Material.Concrete, COLORS.Concrete, crane)
 	newPart("Cable", Vector3.new(0.4, 30, 0.4), towerTop * CFrame.new(0, -15, -50), Enum.Material.Metal, COLORS.Post, crane)
 	newPart("Hook", Vector3.new(3, 3, 3), towerTop * CFrame.new(0, -31, -50), Enum.Material.Metal, COLORS.Post, crane)
 	crane.Parent = folder
 
+	folder.Parent = parent
+end
+
+-- سطح الطرق: قطع إسفلت (وكتف فاتح برا الديرة) فوق التضاريس، كل قطعة خط مستقيم
+-- يمشي مع ميلان الأرض. نقسّم الطريق لقطع أقصر لين ما يزيد الفرق عن الأرض عن PartTolerance.
+local function buildRoadSurfaces(shape: any, parent: Instance)
+	local roads = MapConfig.Roads
+	local folder = Instance.new("Folder")
+	folder.Name = "Roads"
+	local asphaltColor = rgb(MapConfig.MaterialColors.Asphalt)
+	local shoulderColor = rgb(MapConfig.MaterialColors.Concrete)
+	local thickness = roads.PartThickness
+	local shoulderWidth = roads.Width + roads.Shoulder * 2
+
+	local function segmentPart(name: string, width: number, lift: number, a: Vector3, b: Vector3, color: Color3, material: Enum.Material, into: Instance)
+		local length = (b - a).Magnitude + 1 -- تداخل بسيط بين القطع عشان ما يطلع فراغ
+		local frame = CFrame.lookAt((a + b) / 2, b)
+		local part = newPart(name, Vector3.new(width, thickness, length), frame * CFrame.new(0, lift - thickness / 2, 0), material, color, into)
+		part.CastShadow = false
+		return part
+	end
+
+	for roadIndex, path in roads.Paths do
+		local road = Instance.new("Folder")
+		road.Name = "Road" .. roadIndex
+		for i = 1, #path - 1 do
+			local a, b = path[i], path[i + 1]
+			local total = math.sqrt((b.X - a.X) ^ 2 + (b.Z - a.Z) ^ 2)
+			local dx, dz = (b.X - a.X) / total, (b.Z - a.Z) / total
+			-- مستوى الطريق (بدون الفرشة اللي تحت الإسفلت)
+			local function pointAt(along: number): Vector3
+				local x, z = a.X + dx * along, a.Z + dz * along
+				return Vector3.new(x, shape.RoadLevelAt(x, z), z)
+			end
+			-- الطريق يبدأ من طرف الساحة (الساحة نفسها بلاط)
+			local startAlong = if i == 1 then MapConfig.Town.PlazaRadius else 0
+			local along = startAlong
+			local index = 0
+			while along < total - 0.01 do
+				local finish = math.min(total, along + roads.PartSegment)
+				-- نقصّر القطعة لين تلصق بالأرض
+				while finish - along > 8 do
+					local p0, p1 = pointAt(along), pointAt(finish)
+					local fits = true
+					for t = along + 4, finish - 4, 4 do
+						local expected = p0.Y + (p1.Y - p0.Y) * (t - along) / (finish - along)
+						if math.abs(pointAt(t).Y - expected) > roads.PartTolerance then
+							fits = false
+							break
+						end
+					end
+					if fits then
+						break
+					end
+					finish = math.max(along + 8, finish - 8)
+				end
+				index += 1
+				local p0, p1 = pointAt(along), pointAt(finish)
+				local radius = math.sqrt(p0.X * p0.X + p0.Z * p0.Z)
+				segmentPart("Asphalt" .. index, roads.Width, roads.PartLift, p0, p1, asphaltColor, Enum.Material.Asphalt, road)
+				-- الكتف الفاتح برا الديرة بس (داخلها القواعد قريبة من الطريق)
+				if radius > MapConfig.Town.Radius then
+					segmentPart("Shoulder" .. index, shoulderWidth, roads.PartLift - 0.06, p0, p1, shoulderColor, Enum.Material.Concrete, road)
+				end
+				along = finish
+			end
+		end
+		road.Parent = folder
+	end
 	folder.Parent = parent
 end
 
@@ -652,6 +721,7 @@ function MapBuilder.Build()
 	buildShop(map)
 	buildGasStation(map)
 	buildLobbySpawn(map)
+	buildRoadSurfaces(shape, map)
 	buildZoneSigns(shape, map)
 	buildLandmarks(shape, map)
 	buildOasisPalms(shape, random, map)

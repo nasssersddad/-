@@ -16,6 +16,13 @@
       "Tools": {
         "$path": "src/tools"
       }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "Client": {
+          "$path": "src/client"
+        }
+      }
     }
   }
 }

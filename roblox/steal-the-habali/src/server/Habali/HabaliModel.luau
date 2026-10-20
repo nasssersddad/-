@@ -7,6 +7,10 @@ local HabaliModel = {}
 -- ارتفاع القطعة الأساسية (Root) عن الأرض. الموديل كله ينحسب منها
 HabaliModel.RootHeight = 0.5
 
+-- صندوق الصيد: نفس المقاس لكل الهبالي (حتى لما تجي المجسمات الحقيقية)،
+-- وهو اللي ينضرب وينسحب وينحط في السيارة
+HabaliModel.HitboxSize = Vector3.new(5, 7, 6)
+
 type PartSpec = { Name: string, Size: { number }, Offset: { number }, Color: { number }, Shape: string? }
 
 -- كل شخصية: قطع بمقاسها ومكانها من Root (X يمين، Y فوق، Z ورا)
@@ -65,6 +69,8 @@ export type BuildParams = {
 	LabelDistance: number,
 	Beam: number?, -- طول عمود النور (للهوك) أو nil
 	BeamWidth: number?,
+	PromptHold: number?,
+	PromptDistance: number?,
 }
 
 -- يرجّع الموديل وقائمة قطعه (عشان السيرفر يحركها كلها بدفعة وحدة)
@@ -78,6 +84,22 @@ function HabaliModel.Build(params: BuildParams): (Model, { BasePart })
 	root.CanQuery = true -- مرحلة الصيد بتحتاج تلقاه بالـ raycast
 	model.PrimaryPart = root
 	table.insert(parts, root)
+
+	local hitbox = newPart("Hitbox", HabaliModel.HitboxSize, CFrame.new(0, HabaliModel.HitboxSize.Y / 2, 0), model)
+	hitbox.Transparency = 1
+	hitbox.CanQuery = true
+	table.insert(parts, hitbox)
+
+	-- زر "اسحب": يشتغل بس لما يكون دايخ (السيرفر يشغّله)
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "GrabPrompt"
+	prompt.ActionText = "اسحب"
+	prompt.ObjectText = params.DisplayName
+	prompt.HoldDuration = params.PromptHold or 0.5
+	prompt.MaxActivationDistance = params.PromptDistance or 10
+	prompt.RequiresLineOfSight = false
+	prompt.Enabled = false
+	prompt.Parent = hitbox
 
 	local variant = params.Variant
 	for _, spec in SHAPES[params.CharacterId] or SHAPES.Jamaloni do
@@ -140,17 +162,17 @@ function HabaliModel.Build(params: BuildParams): (Model, { BasePart })
 	gui.LightInfluence = 0
 	if params.Beam then
 		-- الهوك ينقرا من بعيد: مقاس ثابت بالبكسل وفوق كل شي
-		gui.Size = UDim2.fromOffset(220, 60)
+		gui.Size = UDim2.fromOffset(220, 74)
 		gui.AlwaysOnTop = true
 	else
 		-- مقاس ثابت بالبكسل عشان ينقرا في الجوال، و MaxDistance يخفيه لما تبعد
-		gui.Size = UDim2.fromOffset(170, 46)
+		gui.Size = UDim2.fromOffset(170, 58)
 	end
 	gui.Parent = root
 
 	local nameLabel = Instance.new("TextLabel")
 	nameLabel.Name = "Title" -- مو "Name" عشان ما يتلخبط مع خاصية Name
-	nameLabel.Size = UDim2.fromScale(1, 0.55)
+	nameLabel.Size = UDim2.fromScale(1, 0.45)
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.Text = params.DisplayName
 	nameLabel.TextScaled = true
@@ -161,8 +183,8 @@ function HabaliModel.Build(params: BuildParams): (Model, { BasePart })
 
 	local rarityLabel = Instance.new("TextLabel")
 	rarityLabel.Name = "Rarity"
-	rarityLabel.Position = UDim2.fromScale(0, 0.55)
-	rarityLabel.Size = UDim2.fromScale(1, 0.45)
+	rarityLabel.Position = UDim2.fromScale(0, 0.45)
+	rarityLabel.Size = UDim2.fromScale(1, 0.35)
 	rarityLabel.BackgroundTransparency = 1
 	rarityLabel.Text = if variant then params.RarityText .. " · " .. variant.DisplayName else params.RarityText
 	rarityLabel.TextScaled = true
@@ -170,6 +192,35 @@ function HabaliModel.Build(params: BuildParams): (Model, { BasePart })
 	rarityLabel.TextColor3 = if variant then rgb(variant.Color) else rarityColor
 	rarityLabel.TextStrokeTransparency = 0.2
 	rarityLabel.Parent = gui
+
+	-- شريط الصحة (يطلع بعد أول ضربة) وكلمة "دايخ"
+	local bar = Instance.new("Frame")
+	bar.Name = "Bar"
+	bar.AnchorPoint = Vector2.new(0.5, 0)
+	bar.Position = UDim2.fromScale(0.5, 0.84)
+	bar.Size = UDim2.fromScale(0.6, 0.14)
+	bar.BackgroundColor3 = Color3.fromRGB(40, 30, 25)
+	bar.BorderSizePixel = 0
+	bar.Visible = false
+	bar.Parent = gui
+	local fill = Instance.new("Frame")
+	fill.Name = "Fill"
+	fill.Size = UDim2.fromScale(1, 1)
+	fill.BackgroundColor3 = Color3.fromRGB(235, 80, 60)
+	fill.BorderSizePixel = 0
+	fill.Parent = bar
+
+	local status = Instance.new("TextLabel")
+	status.Name = "Status"
+	status.Position = UDim2.fromScale(0, 0.8)
+	status.Size = UDim2.fromScale(1, 0.2)
+	status.BackgroundTransparency = 1
+	status.Text = ""
+	status.TextScaled = true
+	status.Font = Enum.Font.GothamBlack
+	status.TextColor3 = Color3.fromRGB(255, 230, 90)
+	status.TextStrokeTransparency = 0.2
+	status.Parent = gui
 
 	-- الجوال يحمّل الموديل كامل أو ما يحمّله (ما يطلع نص هبالي)
 	model.ModelStreamingMode = Enum.ModelStreamingMode.Atomic

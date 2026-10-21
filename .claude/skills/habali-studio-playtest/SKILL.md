@@ -83,6 +83,10 @@ for c in b: h = (h * 31 + c) % 2147483647
 
 - `UIBlox FoundationProvider` warnings come from Roblox CorePackages. Ignore them; look only for errors that mention `Server.`, `Shared.` or `Client.`.
 
+## Avatar joints
+
+- Studio uses the new avatar joints: `RightUpperArm.RightShoulder` is an **AnimationConstraint**, not a Motor6D, and its `C0` is read-only. To animate it in code, write `Transform` every frame in RenderStepped (see `swingArm` in FxClient). Support both classes.
+
 ## Physics notes (car and drag)
 
 - Wheel `CylindricalConstraint`: Attachment0's X axis = slider (up), with `InclinationAngle = 90`. Attachment1 on the tire must have **X = axle** (`CFrame` = wheel center, no extra rotation). Otherwise the tires lie flat.

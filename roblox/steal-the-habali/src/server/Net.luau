@@ -6,9 +6,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Net = {}
 
 -- من اللاعب للسيرفر
-local CLIENT_EVENTS = { "Swing", "Shoot", "Release", "SpawnCar" }
+local CLIENT_EVENTS = { "Swing", "Shoot", "Release", "SpawnCar", "Horn" }
 -- من السيرفر للاعب
-local SERVER_EVENTS = { "Notify", "Moment", "Shot" }
+local SERVER_EVENTS = { "Notify", "Moment", "Shot", "Fx" }
 
 -- حد أعلى لكل لاعب في الثانية (حماية من السبام، فوق التبريد حق كل سلاح)
 local MAX_PER_SECOND = 12
@@ -64,6 +64,17 @@ end
 
 function Net.FireAll(name: string, ...: any)
 	remotes[name]:FireAllClients(...)
+end
+
+-- للاعبين القريبين بس (المؤثرات ما تهم اللي بعيد، وتوفّر على الشبكة)
+function Net.FireNear(name: string, position: Vector3, radius: number, ...: any)
+	for _, player in game:GetService("Players"):GetPlayers() do
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if root and (root.Position - position).Magnitude <= radius then
+			remotes[name]:FireClient(player, ...)
+		end
+	end
 end
 
 function Net.Notify(player: Player, text: string)

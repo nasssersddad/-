@@ -11,11 +11,13 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local CatchConfig = require(Shared:WaitForChild("CatchConfig"))
 local CatchRules = require(Shared:WaitForChild("CatchRules"))
 local MapConfig = require(Shared:WaitForChild("MapConfig"))
+local FxConfig = require(Shared:WaitForChild("FxConfig"))
 
 local Server = script.Parent.Parent
 local Net = require(Server:WaitForChild("Net"))
 local HabaliService = require(Server:WaitForChild("Habali"):WaitForChild("HabaliService"))
 local CarService = require(Server:WaitForChild("Cars"):WaitForChild("CarService"))
+local Gear = require(script.Parent:WaitForChild("Gear"))
 
 local CatchService = {}
 
@@ -58,7 +60,15 @@ end
 
 -- ===== الضرب والتنويم =====
 
-local function report(player: Player, result: string?)
+-- الضربة وصلت: مؤثر للقريبين (لمعة ونجوم وصوت)، ورسالة للي دوّخه
+local function report(player: Player, model: Model, kind: string, result: string?)
+	if not result then
+		return
+	end
+	local hitbox = hitboxOf(model)
+	if hitbox then
+		Net.FireNear("Fx", hitbox.Position, FxConfig.Radius, "Hit", model, result == "Stunned", kind, player.UserId)
+	end
 	if result == "Stunned" then
 		Net.Notify(player, "💫 دوّخته! قرّب واضغط اسحب")
 	end
@@ -74,12 +84,13 @@ local function onSwing(player: Player)
 		return
 	end
 	lastSwing[player] = now
+	Net.FireNear("Fx", root.Position, FxConfig.Radius, "Swing", player.Character)
 	local range = CatchConfig.Melee.Range
 	local nearby = HabaliService.GetNearby(root.Position, range + 4)
 	local index = catchRules.PickMeleeTarget(root.Position, root.CFrame.LookVector, nearby, range)
 	if index then
 		local target = nearby[index]
-		report(player, HabaliService.Damage(target.Model, "Melee", root.Position))
+		report(player, target.Model, "Melee", HabaliService.Damage(target.Model, "Melee", root.Position))
 	end
 end
 
@@ -117,7 +128,7 @@ local function onShoot(player: Player, aim: any)
 			hitPoint = blocked.Position
 		else
 			hitPoint = target.Position
-			report(player, HabaliService.Damage(target.Model, "Gun", origin))
+			report(player, target.Model, "Gun", HabaliService.Damage(target.Model, "Gun", origin))
 		end
 	end
 	Net.FireAll("Shot", origin, hitPoint)
@@ -301,6 +312,8 @@ local function onLoad(player: Player, car: any)
 	HabaliService.Caught(model)
 	CarService.AddCargo(car, model, drag.Rarity)
 	Net.Notify(player, "✅ صار في سيارتك!")
+	-- احتفال: قصاصات وصوت للقريبين، وإعلان كبير للي صاده لو نادر وفوق
+	Net.FireNear("Fx", car.Bed.Position, FxConfig.Radius, "Caught", car.Model, drag.Rarity, model:GetAttribute("Variant"), model:GetAttribute("Character"), player.UserId)
 end
 
 -- يفلت لو مات، أو بعد عنه كثير، أو جلس
@@ -332,6 +345,7 @@ local function setupCollisionGroups()
 end
 
 local function onCharacter(character: Model)
+	task.defer(Gear.Equip, character)
 	for _, part in character:GetDescendants() do
 		if part:IsA("BasePart") then
 			part.CollisionGroup = PLAYERS_GROUP

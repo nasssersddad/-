@@ -9,6 +9,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local CatchConfig = require(Shared:WaitForChild("CatchConfig"))
 local CatchRules = require(Shared:WaitForChild("CatchRules"))
 local MapConfig = require(Shared:WaitForChild("MapConfig"))
+local FxConfig = require(Shared:WaitForChild("FxConfig"))
 local CarModel = require(script.Parent:WaitForChild("CarModel"))
 local Net = require(script.Parent.Parent:WaitForChild("Net"))
 
@@ -26,6 +27,7 @@ type CarState = CarModel.Car & {
 
 local cars: { [Player]: CarState } = {}
 local lastSpawn: { [Player]: number } = {}
+local lastHorn: { [Player]: number } = {}
 local folder: Folder
 local loadHandler: ((Player, CarState) -> ())? = nil
 
@@ -207,9 +209,23 @@ function CarService.Start()
 	Net.On("SpawnCar", function(player)
 		spawnCar(player)
 	end)
+	-- الهرن: بس لو أنت سايق سيارتك
+	Net.On("Horn", function(player)
+		local car = cars[player]
+		local now = os.clock()
+		if not car or ownerOf(car.Seat) ~= player then
+			return
+		end
+		if lastHorn[player] and now - lastHorn[player] < FxConfig.HornCooldown then
+			return
+		end
+		lastHorn[player] = now
+		Net.FireNear("Fx", car.Chassis.Position, FxConfig.Radius, "Horn", car.Model)
+	end)
 	Players.PlayerRemoving:Connect(function(player)
 		destroyCar(player)
 		lastSpawn[player] = nil
+		lastHorn[player] = nil
 	end)
 	task.spawn(function()
 		while true do

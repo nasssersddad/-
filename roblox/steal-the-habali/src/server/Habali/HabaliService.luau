@@ -111,6 +111,7 @@ local function updateLabel(state: State)
 	if status then
 		status.Text = if stunned then "💫 دايخ" else ""
 	end
+	state.Model:SetAttribute("Stunned", stunned)
 end
 
 local function grabPrompt(model: Model): ProximityPrompt?
@@ -492,6 +493,7 @@ function HabaliService.Damage(model: Model, kind: string, from: Vector3): string
 	state.LastHitAt = now
 	if stunned then
 		state.StunnedUntil = now + CatchConfig.StunTime[state.ZoneId]
+		model:SetAttribute("StunKind", kind) -- نجوم للعقال، Zzz للتنويم
 		state.TargetX, state.TargetZ = nil, nil
 		state.FleeUntil = 0
 		state.Dirty = true

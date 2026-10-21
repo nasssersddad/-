@@ -72,6 +72,13 @@ for c in b: h = (h * 31 + c) % 2147483647
 - Far models are not on the client (StreamingEnabled). Move the player close first, then wait for `FindFirstChild` on the client.
 - Hook habali (`Hook` attribute) don't respawn when caught; regular ones respawn after 10/20/40/60 s.
 
+## Two-player test (done 2026-10-21, passed)
+
+- The MCP can only start a solo playtest. For several players, the owner (or computer-use, if they ask) opens **Test → Start Test Session → Server and Clients**. It may start with 0 clients: then use **Test → Add Clients** once per player, from the server or a client window.
+- Each window shows up as its own studio id in `list_roblox_studios` (name null). Find out which is which by running `game.Players.LocalPlayer.Name` in the `Client` datamodel, and use the server window's id for `Server`.
+- `start_stop_play false` on the server id stops the game, but the windows stay open. **Test → End Session** closes them all.
+- Checked: each player gets their own car spot and 2 hook habali. Player 2 sees player 1's stun stars and drag dust, can't grab a habali someone else is holding, and gets kicked out of player 1's car seat. The catch banner shows only for the catcher. No errors on the server or either client.
+
 ## Screenshots
 
 - `screen_capture` during play shows the **client camera**, and `execute_luau` resets `CameraType` back to Custom. Pin the camera with `RunService:BindToRenderStep("ShotCam", Enum.RenderPriority.Camera.Value + 1, fn)`, take the capture, then unbind it (or add a `task.delay` that unbinds it).

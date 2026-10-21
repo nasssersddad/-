@@ -52,8 +52,14 @@ local function newSound(name: string, parent: Instance): Sound
 	return sound
 end
 
--- صوت مرة وحدة على قطعة (ينمسح لما يخلص)
+-- صوت مرة وحدة على قطعة (ينمسح لما يخلص). نفس الصوت ما يتكرر بسرعة
+local lastPlayed: { [string]: number } = {}
 local function play(name: string, parent: Instance?, pitchJitter: number?)
+	local now = os.clock()
+	if lastPlayed[name] and now - lastPlayed[name] < FxConfig.SoundGap then
+		return
+	end
+	lastPlayed[name] = now
 	local sound = newSound(name, parent or Workspace)
 	if pitchJitter then
 		sound.PlaybackSpeed *= 1 + (math.random() * 2 - 1) * pitchJitter
@@ -160,7 +166,7 @@ local function onHit(model: Model, stunned: boolean, kind: string, byUserId: num
 	end
 	flash(model)
 	burst(hitbox, Color3.fromRGB(255, 235, 120), if stunned then 22 else 10, if stunned then 18 else 12)
-	play("Hit", hitbox, 0.15)
+	play(if stunned then "Stun" else "Hit", hitbox, 0.12)
 	if byUserId == player.UserId then
 		shake(if stunned then FxConfig.Shake.Stun else FxConfig.Shake.Hit)
 	end
@@ -214,7 +220,6 @@ local function showStun(model: Model)
 	label.Rotation = -8
 	TweenService:Create(label, TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Rotation = 8 }):Play()
 	stunFx[model] = { gui }
-	play("Stun", root)
 end
 
 -- ===== السحب: غبار وصوت =====

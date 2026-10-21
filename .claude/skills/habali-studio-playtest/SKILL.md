@@ -11,7 +11,7 @@ Project facts and traps learned while building phases 1-3. Read `roblox/steal-th
 ## Rules from the owner
 
 - Speak Saudi dialect, simply. Explain a phase, get approval, build, playtest with no errors, then ask before pushing.
-- **Never use computer-use / mouse / keyboard tools.** The owner may be gaming. Drive everything through the Roblox_Studio MCP.
+- **Don't use computer-use / mouse / keyboard tools unless the owner asks for it in that conversation.** They may be gaming. Drive everything through the Roblox_Studio MCP. (On 2026-10-21 the owner asked once, to connect Rojo. `open_application` on Studio opened a second, empty Studio window; close that one with its X, not the place window.)
 - Never rebuild or wipe the map (`Workspace.Map` and terrain). Ctrl+Z does not restore terrain.
 - Remind the owner to press Ctrl+S in Studio after changes; MCP edits are not saved to the place file by themselves.
 
@@ -28,6 +28,14 @@ Project facts and traps learned while building phases 1-3. Read `roblox/steal-th
 | `src/server/` | `ServerScriptService.Server` (`Main` Script + `Habali/`, `Cars/`, `Catch/`, `Net`) |
 | `src/client/*.client.luau` | `StarterPlayer.StarterPlayerScripts.Client` (LocalScripts) |
 | `src/tools/MapBuilder.luau` | `ServerStorage.Tools.MapBuilder` |
+
+## Syncing with Rojo (preferred, set up 2026-10-21)
+
+- Rojo 7.7.1 is at `C:\Users\USER\.local\bin\rojo.exe` (on PATH), and its plugin is in `%LOCALAPPDATA%\Roblox\Plugins`.
+- Start the server in the background from `roblox/steal-the-habali`: `rojo serve default.project.json` (port 34872). When Studio opens the place, the Rojo plugin pops up "serving at localhost:34872, connect?". The owner (or computer-use, if they ask) clicks **Connect**.
+- Once it's connected, saving a file under `src/` updates Studio within about a second. Verify with the hash below instead of pasting.
+- Rojo owns `ReplicatedStorage.Shared`, `ServerScriptService.Server`, `ServerStorage.Tools` and `StarterPlayerScripts.Client`. Anything you add inside them in Studio by hand is removed on the next sync, so add files in `src/` instead. Workspace (the map) is not in the project, so Rojo never touches it.
+- If the plugin isn't connected (Studio closed, server stopped), fall back to the manual method below.
 
 ## Pushing a script without Rojo
 

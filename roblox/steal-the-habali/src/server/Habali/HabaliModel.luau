@@ -1,8 +1,24 @@
--- شكل الهبالي المؤقت: بلوكات ملونة، واسمه وندرته فوق راسه.
+-- شكل الهبالي: مجسم واقعي ميمز (سويناه بالذكاء الاصطناعي حق Studio)، واسمه وندرته فوق راسه.
+-- المجسمات محفوظة في ServerStorage.HabaliMeshes (قطعة وحدة لكل شخصية، باسم الشخصية).
+-- لو المجسم مو موجود نرجع للبلوكات القديمة عشان اللعبة ما تخرب.
 -- النادر وفوق يلمع بلون ندرته، والذهبي والدايموند يتغير لونهم ويلمعون.
--- المجسمات الحقيقية تجي بعدين، فخلّيناه خفيف (كم قطعة بس) عشان الجوال.
+
+local ServerStorage = game:GetService("ServerStorage")
 
 local HabaliModel = {}
+
+-- المجسمات (لو انمسحت من المكان، نرجعها من هالأرقام بـ MeshPart جديد):
+--   Jamaloni: Mesh 72091975867713، Texture 97787156944806
+--   Dalla:    Mesh 116241026764345، Texture 138862478995039
+--   Shawarma: Mesh 112705399652617، Texture 105877133920331
+
+-- لف المجسم حول نفسه لو وجهه مو للقدام (-Z). بالراديان
+local MESH_YAW: { [string]: number } = {
+	Jamaloni = 0,
+	Dalla = 0,
+	Shawarma = 0,
+}
+HabaliModel.MeshYaw = MESH_YAW
 
 -- ارتفاع القطعة الأساسية (Root) عن الأرض. الموديل كله ينحسب منها
 HabaliModel.RootHeight = 0.5
@@ -102,7 +118,28 @@ function HabaliModel.Build(params: BuildParams): (Model, { BasePart })
 	prompt.Parent = hitbox
 
 	local variant = params.Variant
-	for _, spec in SHAPES[params.CharacterId] or SHAPES.Jamaloni do
+	local meshFolder = ServerStorage:FindFirstChild("HabaliMeshes")
+	local template = meshFolder and meshFolder:FindFirstChild(params.CharacterId)
+	if template and template:IsA("MeshPart") then
+		local body = template:Clone()
+		body.Name = "Body"
+		body.Anchored = true
+		body.CanCollide = false
+		body.CanTouch = false
+		body.CanQuery = false -- صندوق الصيد هو اللي ينضرب
+		-- رجوله على الأرض عند Root
+		body.CFrame = CFrame.Angles(0, MESH_YAW[params.CharacterId] or 0, 0) * CFrame.new(0, template.Size.Y / 2, 0)
+		if variant then
+			-- الذهبي والدايموند: نشيل الصورة ونلوّنه كله
+			body.TextureID = ""
+			body.Color = rgb(variant.Color)
+			body.Material = Enum.Material[variant.Material]
+			body.Reflectance = 0.25
+		end
+		body.Parent = model
+		table.insert(parts, body)
+	end
+	for _, spec in if template then {} else (SHAPES[params.CharacterId] or SHAPES.Jamaloni) do
 		local offset = Vector3.new(spec.Offset[1], spec.Offset[2], spec.Offset[3])
 		local part = newPart(spec.Name, Vector3.new(spec.Size[1], spec.Size[2], spec.Size[3]), CFrame.new(offset), model)
 		if spec.Shape == "Cylinder" then

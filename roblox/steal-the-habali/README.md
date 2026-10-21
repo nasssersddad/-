@@ -32,7 +32,9 @@
 
 ## الهبالي
 
-![الهبالي](docs/habali-preview.jpg)
+![الهبالي](docs/habali-realistic-preview.jpg)
+
+![الذهبي والدايموند](docs/habali-variants.jpg)
 
 | الطبقة | الندرة | العدد في السيرفر | يطلع بداله بعد |
 |---|---|---|---|

@@ -18,10 +18,16 @@ local Net = require(Server:WaitForChild("Net"))
 local HabaliService = require(Server:WaitForChild("Habali"):WaitForChild("HabaliService"))
 local CarService = require(Server:WaitForChild("Cars"):WaitForChild("CarService"))
 local Gear = require(script.Parent:WaitForChild("Gear"))
+local Carry = require(Server:WaitForChild("Base"):WaitForChild("Carry"))
+local BaseService = require(Server:WaitForChild("Base"):WaitForChild("BaseService"))
+local BaseConfig = require(Shared:WaitForChild("BaseConfig"))
+local BaseRules = require(Shared:WaitForChild("BaseRules"))
+local HabaliConfig = require(Shared:WaitForChild("HabaliConfig"))
 
 local CatchService = {}
 
 local catchRules = CatchRules.new(CatchConfig)
+local baseRules = BaseRules.new(BaseConfig, HabaliConfig, MapConfig)
 local random = Random.new()
 
 local HABALI_GROUP = "Habali"
@@ -43,6 +49,8 @@ type Drag = {
 local dragging: { [Player]: Drag } = {}
 local lastSwing: { [Player]: number } = {}
 local lastShot: { [Player]: number } = {}
+local hitsOn: { [Player]: { number } } = {} -- ضربات العقال على اللي ساحب أو شايل
+local drop: (Player, string?) -> () -- تحت في قسم السحب
 
 local function aliveCharacter(player: Player): (Model?, BasePart?, Humanoid?)
 	local character = player.Character
@@ -80,12 +88,42 @@ local function onSwing(player: Player)
 		return
 	end
 	local _, root, humanoid = aliveCharacter(player)
-	if not root or not humanoid or humanoid.Sit or dragging[player] then
+	if not root or not humanoid or humanoid.Sit or dragging[player] or Carry.IsCarrying(player) then
 		return
 	end
 	lastSwing[player] = now
 	Net.FireNear("Fx", root.Position, FxConfig.Radius, "Swing", player.Character)
 	local range = CatchConfig.Melee.Range
+
+	-- لاعب قدامك ساحب هبالي أو شايل مسروق؟ تطيّحه بعد كم ضربة
+	local victims, candidates = {}, {}
+	for _, other in Players:GetPlayers() do
+		if other ~= player and (dragging[other] or Carry.IsCarrying(other)) then
+			local _, otherRoot = aliveCharacter(other)
+			if otherRoot then
+				table.insert(victims, other)
+				table.insert(candidates, { Position = otherRoot.Position })
+			end
+		end
+	end
+	local victimIndex = catchRules.PickMeleeTarget(root.Position, root.CFrame.LookVector, candidates, range)
+	if victimIndex then
+		local victim = victims[victimIndex]
+		local dropped
+		hitsOn[victim], dropped = baseRules.RegisterHit(hitsOn[victim] or {}, now)
+		if dropped then
+			if dragging[victim] then
+				drop(victim, "😵 ضربوك وفلت منك الهبالي!")
+				Net.Notify(player, "💥 طيّحته! امسك الهبالي")
+			else
+				BaseService.CarrierKnockedOut(victim, player)
+			end
+		else
+			Net.Notify(victim, string.format("⚠️ %s يضربك! (%d/%d)", player.DisplayName, #hitsOn[victim], BaseConfig.Steal.HitsToDrop))
+		end
+		return
+	end
+
 	local nearby = HabaliService.GetNearby(root.Position, range + 4)
 	local index = catchRules.PickMeleeTarget(root.Position, root.CFrame.LookVector, nearby, range)
 	if index then
@@ -176,7 +214,7 @@ local function clearDrag(player: Player, keepWelds: boolean?): Drag?
 end
 
 -- يفلت: يرجع للصحراء دايخ شوي
-local function drop(player: Player, message: string?)
+function drop(player: Player, message: string?)
 	local drag = clearDrag(player)
 	if not drag or not drag.Model.Parent then
 		return
@@ -245,7 +283,7 @@ end
 local function onGrab(player: Player, model: Model)
 	local _, root, humanoid = aliveCharacter(player)
 	local hitbox = hitboxOf(model)
-	if not root or not humanoid or not hitbox or humanoid.Sit or dragging[player] then
+	if not root or not humanoid or not hitbox or humanoid.Sit or dragging[player] or Carry.IsCarrying(player) then
 		return
 	end
 	if (hitbox.Position - root.Position).Magnitude > CatchConfig.Drag.GrabDistance then
@@ -284,6 +322,13 @@ local REASONS = {
 }
 
 local function onLoad(player: Player, car: any)
+	if car.Owner == player and Carry.IsCarrying(player) then
+		local _, carryRoot = aliveCharacter(player)
+		if carryRoot and (car.Bed.Position - carryRoot.Position).Magnitude <= CatchConfig.Car.LoadDistance + 4 then
+			BaseService.LoadCarried(player, car)
+		end
+		return
+	end
 	local drag = dragging[player]
 	local _, root = aliveCharacter(player)
 	if not drag or not root or car.Owner ~= player then
@@ -378,6 +423,7 @@ function CatchService.Start()
 		drop(player)
 		lastSwing[player] = nil
 		lastShot[player] = nil
+		hitsOn[player] = nil
 	end)
 
 	Net.On("Swing", onSwing)

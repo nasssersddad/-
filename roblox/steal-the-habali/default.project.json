@@ -15,6 +15,9 @@
     "ServerStorage": {
       "Tools": {
         "$path": "src/tools"
+      },
+      "Tests": {
+        "$path": "tests"
       }
     },
     "StarterPlayer": {

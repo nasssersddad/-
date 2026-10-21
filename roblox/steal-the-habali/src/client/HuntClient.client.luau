@@ -190,6 +190,8 @@ local function refreshLoadPrompts()
 	local cars = Workspace:FindFirstChild("Cars")
 	local isDragging = player:GetAttribute("Dragging") ~= nil
 	releaseButton.Visible = isDragging
+	-- اللي شايل مسروق فوق راسه يحطه في سيارته بنفس الزر
+	isDragging = isDragging or player:GetAttribute("Carrying") ~= nil
 	if not cars then
 		return
 	end
@@ -202,6 +204,7 @@ local function refreshLoadPrompts()
 	end
 end
 player:GetAttributeChangedSignal("Dragging"):Connect(refreshLoadPrompts)
+player:GetAttributeChangedSignal("Carrying"):Connect(refreshLoadPrompts)
 task.spawn(function()
 	while true do
 		refreshLoadPrompts() -- السيارة ممكن تتحمل متأخر في الجوال

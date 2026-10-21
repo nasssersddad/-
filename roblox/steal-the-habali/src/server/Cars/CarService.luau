@@ -11,6 +11,7 @@ local CatchRules = require(Shared:WaitForChild("CatchRules"))
 local MapConfig = require(Shared:WaitForChild("MapConfig"))
 local FxConfig = require(Shared:WaitForChild("FxConfig"))
 local CarModel = require(script.Parent:WaitForChild("CarModel"))
+local HabaliFactory = require(script.Parent.Parent:WaitForChild("Habali"):WaitForChild("HabaliFactory"))
 local Net = require(script.Parent.Parent:WaitForChild("Net"))
 
 local CarService = {}
@@ -30,6 +31,7 @@ local lastSpawn: { [Player]: number } = {}
 local lastHorn: { [Player]: number } = {}
 local folder: Folder
 local loadHandler: ((Player, CarState) -> ())? = nil
+local stealHandler: ((Player, CarState) -> ())? = nil
 
 -- أماكن الموقف: داخل الديرة قدام الفتحات اللي بين القواعد (45° و135°...)،
 -- والسيارة تطالع برا للصحرا من الفتحة. كل فتحة فيها 3 مواقف جنب بعض
@@ -169,6 +171,14 @@ local function spawnCar(player: Player)
 			loadHandler(who, car)
 		end
 	end)
+	local stealPrompt = car.Bed:FindFirstChild("StealPrompt")
+	if stealPrompt then
+		stealPrompt.Triggered:Connect(function(who)
+			if stealHandler then
+				stealHandler(who, car)
+			end
+		end)
+	end
 	Net.Notify(player, "سيارتك الربع في موقف الديرة 🚙")
 end
 
@@ -265,6 +275,53 @@ end
 
 function CarService.SetLoadHandler(handler: (Player, CarState) -> ())
 	loadHandler = handler
+end
+
+function CarService.SetStealHandler(handler: (Player, CarState) -> ())
+	stealHandler = handler
+end
+
+-- يشيل هبالي من الحوض (انسرق أو نزل في القاعدة) ويرجّع سرعة السيارة
+function CarService.RemoveCargo(car: CarState, model: Model)
+	local index = table.find(car.Cargo, model)
+	if not index then
+		return
+	end
+	table.remove(car.Cargo, index)
+	local rarity = model:GetAttribute("Rarity")
+	car.Load = math.max(0, car.Load - (CatchConfig.Weight[rarity] or 0))
+	car.Model:SetAttribute("Load", car.Load)
+	model:Destroy()
+	-- الباقين ينزاحون لأول الأماكن
+	for i, cargo in car.Cargo do
+		local slot = car.Slots[i]
+		local hitbox = cargo:FindFirstChild("Hitbox") :: BasePart?
+		local weld = hitbox and hitbox:FindFirstChild("CargoWeld")
+		if slot and weld then
+			weld:Destroy()
+			cargo:PivotTo(slot.WorldCFrame)
+			local newWeld = Instance.new("WeldConstraint")
+			newWeld.Name = "CargoWeld"
+			newWeld.Part0 = car.Chassis
+			newWeld.Part1 = hitbox
+			newWeld.Parent = hitbox
+		end
+	end
+	CarModel.TuneSuspension(car)
+	applyInput(car)
+end
+
+-- يحط هبالي من بياناته في الحوض (المسروق اللي كان فوق الراس)
+function CarService.AddCargoEntry(car: CarState, entry: HabaliFactory.Entry): number?
+	local model = HabaliFactory.Build(entry)
+	model.Name = "Cargo_" .. entry.c
+	HabaliFactory.MakeCarriable(model)
+	local label = model.PrimaryPart and model.PrimaryPart:FindFirstChild("Label")
+	local status = label and label:FindFirstChild("Status") :: TextLabel?
+	if status then
+		status.Text = "🚙"
+	end
+	return CarService.AddCargo(car, model, entry.r)
 end
 
 return CarService

@@ -203,6 +203,17 @@ function CarModel.Build(cframe: CFrame, ownerName: string, slots: number): Car
 	prompt.Enabled = false -- الجوال يشغّله بس لصاحب السيارة وهو ساحب هبالي
 	prompt.KeyboardKeyCode = Enum.KeyCode.E
 	prompt.Parent = bed
+	-- غير صاحبها يقدر يسرق من الحوض لو السيارة واقفة ومحد فيها
+	local steal = Instance.new("ProximityPrompt")
+	steal.Name = "StealPrompt"
+	steal.ActionText = "اسرق من الحوض 🦹"
+	steal.ObjectText = "الربع"
+	steal.HoldDuration = 4
+	steal.MaxActivationDistance = 12
+	steal.RequiresLineOfSight = false
+	steal.Enabled = false -- الجوال يشغّله لغير صاحبها (والسيرفر يتحقق)
+	steal.KeyboardKeyCode = Enum.KeyCode.E
+	steal.Parent = bed
 
 	local wheels = {}
 	for _, spec in { { -1, -1 }, { 1, -1 }, { -1, 1 }, { 1, 1 } } do

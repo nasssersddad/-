@@ -68,7 +68,7 @@ ShopConfig.CarDistance = 45
 ShopConfig.Shops = {
 	{ Id = "Habal", Name = "أبو هبال", Title = "يشتري هباليك 💰", X = 0, Z = 0 },
 	-- بين طريق الغرب/الشرق ومواقف السيارات (65 stud عن النص، 202.5° و 337.5°)، بعيد عن الطرق
-	{ Id = "Agal", Name = "أبو عقيل", Title = "محل العقّال 🪢", X = -60, Z = -25 },
+	{ Id = "Agal", Name = "أبو عقيل", Title = "محل العقّال", X = -60, Z = -25 },
 	{ Id = "Garage", Name = "أبو كفر", Title = "ورشة أبو كفر 🔧", X = 60, Z = -25 },
 	{ Id = "Fuel", Name = "أبو فلّة", Title = "محطة البنزين ⛽", X = 80, Z = 36 },
 }

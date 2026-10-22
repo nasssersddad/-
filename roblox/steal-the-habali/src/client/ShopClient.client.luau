@@ -104,7 +104,7 @@ close.Name = "Close"
 close.Size = UDim2.fromOffset(52, 52)
 close.Position = UDim2.fromOffset(10, 10)
 close.BackgroundColor3 = Color3.fromRGB(190, 60, 60)
-close.Text = "✕"
+close.Text = "X"
 close.TextScaled = true
 close.Font = Enum.Font.GothamBlack
 close.TextColor3 = Color3.new(1, 1, 1)
@@ -133,12 +133,12 @@ local render: () -> ()
 local function row(order: number, heading: string, detail: string, buttonText: string, enabled: boolean, onPress: () -> ())
 	local frame = Instance.new("Frame")
 	frame.LayoutOrder = order
-	frame.Size = UDim2.new(1, -8, 0, 76)
+	frame.Size = UDim2.new(1, -8, 0, 80)
 	frame.BackgroundColor3 = Color3.fromRGB(58, 50, 42)
 	frame.Parent = list
 	corner(frame, 12)
 	label(frame, heading, UDim2.new(1, -170, 0, 32), UDim2.fromOffset(10, 6), Enum.Font.GothamBlack, Color3.new(1, 1, 1), 24)
-	label(frame, detail, UDim2.new(1, -170, 0, 26), UDim2.fromOffset(10, 40), Enum.Font.GothamMedium, Color3.fromRGB(220, 210, 190), 18)
+	label(frame, detail, UDim2.new(1, -170, 0, 30), UDim2.fromOffset(10, 40), Enum.Font.GothamBold, Color3.fromRGB(230, 220, 200), 20)
 	local button = Instance.new("TextButton")
 	button.Size = UDim2.fromOffset(146, 56)
 	button.Position = UDim2.new(0, 10, 0.5, -28)

@@ -121,20 +121,29 @@ function Gear.Equip(character: Model, gear: any?)
 
 	-- العقال: نمسكه من فوق ويتدلى، والحلقة في مستوى الضربة (قدام/ورا)
 	local agal = meshFor(meleeMesh, "Agal")
-	if agal then
+	local tipPosition, bottomPosition
+	if agal and agal:GetAttribute("Grip") == "Heel" then
+		-- الشبشب: نمسكه من الكعب (+Z المحلي) وطرفه (-Z) على امتداد الذراع
+		setup(agal, "Agal")
+		local length = agal.Size.Z
+		attach(hand, agal, grip * CFrame.Angles(math.rad(-90), 0, 0) * CFrame.new(0, 0, -(length / 2 - 0.15)), folder)
+		tipPosition, bottomPosition = Vector3.new(0, 0, length * 0.2), Vector3.new(0, 0, -length / 2)
+	elseif agal then
 		setup(agal, "Agal")
 		attach(hand, agal, grip * CFrame.Angles(0, math.rad(90), 0) * CFrame.new(0, -agal.Size.Y / 2 + 0.1, 0), folder)
+		tipPosition, bottomPosition = Vector3.new(0, -agal.Size.Y * 0.1, 0), Vector3.new(0, -agal.Size.Y / 2, 0)
 	else
 		agal = block("Agal", Vector3.new(0.3, 1.3, 0.3), Color3.fromRGB(20, 20, 22), Enum.Material.Fabric)
 		attach(hand, agal, grip * CFrame.new(0, -0.65, 0), folder)
+		tipPosition, bottomPosition = Vector3.new(0, 0.5, 0), Vector3.new(0, -0.65, 0)
 	end
 	local tip = Instance.new("Attachment")
 	tip.Name = "TrailTop"
-	tip.Position = Vector3.new(0, -agal.Size.Y * 0.1, 0)
+	tip.Position = tipPosition
 	tip.Parent = agal
 	local bottom = Instance.new("Attachment")
 	bottom.Name = "TrailBottom"
-	bottom.Position = Vector3.new(0, -agal.Size.Y / 2, 0)
+	bottom.Position = bottomPosition
 	bottom.Parent = agal
 
 	-- المسدس: الماسورة على امتداد الذراع، والمقبض في الكف (المقبض ورا وتحت نص المجسم)
@@ -143,9 +152,12 @@ function Gear.Equip(character: Model, gear: any?)
 	muzzle.Name = "Muzzle"
 	if gun then
 		setup(gun, "DartGun")
-		local length, height = gun.Size.Z, gun.Size.Y
-		attach(hand, gun, grip * CFrame.Angles(math.rad(-90), 0, 0) * CFrame.new(0, height * 0.28, -length * 0.3), folder)
-		muzzle.Position = Vector3.new(0, height * 0.18, -length / 2)
+		-- بعض المجسمات ماسورتها على +X بدال -Z: ForwardYaw يلفها (90 = من +X لـ -Z)
+		local yaw = gun:GetAttribute("ForwardYaw") or 0
+		local length = if yaw ~= 0 then gun.Size.X else gun.Size.Z
+		local height = gun.Size.Y
+		attach(hand, gun, grip * CFrame.Angles(math.rad(-90), 0, 0) * CFrame.new(0, height * 0.28, -length * 0.3) * CFrame.Angles(0, math.rad(yaw), 0), folder)
+		muzzle.Position = if yaw ~= 0 then Vector3.new(length / 2, height * 0.18, 0) else Vector3.new(0, height * 0.18, -length / 2)
 	else
 		gun = block("DartGun", Vector3.new(0.3, 0.5, 1.3), Color3.fromRGB(70, 72, 78), Enum.Material.Metal)
 		attach(hand, gun, grip * CFrame.Angles(math.rad(-90), 0, 0) * CFrame.new(0, 0.15, -0.4), folder)

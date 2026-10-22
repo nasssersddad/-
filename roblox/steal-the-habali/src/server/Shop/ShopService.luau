@@ -341,8 +341,9 @@ local function setupShops()
 			spot = CFrame.lookAt(Vector3.new(p.X, base + 1, p.Z), Vector3.new(p.X, base + 1, p.Z + 1))
 		elseif shop.Id == "Fuel" and map:FindFirstChild("GasStation") then
 			local station = MapConfig.GasStation
-			local p = Vector3.new(station.X + 8, base + 0.4, station.Z + 4)
-			spot = CFrame.lookAt(p, Vector3.new(station.X + 8, base + 0.4, 0)) -- يطالع الطريق
+			-- قدام الكشك (الكشك عند X+10، Z+4) وبعيد عن المضخات، يطالع الطريق
+			local p = Vector3.new(station.X + 10, base + 0.4, station.Z - 2)
+			spot = CFrame.lookAt(p, Vector3.new(station.X + 10, base + 0.4, 0))
 		else
 			local p = Vector3.new(shop.X, base, shop.Z)
 			local front = CFrame.lookAt(p, Vector3.new(0, base, 0)) -- الكشك يطالع نص الديرة

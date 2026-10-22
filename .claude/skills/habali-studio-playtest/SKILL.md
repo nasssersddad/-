@@ -89,6 +89,15 @@ for c in b: h = (h * 31 + c) % 2147483647
 - To move a car for a test, step it about 14 studs every 0.55 s from the Server datamodel (keep a helper in `_G` within the session). A single big PivotTo trips the anti-teleport check.
 - Saving needs **Experience Settings → Security → Enable Studio Access to API Services**. Without it, DataService runs memory-only and warns. Seed or inspect saves with `DataStoreService:GetDataStore("PlayerData_v1_Studio")` and the key `player_<UserId>` (local test players have negative ids).
 
+## Phase 5 test tricks (shops, fuel)
+
+- Each `node mcp_call.js` starts its own StudioMCP process, and Studio sometimes answers "No Roblox Studio instances are connected" for one call. Retry the same call after ~3 s instead of assuming Studio closed.
+- Test money: back up the Studio save first, then `UpdateAsync` on `PlayerData_v1_Studio` / `player_<StudioService:GetUserId()>` before starting play (money, `gear`, `fuel`, `jerries`). Restore the backup after the test. The running game only reads the save when the player joins.
+- Driving for real: seat the player from the Server datamodel (`DriverSeat:Sit(humanoid)`), then `user_keyboard_input` keyDown W (needs `datamodel_type = "Client"`), wait, keyUp. Fuel only burns while someone sits in the car.
+- Every car spawns in the 45° lots, about 31 studs from Abu Fella, so refuelling can be tested without driving. For Abu Habal, reverse (S) about 2 s from the lot.
+- `character_navigation` often says "Path Blocked" in the desert. Walk with `Humanoid:MoveTo` through waypoints instead; from the desert enter the Dira along the 45° gap.
+- Read errors with `LogService:GetLogHistory()` in both the Server and Client datamodels. `get_console_output` only shows the edit Output.
+
 ## Screenshots
 
 - `screen_capture` during play shows the **client camera**, and `execute_luau` resets `CameraType` back to Custom. Pin the camera with `RunService:BindToRenderStep("ShotCam", Enum.RenderPriority.Camera.Value + 1, fn)`, take the capture, then unbind it (or add a `task.delay` that unbinds it).

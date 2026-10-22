@@ -75,6 +75,8 @@ for c in b: h = (h * 31 + c) % 2147483647
 ## Two-player test (done 2026-10-21, passed)
 
 - The MCP can only start a solo playtest. For several players, the owner (or computer-use, if they ask) opens **Test → Start Test Session → Server and Clients**. It may start with 0 clients: then use **Test → Add Clients** once per player, from the server or a client window.
+- Quicker way (found 2026-10-22): the player-count box next to the Play/Stop buttons at the top left (👤 0 ⇕). Stop any running session, click its up arrow to 2, then press Play (the dropdown says "Server..."). Leaving it at 0 starts a server with no players.
+- Before asking the owner anything about Studio, re-read this file: the two-player test, Rojo connect, and "Enable Studio Access to API Services" (File → **Experience Settings** → Security; already ON in this place since 2026-10-22) are all solved here.
 - Each window shows up as its own studio id in `list_roblox_studios` (name null). Find out which is which by running `game.Players.LocalPlayer.Name` in the `Client` datamodel, and use the server window's id for `Server`.
 - `start_stop_play false` on the server id stops the game, but the windows stay open. **Test → End Session** closes them all.
 - Checked: each player gets their own car spot and 2 hook habali. Player 2 sees player 1's stun stars and drag dust, can't grab a habali someone else is holding, and gets kicked out of player 1's car seat. The catch banner shows only for the catcher. No errors on the server or either client.

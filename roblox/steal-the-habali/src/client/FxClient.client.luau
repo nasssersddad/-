@@ -107,42 +107,224 @@ local function burst(parent: BasePart, color: Color3, count: number, speed: numb
 	Debris:AddItem(emitter, 1.2)
 end
 
--- ===== الضربة =====
+-- ===== حركة اليد (الضربة والتصويب) =====
+-- مفاصل الأفاتار الجديدة (AnimationConstraint) ما تقبل نكتب Transform، فنحرك اليد
+-- بـ IKControl: نحط هدف (Attachment) واليد تلحقه. يشتغل على أي شخصية عند كل لاعب.
+-- workspace:GetAttribute("FxSlow") يبطّي الحركة للتجربة والتصوير بس.
+
+local function slowScale(): number
+	local slow = Workspace:GetAttribute("FxSlow")
+	return if typeof(slow) == "number" and slow > 0 then slow else 1
+end
+
+local function ease(t: number, style: string?): number
+	if style == "out" then
+		return 1 - (1 - t) ^ 3
+	elseif style == "in" then
+		return t ^ 2
+	end
+	return t * t * (3 - 2 * t)
+end
+
+-- IK الذراع اليمين لهالشخصية (نسويه مرة وحدة ونعيد استخدامه)
+local function armIK(character: Model): (IKControl?, Attachment?)
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local upper = character:FindFirstChild("RightUpperArm")
+	local hand = character:FindFirstChild("RightHand")
+	if not humanoid or not root or not upper or not hand then
+		return nil, nil
+	end
+	local target = root:FindFirstChild("FxArmTarget") :: Attachment?
+	if not target then
+		local made = Instance.new("Attachment")
+		made.Name = "FxArmTarget"
+		made.Parent = root
+		target = made
+	end
+	local ik = humanoid:FindFirstChild("FxArmIK") :: IKControl?
+	if not ik then
+		local made = Instance.new("IKControl")
+		made.Name = "FxArmIK"
+		made.Type = Enum.IKControlType.Position
+		made.ChainRoot = upper
+		made.EndEffector = hand
+		made.Target = target
+		made.Priority = 10
+		made.Weight = 0
+		made.Parent = humanoid
+		ik = made
+	end
+	return ik, target
+end
+
+-- keys: { { t = ثواني, pos = Vector3 (بالنسبة لـ HumanoidRootPart: +X يمين، +Y فوق، -Z قدام), w = 0..1, ease = ... } }
+-- getPos (اختياري) يحسب مكان الهدف كل فريم بدال pos (التصويب)
+local playing: { [Model]: number } = {}
+
+local function playArm(character: Model, keys: { any }, getPos: ((number) -> Vector3)?)
+	if not character or not character.Parent then
+		return
+	end
+	local ik, target = armIK(character)
+	if not ik or not target then
+		return
+	end
+	local token = (playing[character] or 0) + 1
+	playing[character] = token
+	local scale = slowScale()
+	local total = keys[#keys].t * scale
+	local started = os.clock()
+	local connection
+	connection = RunService.RenderStepped:Connect(function()
+		local elapsed = os.clock() - started
+		if playing[character] ~= token or not character.Parent or not ik.Parent then
+			connection:Disconnect()
+			return
+		end
+		if elapsed >= total then
+			ik.Weight = 0
+			playing[character] = nil
+			connection:Disconnect()
+			return
+		end
+		local a, b = keys[1], keys[#keys]
+		for i = 1, #keys - 1 do
+			if elapsed <= keys[i + 1].t * scale then
+				a, b = keys[i], keys[i + 1]
+				break
+			end
+		end
+		local span = math.max((b.t - a.t) * scale, 1e-3)
+		local k = ease(math.clamp((elapsed - a.t * scale) / span, 0, 1), b.ease)
+		ik.Weight = a.w + (b.w - a.w) * k
+		target.Position = if getPos then getPos(elapsed / scale) else a.pos:Lerp(b.pos, k)
+	end)
+end
+
+-- ضربة العقال: ترفع اليد ورا فوق الراس، تضرب لقدام وتحت بقوة، وترجع (أقل من تبريد الضربة 0.4)
+local SWING = {
+	{ t = 0, pos = Vector3.new(1.4, 0.2, 0), w = 0 },
+	{ t = 0.12, ease = "out", pos = Vector3.new(1.1, 3.3, 1.3), w = 1 },
+	{ t = 0.21, ease = "in", pos = Vector3.new(0.6, 0.4, -2.6), w = 1 },
+	{ t = 0.37, pos = Vector3.new(1.2, 0, -1), w = 0 },
+}
+
+local function agalTrail(character: Model): Trail?
+	local gear = character:FindFirstChild("HuntGear")
+	local agal = gear and gear:FindFirstChild("Agal")
+	local top = agal and agal:FindFirstChild("TrailTop")
+	local bottom = agal and agal:FindFirstChild("TrailBottom")
+	if not agal or not top or not bottom then
+		return nil
+	end
+	local trail = agal:FindFirstChild("SwingTrail") :: Trail?
+	if not trail then
+		local made = Instance.new("Trail")
+		made.Name = "SwingTrail"
+		made.Attachment0 = top :: Attachment
+		made.Attachment1 = bottom :: Attachment
+		made.Lifetime = 0.12
+		made.MinLength = 0
+		made.LightEmission = 0.3
+		made.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255))
+		made.Transparency = NumberSequence.new(0.35, 1)
+		made.Enabled = false
+		made.Parent = agal
+		trail = made
+	end
+	return trail
+end
 
 local function swingArm(character: Model)
 	if not character or not character.Parent then
 		return
 	end
-	local upper = character:FindFirstChild("RightUpperArm")
-	local shoulder: any = (upper and upper:FindFirstChild("RightShoulder"))
-		or (character:FindFirstChild("Torso") and character.Torso:FindFirstChild("Right Shoulder"))
-	-- المفصل ممكن يكون Motor6D (القديم) أو AnimationConstraint (الجديد، C0 فيه للقراءة بس).
-	-- الاثنين فيهم Transform، فنضيف عليه دوران كل فريم بعد الأنيميشن
-	if shoulder and (shoulder:IsA("Motor6D") or shoulder:IsA("AnimationConstraint")) and not shoulder:GetAttribute("Swinging") then
-		shoulder:SetAttribute("Swinging", true)
-		local start = os.clock()
-		local duration = 0.26
-		local lastBase, lastApplied = shoulder.Transform, nil
-		local connection
-		connection = RunService.RenderStepped:Connect(function()
-			local t = (os.clock() - start) / duration
-			-- لو الأنيميشن ما غيّر المفصل، نرجع للأصل عشان الدوران ما يتراكم
-			local base = if lastApplied and shoulder.Transform == lastApplied then lastBase else shoulder.Transform
-			if t >= 1 or not shoulder.Parent then
-				shoulder.Transform = base
-				shoulder:SetAttribute("Swinging", nil)
-				connection:Disconnect()
-				return
-			end
-			-- يرفع بسرعة وينزل أبطأ
-			local amount = if t < 0.3 then t / 0.3 else 1 - (t - 0.3) / 0.7
-			local applied = base * CFrame.Angles(math.rad(150) * amount, 0, 0)
-			shoulder.Transform = applied
-			lastBase, lastApplied = base, applied
+	playArm(character, SWING)
+	local trail = agalTrail(character)
+	if trail then
+		local scale = slowScale()
+		task.delay(0.11 * scale, function()
+			trail.Enabled = true
+			task.delay(0.14 * scale, function()
+				trail.Enabled = false
+			end)
 		end)
 	end
 	local hand = character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm")
 	play("Swing", hand, 0.1)
+end
+
+-- التصويب: اليد تمتد لين تأشر على الهدف، ترتد شوي مع الطلقة، وبعدها تنزل
+local AIM = {
+	{ t = 0, w = 0 },
+	{ t = 0.08, ease = "out", w = 1 },
+	{ t = 0.85, w = 1 },
+	{ t = 1.1, ease = "in", w = 0 },
+}
+
+local function aimArm(character: Model, aimAt: Vector3)
+	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local upper = character:FindFirstChild("RightUpperArm") :: BasePart?
+	if not root or not upper then
+		return
+	end
+	playArm(character, AIM, function(t: number): Vector3
+		-- من الكتف باتجاه الهدف بطول الذراع تقريباً. الارتداد: ترجع ورا وترتفع شوي بعد الطلقة
+		local shoulder = upper.Position + Vector3.new(0, upper.Size.Y * 0.4, 0)
+		local direction = (aimAt - shoulder).Unit
+		local kick = if t > 0.08 and t < 0.25 then math.sin((t - 0.08) / 0.17 * math.pi) else 0
+		local point = shoulder + direction * (2.2 - kick * 0.5) + Vector3.new(0, kick * 0.35, 0)
+		return root.CFrame:PointToObjectSpace(point)
+	end)
+end
+
+-- سهم ينشاف وهو طاير من فم المسدس لين المكان اللي صابه
+local function decorPart(size: Vector3, color: Color3, material: Enum.Material): Part
+	local part = Instance.new("Part")
+	part.Size = size
+	part.Color = color
+	part.Material = material
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanQuery = false
+	part.CanTouch = false
+	part.CastShadow = false
+	return part
+end
+
+local function flyDart(from: Vector3, to: Vector3)
+	local distance = (to - from).Magnitude
+	if distance < 1 then
+		return
+	end
+	local look = CFrame.lookAt(from, to)
+	local dart = decorPart(Vector3.new(0.12, 0.12, 0.7), Color3.fromRGB(200, 205, 215), Enum.Material.Metal)
+	dart.Name = "Dart"
+	dart.CFrame = look
+	local feather = decorPart(Vector3.new(0.3, 0.3, 0.2), Color3.fromRGB(255, 140, 30), Enum.Material.Neon)
+	feather.CFrame = look * CFrame.new(0, 0, 0.4)
+	dart.Parent = Workspace
+	feather.Parent = dart
+	local a0 = Instance.new("Attachment")
+	a0.Position = Vector3.new(0, 0.05, 0.35)
+	a0.Parent = dart
+	local a1 = Instance.new("Attachment")
+	a1.Position = Vector3.new(0, -0.05, 0.35)
+	a1.Parent = dart
+	local trail = Instance.new("Trail")
+	trail.Attachment0 = a0
+	trail.Attachment1 = a1
+	trail.Lifetime = 0.15
+	trail.Color = ColorSequence.new(Color3.fromRGB(255, 190, 120))
+	trail.Transparency = NumberSequence.new(0.3, 1)
+	trail.Parent = dart
+	local time = math.clamp(distance / 260, 0.05, 0.5) * slowScale()
+	local info = TweenInfo.new(time, Enum.EasingStyle.Linear)
+	local finalCFrame = CFrame.lookAt(to, to + look.LookVector)
+	TweenService:Create(dart, info, { CFrame = finalCFrame }):Play()
+	TweenService:Create(feather, info, { CFrame = finalCFrame * CFrame.new(0, 0, 0.4) }):Play()
+	Debris:AddItem(dart, time + 0.6)
 end
 
 local function flash(model: Model)
@@ -468,10 +650,20 @@ Remotes:WaitForChild("Fx").OnClientEvent:Connect(function(kind, ...)
 	end
 end)
 
--- صوت المسدس ووميضه (الخط الأزرق يرسمه HuntClient)
-Remotes:WaitForChild("Shot").OnClientEvent:Connect(function(from)
+-- المسدس: الذراع تصوّب، والسهم يطير من فم المسدس، ووميض وصوت
+Remotes:WaitForChild("Shot").OnClientEvent:Connect(function(from, to, shooter)
 	if typeof(from) ~= "Vector3" then
 		return
+	end
+	if typeof(shooter) == "Instance" and shooter:IsA("Model") and typeof(to) == "Vector3" then
+		aimArm(shooter, to)
+		-- السهم يطلع بعد ما ترتفع اليد
+		task.delay(0.07 * slowScale(), function()
+			local gear = shooter:FindFirstChild("HuntGear")
+			local gun = gear and gear:FindFirstChild("DartGun")
+			local muzzle = gun and gun:FindFirstChild("Muzzle") :: Attachment?
+			flyDart(if muzzle then muzzle.WorldPosition else from, to)
+		end)
 	end
 	local flashPart = Instance.new("Part")
 	flashPart.Shape = Enum.PartType.Ball

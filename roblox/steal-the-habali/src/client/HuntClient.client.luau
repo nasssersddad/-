@@ -221,30 +221,6 @@ messages.OnClientEvent:Connect(function(text)
 	end
 end)
 
--- خط الطلقة
-remote("Shot").OnClientEvent:Connect(function(from, to)
-	if typeof(from) ~= "Vector3" or typeof(to) ~= "Vector3" then
-		return
-	end
-	local length = (to - from).Magnitude
-	if length < 0.5 then
-		return
-	end
-	local tracer = Instance.new("Part")
-	tracer.Anchored = true
-	tracer.CanCollide = false
-	tracer.CanQuery = false
-	tracer.CanTouch = false
-	tracer.CastShadow = false
-	tracer.Material = Enum.Material.Neon
-	tracer.Color = Color3.fromRGB(140, 220, 255)
-	tracer.Size = Vector3.new(0.25, 0.25, length)
-	tracer.CFrame = CFrame.lookAt(from, to) * CFrame.new(0, 0, -length / 2)
-	tracer.Parent = Workspace
-	TweenService:Create(tracer, TweenInfo.new(0.25), { Transparency = 1 }):Play()
-	Debris:AddItem(tracer, 0.3)
-end)
-
 -- لحظة المقاومة: نطحة، والكاميرا تقرّب، والألوان تبهت شوي (slow-mo)
 local busy = false
 remote("Moment").OnClientEvent:Connect(function(focus, push)

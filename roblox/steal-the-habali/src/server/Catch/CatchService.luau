@@ -92,6 +92,7 @@ local function onSwing(player: Player)
 		return
 	end
 	lastSwing[player] = now
+	Gear.Hold(player.Character, "Agal")
 	Net.FireNear("Fx", root.Position, FxConfig.Radius, "Swing", player.Character)
 	local range = CatchConfig.Melee.Range
 
@@ -149,6 +150,7 @@ local function onShoot(player: Player, aim: any)
 		return
 	end
 	lastShot[player] = now
+	Gear.Hold(character, "Gun")
 	local direction = (aim :: Vector3).Unit
 	local origin = head.Position
 	local range = CatchConfig.Gun.Range
@@ -169,7 +171,7 @@ local function onShoot(player: Player, aim: any)
 			report(player, target.Model, "Gun", HabaliService.Damage(target.Model, "Gun", origin))
 		end
 	end
-	Net.FireAll("Shot", origin, hitPoint)
+	Net.FireAll("Shot", origin, hitPoint, character)
 end
 
 -- ===== السحب =====

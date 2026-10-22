@@ -81,6 +81,14 @@ for c in b: h = (h * 31 + c) % 2147483647
 - `start_stop_play false` on the server id stops the game, but the windows stay open. **Test → End Session** closes them all.
 - Checked: each player gets their own car spot and 2 hook habali. Player 2 sees player 1's stun stars and drag dust, can't grab a habali someone else is holding, and gets kicked out of player 1's car seat. The catch banner shows only for the catcher. No errors on the server or either client.
 
+## Phase 4 test tricks (bases, stealing, saving)
+
+- A ProximityPrompt only fires from `InputHoldBegin` after it has been **shown** on that client. Toggle `Enabled` false→true, wait about 1 s with the player within range, then hold for longer than `HoldDuration`.
+- To act like a cheater who forces a prompt on, first pause that client's `PlayerScripts...BaseClient` (`Disabled = true`), because it resets prompt states every 0.5 s. Then the server's own refusal shows up (shield, lock).
+- Knocking down a carrier or dragger takes 3 hits within 6 s. Do all three swings in one `execute_luau` call, or the window resets between calls.
+- To move a car for a test, step it about 14 studs every 0.55 s from the Server datamodel (keep a helper in `_G` within the session). A single big PivotTo trips the anti-teleport check.
+- Saving needs **Experience Settings → Security → Enable Studio Access to API Services**. Without it, DataService runs memory-only and warns. Seed or inspect saves with `DataStoreService:GetDataStore("PlayerData_v1_Studio")` and the key `player_<UserId>` (local test players have negative ids).
+
 ## Screenshots
 
 - `screen_capture` during play shows the **client camera**, and `execute_luau` resets `CameraType` back to Custom. Pin the camera with `RunService:BindToRenderStep("ShotCam", Enum.RenderPriority.Camera.Value + 1, fn)`, take the capture, then unbind it (or add a `task.delay` that unbinds it).

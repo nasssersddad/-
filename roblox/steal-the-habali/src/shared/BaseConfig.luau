@@ -34,6 +34,7 @@ BaseConfig.Steal = {
 BaseConfig.Revenge = {
 	Time = 60,
 	BonusSeconds = 120, -- البونص = دخل الهبالي المسترجع لهالمدة
+	PairCooldown = 600, -- بونص واحد بس من نفس الحرامي كل 10 دقايق (ضد ربع يسرقون من بعض)
 }
 
 -- الحفظ

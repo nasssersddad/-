@@ -44,6 +44,7 @@ export type Profile = {
 	Loaded: boolean,
 	Released: boolean,
 	Dirty: boolean,
+	Leaving: boolean?,
 }
 
 local profiles: { [Player]: Profile } = {}
@@ -69,6 +70,10 @@ local function write(profile: Profile, release: boolean): boolean
 			if current.session and current.session.job ~= JOB_ID then
 				lostLock = true
 				return nil -- سيرفر ثاني ماسك اللاعب: ما نكتب
+			end
+			-- حفظ دوري تأخر لين بعد ما طلع اللاعب: ما نرجّع القفل (وإلا السيرفر الجاي ينتظر)
+			if not release and profile.Released then
+				return nil
 			end
 			return {
 				version = dataConfig.Version,
@@ -190,6 +195,18 @@ function DataService.BeforeRelease(callback: (Player, Profile) -> ())
 	table.insert(beforeRelease, callback)
 end
 
+-- مرة وحدة بس لكل لاعب: لما السيرفر يقفل ينادي BindToClose و PlayerRemoving الاثنين،
+-- ولو انعادت الحمولة تنحسب مرتين وتتكرر في القاعدة
+local function runBeforeRelease(player: Player, profile: Profile)
+	if profile.Leaving then
+		return
+	end
+	profile.Leaving = true
+	for _, callback in beforeRelease do
+		pcall(callback, player, profile)
+	end
+end
+
 function DataService.AddMoney(player: Player, amount: number): boolean
 	local profile = DataService.Get(player)
 	if not profile or amount ~= amount or math.abs(amount) == math.huge then
@@ -231,9 +248,7 @@ function DataService.Start()
 	Players.PlayerRemoving:Connect(function(player)
 		local profile = profiles[player]
 		if profile then
-			for _, callback in beforeRelease do
-				pcall(callback, player, profile)
-			end
+			runBeforeRelease(player, profile)
 		end
 		release(player)
 	end)
@@ -256,9 +271,7 @@ function DataService.Start()
 		for player, profile in profiles do
 			pending += 1
 			task.spawn(function()
-				for _, callback in beforeRelease do
-					pcall(callback, player, profile)
-				end
+				runBeforeRelease(player, profile)
 				release(player)
 				pending -= 1
 			end)

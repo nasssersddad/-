@@ -179,13 +179,24 @@ local function markRevenge(victimUserId: number, thief: Player)
 	end
 end
 
--- لو هذا رجّع شي من اللي سرقه خلال الوقت: بونص
+-- آخر مرة أخذ فيها هاللاعب بونص ثأر من هالحرامي. بدونه اثنين ربع يسرقون من بعض
+-- رايح جاي وياخذون البونص كل مرة (فلوس بلا نهاية)
+local lastRevengeBonus: { [string]: number } = {}
+
+-- لو هذا رجّع شي من اللي سرقه خلال الوقت: بونص (مرة وحدة لكل حرامي كل PairCooldown)
 local function checkRevenge(player: Player, fromUserId: number, entry: Entry)
 	if player:GetAttribute("RevengeTarget") == fromUserId and now() < (player:GetAttribute("RevengeUntil") or 0) then
-		local bonus = rules.RevengeBonus(entry)
-		DataService.AddMoney(player, bonus)
 		player:SetAttribute("RevengeTarget", nil)
 		player:SetAttribute("RevengeUntil", nil)
+		local pair = player.UserId .. ":" .. fromUserId
+		local last = lastRevengeBonus[pair]
+		if last and now() - last < BaseConfig.Revenge.PairCooldown then
+			Net.Notify(player, "🎯 أخذت ثأرك!")
+			return
+		end
+		lastRevengeBonus[pair] = now()
+		local bonus = rules.RevengeBonus(entry)
+		DataService.AddMoney(player, bonus)
 		Net.Notify(player, "🎯 أخذت ثأرك! بونص +" .. formatMoney(bonus) .. " 💰")
 	end
 end
@@ -505,14 +516,15 @@ local function beforeLeave(player: Player, profile: DataService.Profile)
 	local plot = plotOf[player]
 	local car = CarService.GetCar(player)
 	if plot and car then
+		-- ننقلها من السيارة للقاعدة (مو ننسخها)، عشان محد يسرقها من الحوض بعدين وتتكرر
 		for i = #car.Cargo, 1, -1 do
-			local entry = HabaliFactory.EntryOf(car.Cargo[i])
-			if entry then
-				local index = rules.FirstFreeSlot(plot.Entries)
-				if index then
-					plot.Entries[index] = entry
-				end
+			local model = car.Cargo[i]
+			local entry = HabaliFactory.EntryOf(model)
+			local index = rules.FirstFreeSlot(plot.Entries)
+			if entry and index then
+				plot.Entries[index] = entry
 			end
+			CarService.RemoveCargo(car, model)
 		end
 	end
 	local item = Carry.Take(player)

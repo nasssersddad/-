@@ -233,7 +233,8 @@ function CarService.Start()
 		Net.FireNear("Fx", car.Chassis.Position, FxConfig.Radius, "Horn", car.Model)
 	end)
 	Players.PlayerRemoving:Connect(function(player)
-		destroyCar(player)
+		-- بعد ما ينقل الحفظ الحمولة للقاعدة (BeforeRelease)، مو قبله
+		task.defer(destroyCar, player)
 		lastSpawn[player] = nil
 		lastHorn[player] = nil
 	end)

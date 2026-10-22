@@ -54,7 +54,7 @@ for _, zone in MapConfig.Zones do
 	check(HabaliConfig.RarityColors[zone.Id] ~= nil, "no colour for " .. zone.Id)
 	total += HabaliConfig.Caps[zone.Id] or 0
 end
-check(total == 28, "caps should total 28, got " .. total)
+check(total == 26, "caps should total 26, got " .. total)
 
 -- مشوار وحد ما يقدر يقفز من جهة الطريق للجهة الثانية
 check(wander.RoadClearance * 2 > wander.StepMax, "road clearance too small for StepMax")

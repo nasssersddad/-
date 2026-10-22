@@ -16,10 +16,11 @@ export type Variant = {
 local HabaliConfig = {}
 
 -- كم هبالي عايشين بنفس الوقت في كل طبقة (لكل سيرفر)
-HabaliConfig.Caps = { Common = 14, Rare = 8, VeryRare = 4, Legendary = 2 } :: { [string]: number }
+-- الأسطوري واحد بس في السيرفر، والكل يتسابق عليه (اتفقنا 2026-10-22، docs/ECONOMY.md)
+HabaliConfig.Caps = { Common = 14, Rare = 8, VeryRare = 3, Legendary = 1 } :: { [string]: number }
 
 -- لما واحد ينشال (ينصاد)، بعد كم ثانية يطلع بداله
-HabaliConfig.RespawnDelay = { Common = 10, Rare = 20, VeryRare = 40, Legendary = 60 } :: { [string]: number }
+HabaliConfig.RespawnDelay = { Common = 10, Rare = 30, VeryRare = 180, Legendary = 600 } :: { [string]: number }
 
 -- سرعة المشي بالـ stud في الثانية (الأندر أسرع شوي)
 HabaliConfig.WalkSpeed = { Common = 5, Rare = 6, VeryRare = 7, Legendary = 8 } :: { [string]: number }

@@ -102,7 +102,8 @@ for c in b: h = (h * 31 + c) % 2147483647
 
 ## Avatar joints
 
-- Studio uses the new avatar joints: `RightUpperArm.RightShoulder` is an **AnimationConstraint**, not a Motor6D, and its `C0` is read-only. To animate it in code, write `Transform` every frame in RenderStepped (see `swingArm` in FxClient). Support both classes.
+- Studio uses the new avatar joints: `RightUpperArm.RightShoulder` is an **AnimationConstraint**, not a Motor6D, and its `C0` is read-only. **Writing `Transform` has no visible effect** (checked 2026-10-22: a 150° write every frame did nothing), so the old swing never showed. Move limbs with an **IKControl** on the Humanoid (ChainRoot `RightUpperArm`, EndEffector `RightHand`, Target = an Attachment on HumanoidRootPart you move each frame; +X right, +Y up, -Z forward). See `playArm` in FxClient.
+- Gear meshes are in `ServerStorage.GearMeshes` (Agal, DartGun) in the place file, not in Rojo. Press Ctrl+S or they are lost. For screenshots of the gun, the server swaps back to the agal 2.5 s after a shot; pin `DartGun.Transparency = 0` from the Server datamodel while capturing.
 
 ## Physics notes (car and drag)
 

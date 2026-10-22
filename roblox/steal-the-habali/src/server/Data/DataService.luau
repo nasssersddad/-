@@ -79,6 +79,9 @@ local function write(profile: Profile, release: boolean): boolean
 				version = dataConfig.Version,
 				money = record.money,
 				base = record.base,
+				gear = record.gear,
+				fuel = record.fuel,
+				jerries = record.jerries,
 				session = if release then nil else { job = JOB_ID, time = os.time() },
 			}
 		end)
@@ -214,6 +217,22 @@ function DataService.AddMoney(player: Player, amount: number): boolean
 	end
 	local record = profile.Record
 	record.money = math.clamp(math.floor(record.money + amount), 0, dataConfig.MaxMoney)
+	profile.Dirty = true
+	player:SetAttribute("Money", record.money)
+	return true
+end
+
+-- يصرف من فلوسه لو تكفي. يرجّع false (وما ينقص شي) لو ما تكفي
+function DataService.Spend(player: Player, amount: number): boolean
+	local profile = DataService.Get(player)
+	if not profile or amount ~= amount or amount < 0 or math.abs(amount) == math.huge then
+		return false
+	end
+	local record = profile.Record
+	if record.money < amount then
+		return false
+	end
+	record.money -= math.floor(amount)
 	profile.Dirty = true
 	player:SetAttribute("Money", record.money)
 	return true

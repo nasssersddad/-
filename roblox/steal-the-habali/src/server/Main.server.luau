@@ -7,6 +7,8 @@ local CarService = require(Server:WaitForChild("Cars"):WaitForChild("CarService"
 local CatchService = require(Server:WaitForChild("Catch"):WaitForChild("CatchService"))
 local DataService = require(Server:WaitForChild("Data"):WaitForChild("DataService"))
 local BaseService = require(Server:WaitForChild("Base"):WaitForChild("BaseService"))
+local Loadout = require(Server:WaitForChild("Shop"):WaitForChild("Loadout"))
+local ShopService = require(Server:WaitForChild("Shop"):WaitForChild("ShopService"))
 
 -- الحفظ أول: لازم يمسك "طلوع اللاعب" قبل السيارات عشان الحمولة تنحفظ قبل ما تنمسح السيارة
 DataService.Start()
@@ -14,3 +16,5 @@ HabaliService.Start()
 CarService.Start()
 BaseService.Start()
 CatchService.Start()
+Loadout.Start()
+ShopService.Start()

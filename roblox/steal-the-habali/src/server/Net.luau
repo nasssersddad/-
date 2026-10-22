@@ -6,9 +6,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Net = {}
 
 -- من اللاعب للسيرفر
-local CLIENT_EVENTS = { "Swing", "Shoot", "Release", "SpawnCar", "Horn" }
+local CLIENT_EVENTS = { "Swing", "Shoot", "Release", "SpawnCar", "Horn", "ShopBuy", "ShopSell", "ShopFuel", "ShopJerry" }
 -- من السيرفر للاعب
-local SERVER_EVENTS = { "Notify", "Moment", "Shot", "Fx" }
+local SERVER_EVENTS = { "Notify", "Moment", "Shot", "Fx", "ShopOpen" }
 
 -- حد أعلى لكل لاعب في الثانية (حماية من السبام، فوق التبريد حق كل سلاح)
 local MAX_PER_SECOND = 12

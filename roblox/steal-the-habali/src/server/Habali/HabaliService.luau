@@ -41,6 +41,7 @@ type State = {
 
 local rules = HabaliRules.new(MapConfig, HabaliConfig)
 local catchRules = CatchRules.new(CatchConfig)
+local shopRules = require(Shared:WaitForChild("ShopRules")).new(require(Shared:WaitForChild("ShopConfig")), require(Shared:WaitForChild("BaseConfig")))
 local random = Random.new()
 local function rng(): number
 	return random:NextNumber()
@@ -478,12 +479,13 @@ function HabaliService.GetNearby(position: Vector3, range: number): { Nearby }
 end
 
 -- ضربة (عقال أو تنويم). يرجّع "Hit" أو "Stunned"، أو nil لو ما ينفع ينضرب
-function HabaliService.Damage(model: Model, kind: string, from: Vector3): string?
+-- gear (اختياري): عدّة اللاعب، الأقوى ينقص أكثر (ShopRules)
+function HabaliService.Damage(model: Model, kind: string, from: Vector3, gear: any?): string?
 	local state = active[model]
 	if not state or state.Taken or state.StunnedUntil > 0 then
 		return nil
 	end
-	local damage = catchRules.Damage(kind, state.ZoneId)
+	local damage = if gear then shopRules.Damage(gear, kind, state.ZoneId) else catchRules.Damage(kind, state.ZoneId)
 	if damage <= 0 then
 		return nil
 	end

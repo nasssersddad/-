@@ -23,6 +23,7 @@ local BaseService = require(Server:WaitForChild("Base"):WaitForChild("BaseServic
 local BaseConfig = require(Shared:WaitForChild("BaseConfig"))
 local BaseRules = require(Shared:WaitForChild("BaseRules"))
 local HabaliConfig = require(Shared:WaitForChild("HabaliConfig"))
+local Loadout = require(Server:WaitForChild("Shop"):WaitForChild("Loadout"))
 
 local CatchService = {}
 
@@ -129,7 +130,7 @@ local function onSwing(player: Player)
 	local index = catchRules.PickMeleeTarget(root.Position, root.CFrame.LookVector, nearby, range)
 	if index then
 		local target = nearby[index]
-		report(player, target.Model, "Melee", HabaliService.Damage(target.Model, "Melee", root.Position))
+		report(player, target.Model, "Melee", HabaliService.Damage(target.Model, "Melee", root.Position, Loadout.Gear(player)))
 	end
 end
 
@@ -141,7 +142,9 @@ local function onShoot(player: Player, aim: any)
 		return
 	end
 	local now = os.clock()
-	if lastShot[player] and now - lastShot[player] < CatchConfig.Gun.Cooldown then
+	local gear = Loadout.Gear(player)
+	local gun = Loadout.Rules.Level("Gun", gear.Gun)
+	if lastShot[player] and now - lastShot[player] < gun.Cooldown then
 		return
 	end
 	local character, _, humanoid = aliveCharacter(player)
@@ -153,23 +156,36 @@ local function onShoot(player: Player, aim: any)
 	Gear.Hold(character, "Gun")
 	local direction = (aim :: Vector3).Unit
 	local origin = head.Position
-	local range = CatchConfig.Gun.Range
+	local range = gun.Range
 	local nearby = HabaliService.GetNearby(origin, range)
 	local index = catchRules.PickGunTarget(origin, direction, nearby, range, CatchConfig.Gun.AimCone)
-	local hitPoint = origin + direction * range
+	local map = Workspace:FindFirstChild("Map")
+	losParams.FilterDescendantsInstances = if map then { Workspace.Terrain, map } else { Workspace.Terrain }
+	-- لو ما فيه هدف: الطلقة توقف على أول رمل أو جدار في طريقها
+	local ground = Workspace:Raycast(origin, direction * range, losParams)
+	local hitPoint = if ground then ground.Position else origin + direction * range
+	local struck: Model? = nil
 	if index then
 		local target = nearby[index]
 		-- الطلقة ما تمر من الرمل أو الجدران
-		local map = Workspace:FindFirstChild("Map")
-		losParams.FilterDescendantsInstances = if map then { Workspace.Terrain, map } else { Workspace.Terrain }
 		local toTarget = target.Position - origin
 		local blocked = Workspace:Raycast(origin, toTarget, losParams)
 		if blocked and (blocked.Position - origin).Magnitude < toTarget.Magnitude - 3 then
 			hitPoint = blocked.Position
 		else
 			hitPoint = target.Position
-			report(player, target.Model, "Gun", HabaliService.Damage(target.Model, "Gun", origin))
+			struck = target.Model
+			report(player, target.Model, "Gun", HabaliService.Damage(target.Model, "Gun", origin, gear))
 		end
+	end
+	-- قاذف النعاس: غيمة تنوّم كل اللي حول مكان الطلقة
+	if gun.Cloud > 0 then
+		for _, other in HabaliService.GetNearby(hitPoint, gun.Cloud) do
+			if other.Model ~= struck then
+				report(player, other.Model, "Gun", HabaliService.Damage(other.Model, "Gun", origin, gear))
+			end
+		end
+		Net.FireNear("Fx", hitPoint, FxConfig.Radius * 2, "Cloud", hitPoint, gun.Cloud)
 	end
 	Net.FireAll("Shot", origin, hitPoint, character)
 end
@@ -339,7 +355,7 @@ local function onLoad(player: Player, car: any)
 	if (car.Bed.Position - root.Position).Magnitude > CatchConfig.Car.LoadDistance + 4 then
 		return
 	end
-	local ok, reason = catchRules.CanLoad(car.Load, drag.Rarity, CatchConfig.Car.Capacity, #car.Cargo, CatchConfig.Car.Slots)
+	local ok, reason = catchRules.CanLoad(car.Load, drag.Rarity, car.Capacity, #car.Cargo, #car.Slots)
 	if not ok then
 		local text = REASONS[reason or ""] or "ما يدخل السيارة"
 		Net.Notify(player, string.format(text, rarityNames[drag.Rarity] or drag.Rarity))
@@ -392,7 +408,10 @@ local function setupCollisionGroups()
 end
 
 local function onCharacter(character: Model)
-	task.defer(Gear.Equip, character)
+	local owner = Players:GetPlayerFromCharacter(character)
+	task.defer(function()
+		Gear.Equip(character, if owner then Loadout.Gear(owner) else nil)
+	end)
 	for _, part in character:GetDescendants() do
 		if part:IsA("BasePart") then
 			part.CollisionGroup = PLAYERS_GROUP

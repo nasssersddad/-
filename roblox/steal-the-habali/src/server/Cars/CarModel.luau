@@ -188,9 +188,14 @@ function CarModel.Build(cframe: CFrame, ownerName: string, slots: number): Car
 
 	-- مكان الهبالي في الحوض، وزر "حطه في السيارة"
 	local slotList = {}
+	-- لو أكثر من 5 نصفّهم صفين (الحوض بعد التطوير يشيل لين 10)
+	local columns = if slots > 5 then 2 else 1
+	local rows = math.ceil(slots / columns)
 	for i = 1, slots do
-		local z = 0.4 + (i - 0.5) * (8.1 / slots)
-		local slot = attach("Slot" .. i, chassis, cframe * CFrame.new(0, top + 0.2, z) * CFrame.Angles(0, math.rad(90), 0))
+		local row = math.ceil(i / columns)
+		local x = if columns == 2 then (if i % 2 == 1 then -1.4 else 1.4) else 0
+		local z = 0.4 + (row - 0.5) * (8.1 / rows)
+		local slot = attach("Slot" .. i, chassis, cframe * CFrame.new(x, top + 0.2, z) * CFrame.Angles(0, math.rad(90), 0))
 		table.insert(slotList, slot)
 	end
 	local prompt = Instance.new("ProximityPrompt")

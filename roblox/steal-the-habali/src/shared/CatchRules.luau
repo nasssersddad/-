@@ -54,9 +54,10 @@ function CatchRules.new(config: any)
 		return true, nil
 	end
 
-	function rules.CarSpeed(load: number): number
+	-- maxSpeed (اختياري): سرعة المحرك بعد التطوير
+	function rules.CarSpeed(load: number, maxSpeed: number?): number
 		local car = config.Car
-		return car.MaxSpeed * math.max(car.MinSpeedFactor, 1 - car.SlowPerWeight * load)
+		return (maxSpeed or car.MaxSpeed) * math.max(car.MinSpeedFactor, 1 - car.SlowPerWeight * load)
 	end
 
 	function rules.ShouldResist(rarity: string, roll: number): boolean

@@ -8,6 +8,10 @@ export type Record = {
 	money: number,
 	base: { [string]: Entry }, -- مفتاح نصي "1".."10" (DataStore ما يحب الجداول اللي فيها فراغات)
 	session: { job: string, time: number }?,
+	-- المرحلة 5: ليفلات العدّة والسيارة، والبنزين (stud)، والجوالين. ShopRules ينظفها وقت الاستخدام
+	gear: { [string]: number }?,
+	fuel: number?,
+	jerries: number?,
 }
 
 local BaseRules = {}
@@ -129,6 +133,21 @@ function BaseRules.new(baseConfig: any, habaliConfig: any, mapConfig: any)
 					end
 				end
 			end
+		end
+		if type(raw.gear) == "table" then
+			local gear = {}
+			for key, value in raw.gear do
+				if type(key) == "string" and #key <= 16 and isFinite(value) then
+					gear[key] = math.floor(value)
+				end
+			end
+			record.gear = gear
+		end
+		if isFinite(raw.fuel) then
+			record.fuel = math.max(0, raw.fuel)
+		end
+		if isFinite(raw.jerries) then
+			record.jerries = math.max(0, math.floor(raw.jerries))
 		end
 		if type(raw.session) == "table" and type(raw.session.job) == "string" and isFinite(raw.session.time) then
 			record.session = { job = raw.session.job, time = raw.session.time }

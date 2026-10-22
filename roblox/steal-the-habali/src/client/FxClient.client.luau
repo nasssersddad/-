@@ -636,6 +636,33 @@ task.spawn(function()
 	end
 end)
 
+-- قاذف النعاس: غيمة بنفسجية تكبر وتختفي، وفوقها Zzz
+local function sleepCloud(position: Vector3, radius: number)
+	if typeof(position) ~= "Vector3" or type(radius) ~= "number" or radius <= 0 or radius > 40 then
+		return
+	end
+	local cloud = Instance.new("Part")
+	cloud.Shape = Enum.PartType.Ball
+	cloud.Size = Vector3.one * 2
+	cloud.Anchored = true
+	cloud.CanCollide = false
+	cloud.CanQuery = false
+	cloud.CanTouch = false
+	cloud.CastShadow = false
+	cloud.Material = Enum.Material.ForceField
+	cloud.Color = Color3.fromRGB(170, 120, 255)
+	cloud.Transparency = 0.2
+	cloud.Position = position
+	cloud.Parent = Workspace
+	TweenService:Create(cloud, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = Vector3.one * radius * 2 }):Play()
+	task.delay(0.9, function()
+		TweenService:Create(cloud, TweenInfo.new(0.8), { Transparency = 1 }):Play()
+	end)
+	burst(cloud, Color3.fromRGB(200, 170, 255), 18, 6, SMOKE)
+	play("Gun", cloud, 0.05)
+	Debris:AddItem(cloud, 2)
+end
+
 -- ===== الأحداث من السيرفر =====
 
 Remotes:WaitForChild("Fx").OnClientEvent:Connect(function(kind, ...)
@@ -647,6 +674,8 @@ Remotes:WaitForChild("Fx").OnClientEvent:Connect(function(kind, ...)
 		onCaught(...)
 	elseif kind == "Horn" then
 		onHorn(...)
+	elseif kind == "Cloud" then
+		sleepCloud(...)
 	end
 end)
 

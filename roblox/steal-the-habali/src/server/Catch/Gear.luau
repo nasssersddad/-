@@ -4,7 +4,10 @@
 --   Agal: حلقة مسطحة في XY المحلي (سماكتها على Z).  DartGun: الماسورة على -Z المحلي وفوقه +Y.
 -- لو المجسمات مو موجودة نرجع لقطع بسيطة.
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
+
+local ShopConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("ShopConfig"))
 
 local Gear = {}
 
@@ -55,10 +58,54 @@ local function setVisible(part: Instance?, visible: boolean)
 	end
 end
 
-function Gear.Equip(character: Model)
+-- شكل الليفل لو ما عندنا مجسم خاص فيه: نلوّن المجسم الأساسي (قطعة واحدة)
+local LOOKS: { [string]: { Color: Color3, Material: Enum.Material, Scale: number } } = {
+	Agal2 = { Color = Color3.fromRGB(70, 55, 20), Material = Enum.Material.Fabric, Scale = 1.05 }, -- مقصّب: خيوط ذهبية
+	Slipper = { Color = Color3.fromRGB(40, 140, 220), Material = Enum.Material.Plastic, Scale = 1.0 },
+	Agal4 = { Color = Color3.fromRGB(255, 200, 45), Material = Enum.Material.Foil, Scale = 1.1 }, -- العقال الذهبي
+	DartRifle = { Color = Color3.fromRGB(60, 80, 55), Material = Enum.Material.Metal, Scale = 1.35 },
+	SleepLauncher = { Color = Color3.fromRGB(230, 120, 40), Material = Enum.Material.SmoothPlastic, Scale = 1.5 },
+}
+
+-- المجسم حق الليفل (لو موجود في GearMeshes)، وإلا الأساسي ملوّن بشكل الليفل
+local function meshFor(meshName: string?, baseName: string): BasePart?
+	local exact = meshName and template(meshName)
+	if exact then
+		return exact
+	end
+	local part = template(baseName)
+	local look = meshName and LOOKS[meshName]
+	if part and look then
+		if part:IsA("MeshPart") then
+			part.TextureID = "" -- بدون التكستشر عشان يبان اللون
+		end
+		part.Color = look.Color
+		part.Material = look.Material
+		part.Size *= look.Scale
+	end
+	return part
+end
+
+-- يشيل العدّة القديمة ويركّب حق الليفلات الجديدة (بعد الشراء)
+function Gear.Refresh(character: Model, gear: any)
+	local holding = character:GetAttribute("Holding")
+	local old = character:FindFirstChild("HuntGear")
+	if old then
+		old:Destroy()
+	end
+	Gear.Equip(character, gear)
+	if holding == "Gun" then
+		Gear.Hold(character, "Gun")
+	end
+end
+
+-- gear (اختياري): ليفلات اللاعب من Loadout، عشان يطلع شكل سلاحه
+function Gear.Equip(character: Model, gear: any?)
 	if not character.Parent or character:FindFirstChild("HuntGear") then
 		return
 	end
+	local meleeMesh = gear and ShopConfig.Melee[gear.Melee] and ShopConfig.Melee[gear.Melee].Mesh
+	local gunMesh = gear and ShopConfig.Gun[gear.Gun] and ShopConfig.Gun[gear.Gun].Mesh
 	local hand = (character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm")) :: BasePart?
 	if not hand then
 		return
@@ -73,7 +120,7 @@ function Gear.Equip(character: Model)
 	local grip = CFrame.new(0, -hand.Size.Y / 2, 0)
 
 	-- العقال: نمسكه من فوق ويتدلى، والحلقة في مستوى الضربة (قدام/ورا)
-	local agal = template("Agal")
+	local agal = meshFor(meleeMesh, "Agal")
 	if agal then
 		setup(agal, "Agal")
 		attach(hand, agal, grip * CFrame.Angles(0, math.rad(90), 0) * CFrame.new(0, -agal.Size.Y / 2 + 0.1, 0), folder)
@@ -91,7 +138,7 @@ function Gear.Equip(character: Model)
 	bottom.Parent = agal
 
 	-- المسدس: الماسورة على امتداد الذراع، والمقبض في الكف (المقبض ورا وتحت نص المجسم)
-	local gun = template("DartGun")
+	local gun = meshFor(gunMesh, "DartGun")
 	local muzzle = Instance.new("Attachment")
 	muzzle.Name = "Muzzle"
 	if gun then

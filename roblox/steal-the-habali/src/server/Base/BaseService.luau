@@ -301,7 +301,7 @@ function BaseService.LoadCarried(player: Player, car: any): boolean
 	if not item then
 		return false
 	end
-	local ok, reason = catchRules.CanLoad(car.Load, item.Entry.r, CatchConfig.Car.Capacity, #car.Cargo, CatchConfig.Car.Slots)
+	local ok, reason = catchRules.CanLoad(car.Load, item.Entry.r, car.Capacity, #car.Cargo, #car.Slots)
 	if not ok then
 		Net.Notify(player, if reason == "TooHeavy" then "سيارتك ما تشيله! تحتاج سيارة أقوى" else "سيارتك مليانة")
 		return true

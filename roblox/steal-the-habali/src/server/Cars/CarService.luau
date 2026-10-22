@@ -13,6 +13,8 @@ local FxConfig = require(Shared:WaitForChild("FxConfig"))
 local CarModel = require(script.Parent:WaitForChild("CarModel"))
 local HabaliFactory = require(script.Parent.Parent:WaitForChild("Habali"):WaitForChild("HabaliFactory"))
 local Net = require(script.Parent.Parent:WaitForChild("Net"))
+local Loadout = require(script.Parent.Parent:WaitForChild("Shop"):WaitForChild("Loadout"))
+local ShopConfig = require(Shared:WaitForChild("ShopConfig"))
 
 local CarService = {}
 
@@ -24,6 +26,12 @@ type CarState = CarModel.Car & {
 	Load: number,
 	Cargo: { Model },
 	LastPosition: Vector3,
+	-- من عدّة اللاعب (ورشة أبو كفر)
+	MaxSpeed: number,
+	Capacity: number,
+	Tank: number,
+	Fuel: number, -- كم stud باقي
+	EmptySince: number?, -- متى خلص البنزين وهي فاضية من السواق
 }
 
 local cars: { [Player]: CarState } = {}
@@ -74,7 +82,10 @@ local function applyInput(car: CarState)
 	local seat = car.Seat
 	local throttle = math.clamp(seat.ThrottleFloat, -1, 1)
 	local steer = math.clamp(seat.SteerFloat, -1, 1)
-	local speed = catchRules.CarSpeed(car.Load)
+	if car.Fuel <= 0 then
+		throttle = 0 -- خلص البنزين: ما تمشي (الدركسون يلف عادي)
+	end
+	local speed = catchRules.CarSpeed(car.Load, car.MaxSpeed)
 	if throttle < 0 then
 		speed *= carConfig.Reverse
 	end
@@ -116,6 +127,8 @@ local function onOccupant(car: CarState)
 	applyInput(car)
 end
 
+local burnFuel: (CarState, Vector3) -> ()
+
 local function destroyCar(player: Player)
 	local car = cars[player]
 	cars[player] = nil
@@ -143,15 +156,53 @@ local function spawnCar(player: Player)
 	lastSpawn[player] = now
 	destroyCar(player)
 
-	local built = CarModel.Build(parking, player.Name, carConfig.Slots)
+	local maxSpeed, capacity, tank = Loadout.Rules.CarStats(Loadout.Gear(player))
+	local built = CarModel.Build(parking, player.Name, capacity)
 	local car = built :: CarState
 	car.Owner = player
 	car.Load = 0
 	car.Cargo = {}
 	car.LastPosition = car.Chassis.Position
+	car.MaxSpeed = maxSpeed
+	car.Capacity = capacity
+	car.Tank = tank
+	car.Fuel = Loadout.Fuel(player) -- البنزين محفوظ: سيارة جديدة ما تعبّي لك ببلاش
 	car.Model:SetAttribute("OwnerUserId", player.UserId)
 	car.Model:SetAttribute("Load", 0)
-	car.Model:SetAttribute("Capacity", carConfig.Capacity)
+	car.Model:SetAttribute("Capacity", capacity)
+	car.Model:SetAttribute("Tank", tank)
+	car.Model:SetAttribute("Fuel", math.floor(car.Fuel))
+	-- صب جالون (لصاحب السيارة بس، والسيرفر يتحقق)
+	local jerryPrompt = Instance.new("ProximityPrompt")
+	jerryPrompt.Name = "JerryPrompt"
+	jerryPrompt.ActionText = "صب جالون ⛽"
+	jerryPrompt.ObjectText = "البنزين"
+	jerryPrompt.HoldDuration = 1
+	jerryPrompt.MaxActivationDistance = 12
+	jerryPrompt.RequiresLineOfSight = false
+	jerryPrompt.Enabled = false -- الجوال يشغّله لصاحبها لو معه جالون
+	jerryPrompt.Parent = car.Chassis
+	jerryPrompt.Triggered:Connect(function(who)
+		if who ~= car.Owner or car.Seat.Occupant ~= nil then
+			return
+		end
+		local root = who.Character and who.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if not root or (root.Position - car.Chassis.Position).Magnitude > 16 then
+			return
+		end
+		local jerries = Loadout.Jerries(who)
+		if jerries <= 0 then
+			Net.Notify(who, "ما معك جالون. اشتر من أبو فلّة في المحطة")
+			return
+		end
+		if car.Fuel >= car.Tank then
+			Net.Notify(who, "التانكي مليان")
+			return
+		end
+		Loadout.SetJerries(who, jerries - 1)
+		CarService.AddFuel(car, ShopConfig.Fuel.JerryAmount)
+		Net.Notify(who, "⛽ صبّيت جالون")
+	end)
 	car.Model.Parent = folder
 	CarModel.TuneSuspension(car)
 	car.Chassis:SetNetworkOwner(nil)
@@ -182,6 +233,32 @@ local function spawnCar(player: Player)
 	Net.Notify(player, "سيارتك الربع في موقف الديرة 🚙")
 end
 
+-- البنزين: ينقص بالمسافة اللي مشتها (على الأرض بس). لو خلص: توقف، ولو تركها صاحبها
+-- AbandonTime ترجع للديرة فاضية (اللي في الحوض يضيع)
+function burnFuel(car: CarState, position: Vector3)
+	local moved = Vector3.new(position.X - car.LastPosition.X, 0, position.Z - car.LastPosition.Z).Magnitude
+	if car.Seat.Occupant and moved > 0.05 then
+		local before = car.Fuel
+		car.Fuel = Loadout.Rules.Burn(car.Fuel, moved)
+		car.Model:SetAttribute("Fuel", math.floor(car.Fuel))
+		Loadout.SetFuel(car.Owner, car.Fuel)
+		if before > 0 and car.Fuel <= 0 then
+			applyInput(car)
+			Net.Notify(car.Owner, "⛽ خلص البنزين! صب جالون، أو امش للمحطة. انتبه: اللي في الحوض ممكن ينسرق")
+		end
+	end
+	if car.Fuel > 0 or car.Seat.Occupant then
+		car.EmptySince = nil
+		return
+	end
+	car.EmptySince = car.EmptySince or os.clock()
+	if os.clock() - (car.EmptySince :: number) >= ShopConfig.Fuel.AbandonTime then
+		local owner = car.Owner
+		destroyCar(owner)
+		Net.Notify(owner, "🚙 سيارتك رجعت للديرة فاضية (خلص بنزينها). طلّعها من جديد وعبّي")
+	end
+end
+
 -- السيرفر يراقب: لو السيارة أسرع من حدها أو انتقلت فجأة، يرجّعها
 local function watch(dt: number)
 	for _, car in cars do
@@ -189,7 +266,7 @@ local function watch(dt: number)
 		if not chassis.Parent then
 			continue
 		end
-		local limit = catchRules.CarSpeed(car.Load) * carConfig.SpeedTolerance
+		local limit = catchRules.CarSpeed(car.Load, car.MaxSpeed) * carConfig.SpeedTolerance
 		local velocity = chassis.AssemblyLinearVelocity
 		local flat = Vector3.new(velocity.X, 0, velocity.Z)
 		local position = chassis.Position
@@ -205,6 +282,7 @@ local function watch(dt: number)
 			chassis.AssemblyLinearVelocity = flat.Unit * limit + Vector3.new(0, velocity.Y, 0)
 			car.Model:SetAttribute("Violations", (car.Model:GetAttribute("Violations") or 0) + 1)
 		end
+		burnFuel(car, position)
 		car.LastPosition = position
 	end
 end
@@ -248,6 +326,28 @@ end
 
 function CarService.GetCar(player: Player): CarState?
 	return cars[player]
+end
+
+-- يزيد البنزين (من المحطة أو الجالون)، ما يتعدى التانكي
+function CarService.AddFuel(car: CarState, studs: number)
+	car.Fuel = math.min(car.Tank, car.Fuel + math.max(0, studs))
+	car.Model:SetAttribute("Fuel", math.floor(car.Fuel))
+	Loadout.SetFuel(car.Owner, car.Fuel)
+	car.EmptySince = nil
+	applyInput(car)
+end
+
+-- بعد ما يطوّر في الورشة: السرعة والتانكي يتغيرون على طول، والحمولة مع السيارة الجاية
+function CarService.ApplyGear(player: Player)
+	local car = cars[player]
+	if not car then
+		return
+	end
+	local maxSpeed, _, tank = Loadout.Rules.CarStats(Loadout.Gear(player))
+	car.MaxSpeed = maxSpeed
+	car.Tank = tank
+	car.Model:SetAttribute("Tank", tank)
+	applyInput(car)
 end
 
 -- يحط الهبالي في الحوض (الموديل لازم يكون Unanchored وملحوم على Hitbox). يرجّع رقم المكان

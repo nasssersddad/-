@@ -79,9 +79,10 @@ end)
 -- عدّاد حماية المبتدئ
 local shield = Instance.new("TextLabel")
 shield.Name = "Shield"
-shield.AnchorPoint = Vector2.new(0.5, 0)
-shield.Position = UDim2.new(0.5, 0, 0, 112)
-shield.Size = UDim2.fromOffset(230, 24)
+-- فوق يسار تحت أزرار روبلوكس (في النص يتغطى بأزرار الجوال على الشاشات الصغيرة)
+shield.AnchorPoint = Vector2.new(0, 0)
+shield.Position = UDim2.fromOffset(12, 56)
+shield.Size = UDim2.fromOffset(170, 24)
 shield.BackgroundColor3 = Color3.fromRGB(40, 140, 80)
 shield.BackgroundTransparency = 0.2
 shield.TextScaled = true

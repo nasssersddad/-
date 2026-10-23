@@ -166,13 +166,21 @@ local function onPlayerAdded(player: Player)
 	loadedSignal:Fire(player, profile)
 end
 
+-- كم حفظ طلعة شغّال الحين (BindToClose لازم ينتظرهم كلهم، حتى اللي بدأهم PlayerRemoving)
+local releasing = 0
+
 local function release(player: Player)
 	local profile = profiles[player]
 	if not profile or profile.Released then
 		return
 	end
 	profile.Released = true
-	write(profile, true)
+	releasing += 1
+	local ok, err = pcall(write, profile, true)
+	releasing -= 1
+	if not ok then
+		warn("[Data] فشل حفظ الطلعة", player.Name, err)
+	end
 	profiles[player] = nil
 end
 
@@ -297,8 +305,10 @@ function DataService.Start()
 				pending -= 1
 			end)
 		end
+		-- ننتظر حتى حفظ الطلعات اللي بدأت من PlayerRemoving (كانت تنقطع والسيرفر يقفل قبل ما تخلص)
+		task.wait()
 		local deadline = os.clock() + 25
-		while pending > 0 and os.clock() < deadline do
+		while (pending > 0 or releasing > 0) and os.clock() < deadline do
 			task.wait(0.1)
 		end
 	end)

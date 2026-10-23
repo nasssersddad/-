@@ -46,7 +46,8 @@ for rarity, shots in CatchConfig.Gun.ShotsToStun do
 	check(hitsUntilStun("Gun", rarity) == shots, "gun shots for " .. rarity)
 end
 check(rules.Damage("Laser", "Common") == 0, "unknown weapon does nothing")
-check(rules.Damage("Melee", "Infinity") == 0, "unknown rarity does nothing")
+check(rules.Damage("Melee", "Mythic") == 0, "unknown rarity does nothing")
+check(math.abs(rules.Damage("Melee", "Infinity") - 1 / 20) < 1e-9, "infinity takes 20 agal hits")
 -- ضربة عقال + طلقة على نادر مرة: 1/8 + 1/2 = ما يدوخ، وبعدها طلقة ثانية تدوخه
 local h, s = rules.ApplyDamage(1, rules.Damage("Melee", "VeryRare"))
 h, s = rules.ApplyDamage(h, rules.Damage("Gun", "VeryRare"))

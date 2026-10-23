@@ -10,6 +10,8 @@ local BaseService = require(Server:WaitForChild("Base"):WaitForChild("BaseServic
 local Loadout = require(Server:WaitForChild("Shop"):WaitForChild("Loadout"))
 local ShopService = require(Server:WaitForChild("Shop"):WaitForChild("ShopService"))
 local EventService = require(Server:WaitForChild("Events"):WaitForChild("EventService"))
+local Tutorial = require(Server:WaitForChild("Onboarding"):WaitForChild("Tutorial"))
+local Newbie = require(Server:WaitForChild("Onboarding"):WaitForChild("Newbie"))
 
 -- الحفظ أول: لازم يمسك "طلوع اللاعب" قبل السيارات عشان الحمولة تنحفظ قبل ما تنمسح السيارة
 DataService.Start()
@@ -20,3 +22,8 @@ CatchService.Start()
 Loadout.Start()
 ShopService.Start()
 EventService.Start()
+Tutorial.Start()
+Newbie.Start()
+CarService.OnSpawned(function(player)
+	Tutorial.Step(player, "Car")
+end)

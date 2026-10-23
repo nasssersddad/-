@@ -380,12 +380,14 @@ local function spawnHook(player: Player, character: Model)
 	local cx, cz = rules.PointNear("Common", angle, hook.CommonRadius)
 	local common = if cx and cz then spawnAt("Common", cx, cz, { Hook = true, Variant = HabaliConfig.NormalVariant }) else nil
 	if common then
+		common:SetAttribute("HookFor", player.UserId)
 		table.insert(models, common)
 	end
 
 	local rx, rz = rules.PointNear("Rare", angle, hook.RareRadius)
 	local rare = if rx and rz then spawnAt("Rare", rx, rz, { Hook = true, Beam = hook.BeamHeight }) else nil
 	if rare then
+		rare:SetAttribute("HookFor", player.UserId)
 		table.insert(models, rare)
 		-- بعيد عن اللاعب (أبعد من مدى التحميل)، فنخليه محمّل عنده دايم عشان يشوفه
 		rare.ModelStreamingMode = Enum.ModelStreamingMode.PersistentPerPlayer

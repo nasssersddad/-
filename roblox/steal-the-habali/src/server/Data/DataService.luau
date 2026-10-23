@@ -82,6 +82,8 @@ local function write(profile: Profile, release: boolean): boolean
 				gear = record.gear,
 				fuel = record.fuel,
 				jerries = record.jerries,
+				tutorial = record.tutorial,
+				playtime = record.playtime,
 				session = if release then nil else { job = JOB_ID, time = os.time() },
 			}
 		end)

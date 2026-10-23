@@ -25,6 +25,8 @@ local BaseRules = require(Shared:WaitForChild("BaseRules"))
 local HabaliConfig = require(Shared:WaitForChild("HabaliConfig"))
 local Loadout = require(Server:WaitForChild("Shop"):WaitForChild("Loadout"))
 local Alerts = require(Server:WaitForChild("Events"):WaitForChild("Alerts"))
+local Tutorial = require(Server:WaitForChild("Onboarding"):WaitForChild("Tutorial"))
+local Newbie = require(Server:WaitForChild("Onboarding"):WaitForChild("Newbie"))
 
 local CatchService = {}
 
@@ -81,6 +83,7 @@ local function report(player: Player, model: Model, kind: string, result: string
 	end
 	if result == "Stunned" then
 		Net.Notify(player, "💫 دوّخته! قرّب واضغط اسحب")
+		Tutorial.Step(player, "Stun")
 	end
 end
 
@@ -112,6 +115,10 @@ local function onSwing(player: Player)
 	local victimIndex = catchRules.PickMeleeTarget(root.Position, root.CFrame.LookVector, candidates, range)
 	if victimIndex then
 		local victim = victims[victimIndex]
+		if Newbie.IsProtected(victim) then
+			Net.Notify(player, "🛡️ هذا مبتدئ محمي، ما تقدر تطيّح منه شي")
+			return
+		end
 		local dropped
 		hitsOn[victim], dropped = baseRules.RegisterHit(hitsOn[victim] or {}, now)
 		if dropped then
@@ -294,6 +301,11 @@ local function startDrag(player: Player, model: Model, rarity: string, parts: { 
 
 	dragging[player] = { Model = model, Rarity = rarity, Hitbox = hitbox, Welds = welds, Rig = { back, front, rope } }
 	player:SetAttribute("Dragging", model:GetAttribute("HabaliId"))
+	Tutorial.Skip(player, "Stun") -- لو مسك واحد دوّخه غيره
+	Tutorial.Step(player, "Grab")
+	if CarService.GetCar(player) then
+		Tutorial.Skip(player, "Car") -- سيارته طالعة من قبل
+	end
 	model:SetAttribute("DraggedBy", player.UserId)
 	setWalkSpeed(player, CatchConfig.Drag.WalkSpeed[rarity] or CatchConfig.Drag.NormalWalkSpeed)
 	Net.Notify(player, "🪢 اسحبه لسيارتك واضغط: حطه في السيارة")
@@ -374,6 +386,7 @@ local function onLoad(player: Player, car: any)
 		end
 	end
 	HabaliService.Caught(model)
+	Tutorial.Step(player, "Load")
 	Alerts.Habali("Caught", player, { c = model:GetAttribute("Character"), r = drag.Rarity, v = model:GetAttribute("Variant") }, car.Bed.Position)
 	CarService.AddCargo(car, model, drag.Rarity)
 	Net.Notify(player, "✅ صار في سيارتك!")

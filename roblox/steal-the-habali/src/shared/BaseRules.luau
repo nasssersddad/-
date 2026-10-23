@@ -12,6 +12,9 @@ export type Record = {
 	gear: { [string]: number }?,
 	fuel: number?,
 	jerries: number?,
+	-- مهمة أول 3 دقايق خلصت (أو تخطاها)، ووقت اللعب بالثواني (حماية المبتدئ)
+	tutorial: boolean?,
+	playtime: number?,
 }
 
 local BaseRules = {}
@@ -151,6 +154,12 @@ function BaseRules.new(baseConfig: any, habaliConfig: any, mapConfig: any)
 		end
 		if isFinite(raw.jerries) then
 			record.jerries = math.max(0, math.floor(raw.jerries))
+		end
+		if raw.tutorial == true then
+			record.tutorial = true
+		end
+		if isFinite(raw.playtime) then
+			record.playtime = math.max(0, raw.playtime)
 		end
 		if type(raw.session) == "table" and type(raw.session.job) == "string" and isFinite(raw.session.time) then
 			record.session = { job = raw.session.job, time = raw.session.time }

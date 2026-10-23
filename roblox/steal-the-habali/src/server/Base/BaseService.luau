@@ -22,6 +22,8 @@ local HabaliFactory = require(Server:WaitForChild("Habali"):WaitForChild("Habali
 local HabaliModel = require(Server:WaitForChild("Habali"):WaitForChild("HabaliModel"))
 local Carry = require(script.Parent:WaitForChild("Carry"))
 local Alerts = require(Server:WaitForChild("Events"):WaitForChild("Alerts"))
+local Tutorial = require(Server:WaitForChild("Onboarding"):WaitForChild("Tutorial"))
+local Newbie = require(Server:WaitForChild("Onboarding"):WaitForChild("Newbie"))
 
 local BaseService = {}
 
@@ -223,6 +225,10 @@ function stealFromBase(thief: Player, plot: Plot, index: number)
 		Net.Notify(thief, "🛡️ القاعدة محمية، صاحبها برا الديرة")
 		return
 	end
+	if Newbie.IsProtected(owner) then
+		Net.Notify(thief, "🛡️ صاحب القاعدة مبتدئ محمي")
+		return
+	end
 	if rules.IsLocked(now(), plot.LockedUntil) then
 		Net.Notify(thief, "🔒 القاعدة مقفلة")
 		return
@@ -237,6 +243,7 @@ function stealFromBase(thief: Player, plot: Plot, index: number)
 	plot.Entries[index] = nil
 	clearDisplay(plot, index)
 	saveSlots(plot)
+	Newbie.End(thief)
 	markRevenge(owner.UserId, thief)
 	local name = HabaliFactory.DisplayName(entry)
 	Net.Notify(thief, "🦹 سرقت " .. name .. "! حطه في سيارتك وهرّب")
@@ -254,6 +261,10 @@ local function stealFromCar(thief: Player, car: any)
 	if (car.Bed.Position - root.Position).Magnitude > CatchConfig.Car.LoadDistance + 4 then
 		return
 	end
+	if Newbie.IsProtected(car.Owner) then
+		Net.Notify(thief, "🛡️ صاحب السيارة مبتدئ محمي")
+		return
+	end
 	local model = car.Cargo[#car.Cargo]
 	local entry = model and HabaliFactory.EntryOf(model)
 	if not model or not entry then
@@ -263,6 +274,7 @@ local function stealFromCar(thief: Player, car: any)
 		return
 	end
 	CarService.RemoveCargo(car, model)
+	Newbie.End(thief)
 	markRevenge(car.Owner.UserId, thief)
 	local name = HabaliFactory.DisplayName(entry)
 	Net.Notify(thief, "🦹 سرقت " .. name .. " من سيارة " .. car.Owner.DisplayName .. "!")
@@ -284,6 +296,7 @@ function BaseService.CarrierKnockedOut(victim: Player, attacker: Player)
 		checkRevenge(attacker, victim.UserId, item.Entry)
 	elseif not isBusy(attacker) and Carry.Start(attacker, item.Entry, victim.UserId) then
 		Net.Notify(attacker, "🦹 أخذت " .. name .. " منه! حطه في سيارتك")
+		Newbie.End(attacker)
 		local attackerRoot = attacker.Character and attacker.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
 		Alerts.Habali("Stolen", attacker, item.Entry, attackerRoot and attackerRoot.Position)
 		markRevenge(victim.UserId, attacker)
@@ -348,6 +361,7 @@ local function onUnload(player: Player, plot: Plot)
 		Net.Notify(player, "منصاتك مليانة!")
 	else
 		Net.Notify(player, "🏠 نزّلت " .. placed .. " هبالي في قاعدتك")
+		Tutorial.Step(player, "Unload")
 	end
 end
 
@@ -362,6 +376,7 @@ local function onCollect(player: Player, plot: Plot)
 	if DataService.AddMoney(player, amount) then
 		plot.Pending -= amount
 		Net.Notify(player, "💰 +" .. formatMoney(amount))
+		Tutorial.Step(player, "Collect")
 	end
 end
 

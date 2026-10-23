@@ -40,6 +40,7 @@ local lastHorn: { [Player]: number } = {}
 local folder: Folder
 local loadHandler: ((Player, CarState) -> ())? = nil
 local stealHandler: ((Player, CarState) -> ())? = nil
+local carSpawned: ((Player) -> ())? = nil
 
 -- أماكن الموقف: داخل الديرة قدام الفتحات اللي بين القواعد (45° و135°...)،
 -- والسيارة تطالع برا للصحرا من الفتحة. كل فتحة فيها 3 مواقف جنب بعض
@@ -231,6 +232,9 @@ local function spawnCar(player: Player)
 		end)
 	end
 	Net.Notify(player, "سيارتك الربع في موقف الديرة 🚙")
+	if carSpawned then
+		carSpawned(player)
+	end
 end
 
 -- البنزين: ينقص بالمسافة اللي مشتها (على الأرض بس). لو خلص: توقف، ولو تركها صاحبها
@@ -376,6 +380,11 @@ end
 
 function CarService.SetLoadHandler(handler: (Player, CarState) -> ())
 	loadHandler = handler
+end
+
+-- ينادي لما يطلّع لاعب سيارته (المهمة)
+function CarService.OnSpawned(handler: (Player) -> ())
+	carSpawned = handler
 end
 
 function CarService.SetStealHandler(handler: (Player, CarState) -> ())

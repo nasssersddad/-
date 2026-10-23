@@ -15,6 +15,11 @@ export type Record = {
 	-- مهمة أول 3 دقايق خلصت (أو تخطاها)، ووقت اللعب بالثواني (حماية المبتدئ)
 	tutorial: boolean?,
 	playtime: number?,
+	-- المرحلة 7أ: اليومية والمهمات والموسوعة (HooksRules ينظفها وقت الاستخدام)
+	daily: any?,
+	quests: any?,
+	dex: { [string]: boolean }?,
+	dexDone: { [string]: boolean }?,
 }
 
 local BaseRules = {}
@@ -160,6 +165,11 @@ function BaseRules.new(baseConfig: any, habaliConfig: any, mapConfig: any)
 		end
 		if isFinite(raw.playtime) then
 			record.playtime = math.max(0, raw.playtime)
+		end
+		for _, key in { "daily", "quests", "dex", "dexDone" } do
+			if type(raw[key]) == "table" then
+				(record :: any)[key] = raw[key]
+			end
 		end
 		if type(raw.session) == "table" and type(raw.session.job) == "string" and isFinite(raw.session.time) then
 			record.session = { job = raw.session.job, time = raw.session.time }

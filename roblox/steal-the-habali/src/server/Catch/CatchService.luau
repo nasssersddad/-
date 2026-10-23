@@ -27,6 +27,7 @@ local Loadout = require(Server:WaitForChild("Shop"):WaitForChild("Loadout"))
 local Alerts = require(Server:WaitForChild("Events"):WaitForChild("Alerts"))
 local Tutorial = require(Server:WaitForChild("Onboarding"):WaitForChild("Tutorial"))
 local Newbie = require(Server:WaitForChild("Onboarding"):WaitForChild("Newbie"))
+local HooksService = require(Server:WaitForChild("Hooks"):WaitForChild("HooksService"))
 
 local CatchService = {}
 
@@ -387,6 +388,7 @@ local function onLoad(player: Player, car: any)
 	end
 	HabaliService.Caught(model)
 	Tutorial.Step(player, "Load")
+	HooksService.Event(player, "Catch", { Zone = drag.Rarity, Variant = model:GetAttribute("Variant"), Character = model:GetAttribute("Character") })
 	Alerts.Habali("Caught", player, { c = model:GetAttribute("Character"), r = drag.Rarity, v = model:GetAttribute("Variant") }, car.Bed.Position)
 	CarService.AddCargo(car, model, drag.Rarity)
 	Net.Notify(player, "✅ صار في سيارتك!")

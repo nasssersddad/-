@@ -24,6 +24,7 @@ local Carry = require(script.Parent:WaitForChild("Carry"))
 local Alerts = require(Server:WaitForChild("Events"):WaitForChild("Alerts"))
 local Tutorial = require(Server:WaitForChild("Onboarding"):WaitForChild("Tutorial"))
 local Newbie = require(Server:WaitForChild("Onboarding"):WaitForChild("Newbie"))
+local HooksService = require(Server:WaitForChild("Hooks"):WaitForChild("HooksService"))
 
 local BaseService = {}
 
@@ -249,6 +250,7 @@ function stealFromBase(thief: Player, plot: Plot, index: number)
 	Net.Notify(thief, "🦹 سرقت " .. name .. "! حطه في سيارتك وهرّب")
 	Net.Notify(owner, "🚨 " .. thief.DisplayName .. " سرق " .. name .. " من قاعدتك! الحقه 🎯")
 	Alerts.Habali("Stolen", thief, entry, root.Position)
+	HooksService.Event(thief, "Steal")
 	checkRevenge(thief, owner.UserId, entry)
 end
 
@@ -280,6 +282,7 @@ local function stealFromCar(thief: Player, car: any)
 	Net.Notify(thief, "🦹 سرقت " .. name .. " من سيارة " .. car.Owner.DisplayName .. "!")
 	Net.Notify(car.Owner, "🚨 " .. thief.DisplayName .. " سرق " .. name .. " من سيارتك! الحقه 🎯")
 	Alerts.Habali("Stolen", thief, entry, root.Position)
+	HooksService.Event(thief, "Steal")
 	checkRevenge(thief, car.Owner.UserId, entry)
 end
 

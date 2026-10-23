@@ -19,6 +19,7 @@ local HabaliFactory = require(Server:WaitForChild("Habali"):WaitForChild("Habali
 local Carry = require(Server:WaitForChild("Base"):WaitForChild("Carry"))
 local Gear = require(Server:WaitForChild("Catch"):WaitForChild("Gear"))
 local Loadout = require(script.Parent:WaitForChild("Loadout"))
+local HooksService = require(Server:WaitForChild("Hooks"):WaitForChild("HooksService"))
 
 local ShopService = {}
 
@@ -115,6 +116,7 @@ local function onSell(player: Player, what: any)
 		local price = rules.SellPrice(item.Entry.r, item.Entry.v)
 		DataService.AddMoney(player, price)
 		Net.Notify(player, "💰 بعت " .. HabaliFactory.DisplayName(item.Entry) .. " بـ " .. formatMoney(price))
+		HooksService.Event(player, "Sell", { Count = 1 })
 	elseif what == "Cargo" then
 		local car = carNear(player, "Habal")
 		if not car then
@@ -141,6 +143,7 @@ local function onSell(player: Player, what: any)
 		end
 		DataService.AddMoney(player, total)
 		Net.Notify(player, "💰 بعت " .. count .. " هبالي بـ " .. formatMoney(total))
+		HooksService.Event(player, "Sell", { Count = count })
 	end
 end
 
@@ -167,6 +170,7 @@ local function onFuel(player: Player)
 	if DataService.Spend(player, cost) then
 		CarService.AddFuel(car, studs)
 		Net.Notify(player, "⛽ عبّيت بـ " .. formatMoney(cost))
+		HooksService.Event(player, "Refuel")
 	end
 end
 

@@ -30,6 +30,9 @@ function BaseRules.new(baseConfig: any, habaliConfig: any, mapConfig: any)
 	for _, zone in mapConfig.Zones do
 		rarities[zone.Id] = true
 	end
+	for _, special in mapConfig.Specials or {} do
+		rarities[special.Id] = true
+	end
 	variants[habaliConfig.NormalVariant] = true
 	for _, v in habaliConfig.Variants do
 		variants[v.Id] = true

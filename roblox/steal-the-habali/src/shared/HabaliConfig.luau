@@ -17,13 +17,13 @@ local HabaliConfig = {}
 
 -- كم هبالي عايشين بنفس الوقت في كل طبقة (لكل سيرفر)
 -- الأسطوري واحد بس في السيرفر، والكل يتسابق عليه (اتفقنا 2026-10-22، docs/ECONOMY.md)
-HabaliConfig.Caps = { Common = 14, Rare = 8, VeryRare = 3, Legendary = 1 } :: { [string]: number }
+HabaliConfig.Caps = { Common = 14, Rare = 8, VeryRare = 3, Legendary = 1, Infinity = 0 } :: { [string]: number } -- الإنفنتي يطلّعه EventService بس
 
 -- لما واحد ينشال (ينصاد)، بعد كم ثانية يطلع بداله
-HabaliConfig.RespawnDelay = { Common = 10, Rare = 30, VeryRare = 180, Legendary = 600 } :: { [string]: number }
+HabaliConfig.RespawnDelay = { Common = 10, Rare = 30, VeryRare = 180, Legendary = 600, Infinity = 0 } :: { [string]: number }
 
 -- سرعة المشي بالـ stud في الثانية (الأندر أسرع شوي)
-HabaliConfig.WalkSpeed = { Common = 5, Rare = 6, VeryRare = 7, Legendary = 8 } :: { [string]: number }
+HabaliConfig.WalkSpeed = { Common = 5, Rare = 6, VeryRare = 7, Legendary = 8, Infinity = 9 } :: { [string]: number }
 
 -- لون كل ندرة: الشعبي ما يلمع، والباقي يلمع بلونه
 HabaliConfig.RarityColors = {
@@ -31,10 +31,11 @@ HabaliConfig.RarityColors = {
 	Rare = { 70, 150, 255 },
 	VeryRare = { 185, 85, 255 },
 	Legendary = { 255, 165, 40 },
+	Infinity = { 255, 70, 210 },
 } :: { [string]: { number } }
 
 -- من وين ينقرا اسم الهبالي (بالـ stud)، كل ما أندر ينشاف من أبعد
-HabaliConfig.LabelDistance = { Common = 120, Rare = 250, VeryRare = 350, Legendary = 500 } :: { [string]: number }
+HabaliConfig.LabelDistance = { Common = 120, Rare = 250, VeryRare = 350, Legendary = 500, Infinity = 900 } :: { [string]: number }
 
 -- نسخ خاصة فوق أي ندرة. السيرفر بس يرمي النرد.
 -- الترتيب مهم: الأندر أول (0.5% دايموند، وبعدها 3% ذهبي، والباقي عادي)

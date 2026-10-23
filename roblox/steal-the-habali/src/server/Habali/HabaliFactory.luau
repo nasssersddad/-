@@ -13,8 +13,8 @@ local HabaliFactory = {}
 export type Entry = { c: string, r: string, v: string }
 
 local zones = {}
-for _, zone in MapConfig.Zones do
-	zones[zone.Id] = zone
+for _, rarity in MapConfig.AllRarities() do
+	zones[rarity.Id] = rarity
 end
 local names = {}
 for _, c in HabaliConfig.Characters do

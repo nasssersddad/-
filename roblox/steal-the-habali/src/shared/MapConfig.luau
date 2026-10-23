@@ -173,6 +173,24 @@ MapConfig.MaterialColors = {
 	Concrete = { 196, 190, 178 },
 } :: { [string]: { number } }
 
+-- ندرات خاصة ما لها طبقة لحالها: تمشي داخل طبقة ثانية (الإنفنتي في الربع الخالي).
+-- ما تنبني في الأرض، فـ MapBuilder ما يلمسها
+MapConfig.Specials = {
+	{ Id = "Infinity", Rarity = "إنفنتي", Zone = "Legendary" },
+}
+
+-- كل الندرات: الطبقات الأربع والخاصة. Zone = الطبقة اللي يمشي فيها
+function MapConfig.AllRarities(): { { Id: string, Rarity: string, Zone: string } }
+	local list = {}
+	for _, zone in MapConfig.Zones do
+		table.insert(list, { Id = zone.Id, Rarity = zone.Rarity, Zone = zone.Id })
+	end
+	for _, special in MapConfig.Specials do
+		table.insert(list, { Id = special.Id, Rarity = special.Rarity, Zone = special.Zone })
+	end
+	return list
+end
+
 function MapConfig.GetLandmark(id: string): Landmark?
 	for _, landmark in MapConfig.Landmarks do
 		if landmark.Id == id then

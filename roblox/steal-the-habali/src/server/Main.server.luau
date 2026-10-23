@@ -9,6 +9,7 @@ local DataService = require(Server:WaitForChild("Data"):WaitForChild("DataServic
 local BaseService = require(Server:WaitForChild("Base"):WaitForChild("BaseService"))
 local Loadout = require(Server:WaitForChild("Shop"):WaitForChild("Loadout"))
 local ShopService = require(Server:WaitForChild("Shop"):WaitForChild("ShopService"))
+local EventService = require(Server:WaitForChild("Events"):WaitForChild("EventService"))
 
 -- الحفظ أول: لازم يمسك "طلوع اللاعب" قبل السيارات عشان الحمولة تنحفظ قبل ما تنمسح السيارة
 DataService.Start()
@@ -18,3 +19,4 @@ BaseService.Start()
 CatchService.Start()
 Loadout.Start()
 ShopService.Start()
+EventService.Start()

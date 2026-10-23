@@ -24,8 +24,8 @@ for _, c in HabaliConfig.Characters do
 	characterNames[c.Id] = c.DisplayName
 end
 local rarityNames: { [string]: string } = {}
-for _, zone in MapConfig.Zones do
-	rarityNames[zone.Id] = zone.Rarity
+for _, rarity in MapConfig.AllRarities() do
+	rarityNames[rarity.Id] = rarity.Rarity
 end
 local variantInfo: { [string]: any } = {}
 for _, v in HabaliConfig.Variants do

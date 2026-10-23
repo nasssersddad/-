@@ -58,10 +58,17 @@ local started = false
 local grabHandler: ((Player, Model) -> ())? = nil
 
 local zonesById = {}
-for _, zone in MapConfig.Zones do
-	zonesById[zone.Id] = zone
-	alive[zone.Id] = 0
-	pending[zone.Id] = 0
+for _, rarity in MapConfig.AllRarities() do
+	zonesById[rarity.Id] = rarity
+	alive[rarity.Id] = 0
+	pending[rarity.Id] = 0
+end
+
+-- العاصفة الرملية: تضرب عدد النادر وفوق، وفرصة الذهبي والدايموند
+local boost = { Caps = 1, Variants = 1 }
+local function capOf(zoneId: string): number
+	local base = HabaliConfig.Caps[zoneId] or 0
+	return if zoneId == "Common" then base else math.floor(base * boost.Caps + 0.5)
 end
 local charactersById = {}
 for _, character in HabaliConfig.Characters do
@@ -149,7 +156,7 @@ local function spawnAt(zoneId: string, x: number, z: number, options: SpawnOptio
 		return nil
 	end
 	local zone = zonesById[zoneId]
-	local variantId = opts.Variant or rules.RollVariant(rng)
+	local variantId = opts.Variant or rules.RollVariant(rng, boost.Variants)
 	local variant = variantsById[variantId]
 	local character = charactersById[rules.PickCharacter(rng)]
 
@@ -222,7 +229,7 @@ local function spawnAt(zoneId: string, x: number, z: number, options: SpawnOptio
 end
 
 function spawnRegular(zoneId: string)
-	if alive[zoneId] + pending[zoneId] >= HabaliConfig.Caps[zoneId] then
+	if alive[zoneId] + pending[zoneId] >= capOf(zoneId) then
 		return
 	end
 	for _ = 1, 10 do
@@ -595,6 +602,53 @@ function HabaliService.SetGrabHandler(handler: (Player, Model) -> ())
 end
 
 -- كم هبالي عايشين في كل طبقة (بدون الهوك)
+-- العاصفة الرملية تبدأ (caps = 2، variants = 3) أو تخلص (1، 1). الزيادة تطلع على طول،
+-- ولما تخلص اللي زيادة يبقون لين ينصادون (وما يطلع بدالهم)
+function HabaliService.SetBoost(caps: number, variants: number)
+	boost.Caps = caps
+	boost.Variants = variants
+	if not started then
+		return
+	end
+	for _, zone in MapConfig.Zones do
+		local missing = capOf(zone.Id) - alive[zone.Id] - pending[zone.Id]
+		for _ = 1, missing do
+			spawnRegular(zone.Id)
+		end
+	end
+end
+
+-- يطلّع هبالي خاص (الإنفنتي) قريب من نقطة على زاوية ومسافة من النص، وفوقه عمود نور
+function HabaliService.SpawnSpecial(rarityId: string, angle: number, radius: number, beam: number?): Model?
+	if not started or not zonesById[rarityId] then
+		return nil
+	end
+	for try = 0, 30 do
+		-- نلف شوي يمين ويسار لين نلقى مكان يصلح
+		local offset = math.rad(math.ceil(try / 2) * 2) * (if try % 2 == 0 then 1 else -1)
+		local x, z = rules.PointNear(rarityId, angle + offset, radius)
+		if x and z then
+			local model = spawnAt(rarityId, x, z, { Beam = beam })
+			if model then
+				alive[rarityId] += 1
+				return model
+			end
+		end
+	end
+	return nil
+end
+
+-- لسا في الصحراء (حر أو ممسوك بالحبل)، مو انصاد ولا انمسح
+function HabaliService.IsActive(model: Model): boolean
+	return active[model] ~= nil
+end
+
+-- الهبالي حر في الصحراء؟ (مو ممسوك ولا انصاد)
+function HabaliService.IsFree(model: Model): boolean
+	local state = active[model]
+	return state ~= nil and not state.Taken
+end
+
 function HabaliService.GetCounts(): { [string]: number }
 	return table.clone(alive)
 end

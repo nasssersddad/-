@@ -9,17 +9,17 @@ export type Level = { [string]: any }
 
 -- الضرب: Hits = كم ضربة لين يدوخ (شعبي / نادر / نادر مرة / أسطوري)
 ShopConfig.Melee = {
-	{ Name = "عقال", Price = 0, Mesh = "Agal", Hits = { Common = 3, Rare = 5, VeryRare = 8, Legendary = 12 } },
-	{ Name = "عقال مقصّب", Price = 2_000, Mesh = "Agal2", Hits = { Common = 2, Rare = 4, VeryRare = 6, Legendary = 8 } },
-	{ Name = "شبشب أم فهد", Price = 60_000, Mesh = "Slipper", Hits = { Common = 2, Rare = 3, VeryRare = 4, Legendary = 6 } },
-	{ Name = "العقال الذهبي", Price = 2_500_000, Mesh = "Agal4", Hits = { Common = 1, Rare = 2, VeryRare = 3, Legendary = 4 } },
+	{ Name = "عقال", Price = 0, Mesh = "Agal", Hits = { Common = 3, Rare = 5, VeryRare = 8, Legendary = 12, Infinity = 20 } },
+	{ Name = "عقال مقصّب", Price = 2_000, Mesh = "Agal2", Hits = { Common = 2, Rare = 4, VeryRare = 6, Legendary = 8, Infinity = 14 } },
+	{ Name = "شبشب أم فهد", Price = 60_000, Mesh = "Slipper", Hits = { Common = 2, Rare = 3, VeryRare = 4, Legendary = 6, Infinity = 10 } },
+	{ Name = "العقال الذهبي", Price = 2_500_000, Mesh = "Agal4", Hits = { Common = 1, Rare = 2, VeryRare = 3, Legendary = 4, Infinity = 7 } },
 } :: { Level }
 
 -- التنويم: Shots = كم طلقة لين ينام. Cloud = نص قطر الغيمة (تنوّم كل اللي فيها)
 ShopConfig.Gun = {
-	{ Name = "مسدس تنويم", Price = 0, Mesh = "DartGun", Range = 120, Cooldown = 2.5, Cloud = 0, Shots = { Common = 1, Rare = 1, VeryRare = 2, Legendary = 3 } },
-	{ Name = "بندقية تنويم", Price = 15_000, Mesh = "DartRifle", Range = 200, Cooldown = 2.0, Cloud = 0, Shots = { Common = 1, Rare = 1, VeryRare = 2, Legendary = 2 } },
-	{ Name = "قاذف النعاس", Price = 900_000, Mesh = "SleepLauncher", Range = 150, Cooldown = 3.5, Cloud = 12, Shots = { Common = 1, Rare = 1, VeryRare = 1, Legendary = 2 } },
+	{ Name = "مسدس تنويم", Price = 0, Mesh = "DartGun", Range = 120, Cooldown = 2.5, Cloud = 0, Shots = { Common = 1, Rare = 1, VeryRare = 2, Legendary = 3, Infinity = 5 } },
+	{ Name = "بندقية تنويم", Price = 15_000, Mesh = "DartRifle", Range = 200, Cooldown = 2.0, Cloud = 0, Shots = { Common = 1, Rare = 1, VeryRare = 2, Legendary = 2, Infinity = 4 } },
+	{ Name = "قاذف النعاس", Price = 900_000, Mesh = "SleepLauncher", Range = 150, Cooldown = 3.5, Cloud = 12, Shots = { Common = 1, Rare = 1, VeryRare = 1, Legendary = 2, Infinity = 3 } },
 } :: { Level }
 
 -- ورشة أبو كفر

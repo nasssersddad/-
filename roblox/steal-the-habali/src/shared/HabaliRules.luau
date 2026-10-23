@@ -12,7 +12,7 @@ export type Rules = {
 	SamplePoint: (zoneId: string, rng: Rng) -> (number?, number?),
 	WanderTarget: (x: number, z: number, zoneId: string, rng: Rng) -> (number?, number?),
 	PointNear: (zoneId: string, angle: number, radius: number) -> (number?, number?),
-	RollVariant: (rng: Rng) -> string,
+	RollVariant: (rng: Rng, multiplier: number?) -> string,
 	PickCharacter: (rng: Rng) -> string,
 }
 
@@ -39,6 +39,10 @@ function HabaliRules.new(mapConfig: any, habaliConfig: any): Rules
 	local zonesById = {}
 	for _, zone in mapConfig.Zones do
 		zonesById[zone.Id] = zone
+	end
+	-- الندرات الخاصة تمشي بحدود طبقتها
+	for _, special in mapConfig.Specials or {} do
+		zonesById[special.Id] = zonesById[special.Zone]
 	end
 
 	local function isAllowed(x: number, z: number, zoneId: string): boolean
@@ -125,11 +129,12 @@ function HabaliRules.new(mapConfig: any, habaliConfig: any): Rules
 		return nil, nil
 	end
 
-	local function rollVariant(rng: Rng): string
+	-- multiplier (اختياري): العاصفة الرملية تضرب الفرص (×3)
+	local function rollVariant(rng: Rng, multiplier: number?): string
 		local roll = rng()
 		local total = 0
 		for _, variant in habaliConfig.Variants do
-			total += variant.Chance
+			total += variant.Chance * (multiplier or 1)
 			if roll < total then
 				return variant.Id
 			end

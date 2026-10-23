@@ -7,7 +7,7 @@ local BaseConfig = {}
 BaseConfig.Slots = 10 -- منصات العرض في كل قاعدة
 
 -- الدخل بالثانية لكل هبالي على منصة، والنسخ الخاصة تضرب فيه
-BaseConfig.Income = { Common = 1, Rare = 4, VeryRare = 15, Legendary = 50 } :: { [string]: number }
+BaseConfig.Income = { Common = 1, Rare = 4, VeryRare = 15, Legendary = 50, Infinity = 300 } :: { [string]: number }
 BaseConfig.VariantMultiplier = { Normal = 1, Gold = 3, Diamond = 10 } :: { [string]: number }
 
 -- الفلوس تتجمع في القاعدة لين ترجع تاخذها، بس لها حد (كم ثانية من الدخل)

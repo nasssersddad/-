@@ -24,6 +24,7 @@ local BaseConfig = require(Shared:WaitForChild("BaseConfig"))
 local BaseRules = require(Shared:WaitForChild("BaseRules"))
 local HabaliConfig = require(Shared:WaitForChild("HabaliConfig"))
 local Loadout = require(Server:WaitForChild("Shop"):WaitForChild("Loadout"))
+local Alerts = require(Server:WaitForChild("Events"):WaitForChild("Alerts"))
 
 local CatchService = {}
 
@@ -35,8 +36,8 @@ local HABALI_GROUP = "Habali"
 local PLAYERS_GROUP = "Players"
 
 local rarityNames: { [string]: string } = {}
-for _, zone in MapConfig.Zones do
-	rarityNames[zone.Id] = zone.Rarity
+for _, rarity in MapConfig.AllRarities() do
+	rarityNames[rarity.Id] = rarity.Rarity
 end
 
 type Drag = {
@@ -373,6 +374,7 @@ local function onLoad(player: Player, car: any)
 		end
 	end
 	HabaliService.Caught(model)
+	Alerts.Habali("Caught", player, { c = model:GetAttribute("Character"), r = drag.Rarity, v = model:GetAttribute("Variant") }, car.Bed.Position)
 	CarService.AddCargo(car, model, drag.Rarity)
 	Net.Notify(player, "✅ صار في سيارتك!")
 	-- احتفال: قصاصات وصوت للقريبين، وإعلان كبير للي صاده لو نادر وفوق

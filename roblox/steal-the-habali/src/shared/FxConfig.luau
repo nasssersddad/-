@@ -15,6 +15,7 @@ FxConfig.Sounds = {
 	CatchCommon = { Id = 9119323621, Volume = 0.45 }, -- طاخ وهو يطيح في الحوض (Pro Sound Effects)
 	CatchRare = { Id = 9120975564, Volume = 0.3 }, -- جمهور يصارخ (Pro Sound Effects)
 	Horn = { Id = 9114402335, Volume = 0.45 }, -- هرن (Pro Sound Effects)
+	Alert = { Id = 9114402335, Volume = 0.2, Pitch = 1.6 }, -- تنبيه السيرفر: الهرن أحد وأوطى (مؤقت لين نختار صفارة)
 	Engine = { Id = 80317022777602, Volume = 0.2 }, -- محرك (Roblox Resources)
 	Drag = { Id = 9113597177, Volume = 0.35, Pitch = 0.7 }, -- سحب على الأرض (Pro Sound Effects) - عجب صاحب اللعبة
 } :: { [string]: SoundSpec }

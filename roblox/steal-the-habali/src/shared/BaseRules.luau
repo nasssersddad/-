@@ -20,6 +20,10 @@ export type Record = {
 	quests: any?,
 	dex: { [string]: boolean }?,
 	dexDone: { [string]: boolean }?,
+	-- المرحلة 7ب: عدد الإعادات، وأخذ مكافأة الدعوة؟، وكم مرة أخذ مكافأة لأنه دعا أحد
+	rebirths: number?,
+	referral: boolean?,
+	inviteRewards: number?,
 }
 
 local BaseRules = {}
@@ -165,6 +169,15 @@ function BaseRules.new(baseConfig: any, habaliConfig: any, mapConfig: any)
 		end
 		if isFinite(raw.playtime) then
 			record.playtime = math.max(0, raw.playtime)
+		end
+		if isFinite(raw.rebirths) then
+			record.rebirths = math.clamp(math.floor(raw.rebirths), 0, 1000)
+		end
+		if raw.referral == true then
+			record.referral = true
+		end
+		if isFinite(raw.inviteRewards) then
+			record.inviteRewards = math.max(0, math.floor(raw.inviteRewards))
 		end
 		for _, key in { "daily", "quests", "dex", "dexDone" } do
 			if type(raw[key]) == "table" then

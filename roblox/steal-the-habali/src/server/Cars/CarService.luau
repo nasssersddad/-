@@ -14,6 +14,7 @@ local CarModel = require(script.Parent:WaitForChild("CarModel"))
 local HabaliFactory = require(script.Parent.Parent:WaitForChild("Habali"):WaitForChild("HabaliFactory"))
 local Net = require(script.Parent.Parent:WaitForChild("Net"))
 local Loadout = require(script.Parent.Parent:WaitForChild("Shop"):WaitForChild("Loadout"))
+local Friends = require(script.Parent.Parent:WaitForChild("Rivals"):WaitForChild("Friends"))
 local ShopConfig = require(Shared:WaitForChild("ShopConfig"))
 
 local CarService = {}
@@ -218,6 +219,23 @@ local function spawnCar(player: Player)
 	car.Seat:GetPropertyChangedSignal("Occupant"):Connect(function()
 		onOccupant(car)
 	end)
+	-- الراكب: صاحب السيارة أو ربعه بس
+	local passengerSeat = car.Model:FindFirstChild("PassengerSeat") :: Seat?
+	if passengerSeat then
+		passengerSeat:GetPropertyChangedSignal("Occupant"):Connect(function()
+			local occupant = passengerSeat.Occupant
+			local rider = occupant and Players:GetPlayerFromCharacter(occupant.Parent)
+			if occupant and (not rider or not Friends.Are(car.Owner, rider)) then
+				local weld = passengerSeat:FindFirstChild("SeatWeld")
+				if weld then
+					weld:Destroy()
+				end
+				if rider then
+					Net.Notify(rider, "هالسيارة لـ " .. car.Owner.DisplayName .. "، تركب بس لو أنت من ربعه")
+				end
+			end
+		end)
+	end
 	car.LoadPrompt.Triggered:Connect(function(who)
 		if loadHandler then
 			loadHandler(who, car)

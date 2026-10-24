@@ -25,6 +25,7 @@ local Alerts = require(Server:WaitForChild("Events"):WaitForChild("Alerts"))
 local Tutorial = require(Server:WaitForChild("Onboarding"):WaitForChild("Tutorial"))
 local Newbie = require(Server:WaitForChild("Onboarding"):WaitForChild("Newbie"))
 local HooksService = require(Server:WaitForChild("Hooks"):WaitForChild("HooksService"))
+local RivalsService = require(Server:WaitForChild("Rivals"):WaitForChild("RivalsService"))
 
 local BaseService = {}
 
@@ -251,6 +252,7 @@ function stealFromBase(thief: Player, plot: Plot, index: number)
 	Net.Notify(owner, "🚨 " .. thief.DisplayName .. " سرق " .. name .. " من قاعدتك! الحقه 🎯")
 	Alerts.Habali("Stolen", thief, entry, root.Position)
 	HooksService.Event(thief, "Steal")
+	RivalsService.OnSteal(thief, owner.UserId, entry)
 	checkRevenge(thief, owner.UserId, entry)
 end
 
@@ -283,6 +285,7 @@ local function stealFromCar(thief: Player, car: any)
 	Net.Notify(car.Owner, "🚨 " .. thief.DisplayName .. " سرق " .. name .. " من سيارتك! الحقه 🎯")
 	Alerts.Habali("Stolen", thief, entry, root.Position)
 	HooksService.Event(thief, "Steal")
+	RivalsService.OnSteal(thief, car.Owner.UserId, entry)
 	checkRevenge(thief, car.Owner.UserId, entry)
 end
 
@@ -593,7 +596,10 @@ local function tick()
 	for _, plot in plots do
 		local owner = plot.Owner
 		if owner then
-			plot.Pending = rules.AddPending(plot.Pending, rules.TotalIncome(plot.Entries), 1)
+			-- الإعادات والعصابة تضرب الدخل (السيرفر يحسب IncomeMult في RivalsService)
+			local multiplier = owner:GetAttribute("IncomeMult")
+			local income = rules.TotalIncome(plot.Entries) * (if type(multiplier) == "number" then multiplier else 1)
+			plot.Pending = rules.AddPending(plot.Pending, income, 1)
 			plot.PendingLabel.Text = if plot.Pending >= 1 then "💰 " .. formatMoney(plot.Pending) else ""
 			local shielded = shieldedNow(plot)
 			local locked = rules.IsLocked(t, plot.LockedUntil)

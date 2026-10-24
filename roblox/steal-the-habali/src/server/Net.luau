@@ -6,7 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Net = {}
 
 -- من اللاعب للسيرفر
-local CLIENT_EVENTS = { "Swing", "Shoot", "Release", "SpawnCar", "Horn", "ShopBuy", "ShopSell", "ShopFuel", "ShopJerry", "TutorialSkip", "ClaimDaily" }
+local CLIENT_EVENTS = { "Swing", "Shoot", "Release", "SpawnCar", "Horn", "ShopBuy", "ShopSell", "ShopFuel", "ShopJerry", "TutorialSkip", "ClaimDaily", "Rebirth" }
 -- من السيرفر للاعب
 local SERVER_EVENTS = { "Notify", "Moment", "Shot", "Fx", "ShopOpen", "Alert" }
 

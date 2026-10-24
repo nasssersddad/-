@@ -158,7 +158,8 @@ local function onShoot(player: Player, aim: any)
 	end
 	local character, _, humanoid = aliveCharacter(player)
 	local head = character and character:FindFirstChild("Head") :: BasePart?
-	if not character or not head or not humanoid or humanoid.Sit or dragging[player] then
+	local passenger = humanoid ~= nil and humanoid.SeatPart ~= nil and humanoid.SeatPart.Name == "PassengerSeat"
+	if not character or not head or not humanoid or (humanoid.Sit and not passenger) or dragging[player] then
 		return
 	end
 	lastShot[player] = now

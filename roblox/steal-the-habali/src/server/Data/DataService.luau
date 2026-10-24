@@ -88,6 +88,9 @@ local function write(profile: Profile, release: boolean): boolean
 				quests = record.quests,
 				dex = record.dex,
 				dexDone = record.dexDone,
+				rebirths = record.rebirths,
+				referral = record.referral,
+				inviteRewards = record.inviteRewards,
 				session = if release then nil else { job = JOB_ID, time = os.time() },
 			}
 		end)

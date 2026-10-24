@@ -186,6 +186,19 @@ function CarModel.Build(cframe: CFrame, ownerName: string, slots: number): Car
 	seatWeld.Part1 = seat
 	seatWeld.Parent = seat
 
+	-- كرسي الراكب (يمين): لصاحب السيارة وربعه، ويقدر يطلق تنويم وهو راكب
+	local passenger = Instance.new("Seat")
+	passenger.Name = "PassengerSeat"
+	passenger.Size = Vector3.new(2, 1, 2)
+	passenger.CFrame = cframe * CFrame.new(1.4, top + 0.5, -2.8)
+	passenger.Color = DARK
+	passenger.Massless = true
+	passenger.Parent = model
+	local passengerWeld = Instance.new("WeldConstraint")
+	passengerWeld.Part0 = chassis
+	passengerWeld.Part1 = passenger
+	passengerWeld.Parent = passenger
+
 	-- مكان الهبالي في الحوض، وزر "حطه في السيارة"
 	local slotList = {}
 	-- لو أكثر من 5 نصفّهم صفين (الحوض بعد التطوير يشيل لين 10)

@@ -72,6 +72,7 @@ local function label(parent: Instance, text: string, size: UDim2, position: UDim
 	l.Font = font
 	l.TextColor3 = color
 	l.TextScaled = true
+	l.TextWrapped = true -- الإنجليزي أطول: ينزل سطرين بدل ما ينقص
 	l.Text = text
 	l.TextXAlignment = Enum.TextXAlignment.Right -- عربي
 	l.Parent = parent
@@ -138,7 +139,7 @@ local function row(order: number, heading: string, detail: string, buttonText: s
 	frame.Parent = list
 	corner(frame, 12)
 	label(frame, heading, UDim2.new(1, -170, 0, 32), UDim2.fromOffset(10, 6), Enum.Font.GothamBlack, Color3.new(1, 1, 1), 24)
-	label(frame, detail, UDim2.new(1, -170, 0, 30), UDim2.fromOffset(10, 40), Enum.Font.GothamBold, Color3.fromRGB(230, 220, 200), 20)
+	label(frame, detail, UDim2.new(1, -170, 0, 34), UDim2.fromOffset(10, 40), Enum.Font.GothamBold, Color3.fromRGB(230, 220, 200), 20)
 	local button = Instance.new("TextButton")
 	button.Size = UDim2.fromOffset(146, 56)
 	button.Position = UDim2.new(0, 10, 0.5, -28)

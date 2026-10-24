@@ -118,3 +118,9 @@ for c in b: h = (h * 31 + c) % 2147483647
 
 - Wheel `CylindricalConstraint`: Attachment0's X axis = slider (up), with `InclinationAngle = 90`. Attachment1 on the tire must have **X = axle** (`CFrame` = wheel center, no extra rotation). Otherwise the tires lie flat.
 - Dragged habali: the hitbox uses density 0.01 and friction 0, so the player walks at the rarity's WalkSpeed. Heavier settings drag the player down to ~3 studs/s.
+
+## Clicking UI and prompts in play (added 2026-10-24)
+- Click a GUI button in-game (not the PC mouse): `user_mouse_input` with `datamodel_type: "Client"` and `actions: [{action: "mouseButtonClick", mouse_button: "left", instance_path: "LocalPlayer.PlayerGui.HooksGui.DexButton"}]`. Without `datamodel_type` it fails.
+- After teleporting the player with `PivotTo`, the character can sit frozen and nearby prompts never show. Make it walk a step first (`Humanoid:MoveTo` a few studs, wait 2 s), then toggle the prompt and `InputHoldBegin`.
+- Never `PivotTo` a player who is seated in a car: the car gets flung off the map and deleted. Destroy the seat's `SeatWeld` first, and teleport at least 20 studs from the car, or they drop into the passenger seat again.
+- English check: `scan.lua` pattern: walk PlayerGui and Workspace text/prompts and list any text with bytes `[-9]` (Arabic). Studio reports country US and locale en-us, so play starts in English.

@@ -61,14 +61,21 @@ corner(openButton, 12)
 local panel = Instance.new("Frame")
 panel.AnchorPoint = Vector2.new(0.5, 0.5)
 panel.Position = UDim2.fromScale(0.5, 0.5)
-panel.Size = UDim2.fromScale(0.86, 0.8)
+-- مقاس ثابت (المحتوى مرصوص بالبكسل) ونصغّره كله لو الشاشة أصغر منه (جوالات صغيرة)
+local PANEL_SIZE = Vector2.new(520, 340)
+panel.Size = UDim2.fromOffset(PANEL_SIZE.X, PANEL_SIZE.Y)
 panel.BackgroundColor3 = Color3.fromRGB(32, 28, 24)
 panel.Visible = false
 panel.Parent = gui
 corner(panel, 16)
-local limit = Instance.new("UISizeConstraint")
-limit.MaxSize = Vector2.new(520, 400)
-limit.Parent = panel
+local scale = Instance.new("UIScale")
+scale.Parent = panel
+local function fit()
+	local screen = gui.AbsoluteSize
+	scale.Scale = math.min(1, (screen.X - 24) / PANEL_SIZE.X, (screen.Y - 16) / PANEL_SIZE.Y)
+end
+gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit)
+fit()
 
 label(panel, "♻️ إعادة البداية والربع", UDim2.new(1, -80, 0, 36), UDim2.fromOffset(70, 8), Enum.Font.GothamBlack, Color3.fromRGB(255, 225, 120), 26)
 local close = Instance.new("TextButton")

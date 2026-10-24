@@ -40,9 +40,12 @@ local function rebirthsOf(player: Player): number
 end
 
 local function setStat(player: Player, name: string, value: number)
+	-- ممكن نوصل قبل ما BaseService يسوي اللوحة، فنسويها نحن
 	local stats = player:FindFirstChild("leaderstats")
 	if not stats then
-		return
+		stats = Instance.new("Folder")
+		stats.Name = "leaderstats"
+		stats.Parent = player
 	end
 	local v = stats:FindFirstChild(name) :: IntValue?
 	if not v then

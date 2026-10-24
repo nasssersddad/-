@@ -289,6 +289,12 @@ end)
 dexButton.Activated:Connect(function()
 	open(if openPage == "Dex" then nil else "Dex")
 end)
+-- أبو كشتة في الثمامة: تقهوى عنده وتنفتح اليومية (الاستلام نفسه يتحقق منه السيرفر)
+game:GetService("ProximityPromptService").PromptTriggered:Connect(function(prompt)
+	if prompt.Name == "KashtaDaily" then
+		open("Daily")
+	end
+end)
 
 local function refreshDots()
 	dailyButton.Dot.Visible = player:GetAttribute("DailyCanClaim") == true

@@ -100,11 +100,14 @@ function ShopRules.new(shopConfig: any, baseConfig: any)
 		return math.ceil(missing * shopConfig.Fuel.PricePerStud)
 	end
 
-	-- كم تعبّي بفلوسك لو ما تكفي لفل: (كم stud، كم تدفع)
-	function rules.AffordableFuel(fuel: number, tank: number, money: number): (number, number)
+	-- كم تعبّي بفلوسك لو ما تكفي لفل: (كم stud، كم تدفع).
+	-- multiplier للبنزين الغالي (أبو مصلح في البر)
+	function rules.AffordableFuel(fuel: number, tank: number, money: number, multiplier: number?): (number, number)
+		local price = shopConfig.Fuel.PricePerStud * math.max(1, multiplier or 1)
 		local missing = math.max(0, tank - math.max(0, fuel))
-		local studs = math.min(missing, math.floor(math.max(0, money) / shopConfig.Fuel.PricePerStud))
-		return studs, math.ceil(studs * shopConfig.Fuel.PricePerStud)
+		-- الـ 1e-9 عشان كسور الأرقام العشرية ما تنقّص stud أو تزيد ريال
+		local studs = math.min(missing, math.floor(math.max(0, money) / price + 1e-9))
+		return studs, math.ceil(studs * price - 1e-9)
 	end
 
 	-- البنزين بعد ما مشت السيارة مسافة

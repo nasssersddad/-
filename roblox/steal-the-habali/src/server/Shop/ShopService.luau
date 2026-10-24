@@ -2,10 +2,8 @@
 -- وأبو فلّة يعبّي البنزين ويبيع الجوالين.
 -- الجوال يفتح شاشة المحل ويطلب بس ("أبي أشتري كذا")، والسيرفر يتحقق من المسافة والفلوس والليفل.
 
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
-local ServerStorage = game:GetService("ServerStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local ShopConfig = require(Shared:WaitForChild("ShopConfig"))
@@ -20,6 +18,7 @@ local Carry = require(Server:WaitForChild("Base"):WaitForChild("Carry"))
 local Gear = require(Server:WaitForChild("Catch"):WaitForChild("Gear"))
 local Loadout = require(script.Parent:WaitForChild("Loadout"))
 local HooksService = require(Server:WaitForChild("Hooks"):WaitForChild("HooksService"))
+local Npc = require(Server:WaitForChild("World"):WaitForChild("Npc"))
 
 local ShopService = {}
 
@@ -193,9 +192,6 @@ end
 
 -- ===== البياعين =====
 
-local SKIN = Color3.fromRGB(198, 150, 110)
-local THOBE = Color3.fromRGB(245, 245, 240)
-
 local function newPart(name: string, size: Vector3, cframe: CFrame, color: Color3, material: Enum.Material, parent: Instance): Part
 	local part = Instance.new("Part")
 	part.Name = name
@@ -225,92 +221,18 @@ local function signText(part: BasePart, text: string)
 	label.Parent = gui
 end
 
--- بياع بثوب وشماغ وعقال. cframe = مكان الرجلين ويطالع قدام
-local function buildKeeper(shop: any, cframe: CFrame, parent: Instance): Model?
-	local description = Instance.new("HumanoidDescription")
-	description.HeadColor = SKIN
-	description.LeftArmColor = SKIN
-	description.RightArmColor = SKIN
-	description.TorsoColor = THOBE
-	description.LeftLegColor = THOBE
-	description.RightLegColor = THOBE
-	local ok, rig = pcall(function()
-		return Players:CreateHumanoidModelFromDescription(description, Enum.HumanoidRigType.R15)
-	end)
-	if not ok or not rig then
-		warn("[Shop] ما قدرنا نسوي البياع", shop.Id, rig)
-		return nil
+-- بياع بثوب وشماغ وعقال، وزر يفتح محله. cframe = مكان الرجلين ويطالع قدام
+local function buildKeeper(shop: any, cframe: CFrame, parent: Instance)
+	local _, root = Npc.Build({ Name = shop.Name, Title = shop.Title }, cframe, parent)
+	if not root then
+		return
 	end
-	rig.Name = "Keeper"
-	local humanoid = rig:FindFirstChildOfClass("Humanoid") :: Humanoid
-	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
-	local root = rig:FindFirstChild("HumanoidRootPart") :: BasePart
-	root.Anchored = true
-	rig:PivotTo(cframe * CFrame.new(0, humanoid.HipHeight + root.Size.Y / 2, 0))
-	-- الشماغ (أحمر) والعقال الأسود فوقه
-	local head = rig:FindFirstChild("Head") :: BasePart?
-	if head then
-		local shemagh = newPart("Shemagh", Vector3.new(1.5, 0.5, 1.5), head.CFrame * CFrame.new(0, head.Size.Y / 2, 0), Color3.fromRGB(200, 30, 40), Enum.Material.Fabric, rig)
-		shemagh.Anchored = false
-		shemagh.CanCollide = false
-		local cloth = newPart("ShemaghBack", Vector3.new(1.6, 1.6, 0.25), head.CFrame * CFrame.new(0, 0.1, 0.7), Color3.fromRGB(235, 235, 235), Enum.Material.Fabric, rig)
-		cloth.Anchored = false
-		cloth.CanCollide = false
-		for _, piece in { shemagh, cloth } do
-			local weld = Instance.new("WeldConstraint")
-			weld.Part0 = head
-			weld.Part1 = piece
-			weld.Parent = piece
-		end
-		local meshes = ServerStorage:FindFirstChild("GearMeshes")
-		local agal = meshes and meshes:FindFirstChild("Agal")
-		if agal and agal:IsA("BasePart") then
-			local ring = agal:Clone()
-			ring.Size = ring.Size * 0.55
-			ring.Anchored = false
-			ring.CFrame = head.CFrame * CFrame.new(0, head.Size.Y / 2 + 0.25, 0) * CFrame.Angles(math.rad(90), 0, 0)
-			ring.Parent = rig
-			local weld = Instance.new("WeldConstraint")
-			weld.Part0 = head
-			weld.Part1 = ring
-			weld.Parent = ring
-		end
-	end
-	-- الاسم فوق الراس
-	local board = Instance.new("BillboardGui")
-	board.Name = "NameTag"
-	board.Size = UDim2.fromOffset(220, 60)
-	board.StudsOffsetWorldSpace = Vector3.new(0, 3.2, 0)
-	board.MaxDistance = 90
-	board.Adornee = root
-	board.Parent = root
-	for i, text in { shop.Name, shop.Title } do
-		local label = Instance.new("TextLabel")
-		label.Size = UDim2.fromScale(1, 0.5)
-		label.Position = UDim2.fromScale(0, (i - 1) * 0.5)
-		label.BackgroundTransparency = 1
-		label.TextScaled = true
-		label.Font = if i == 1 then Enum.Font.GothamBlack else Enum.Font.GothamBold
-		label.TextColor3 = if i == 1 then Color3.fromRGB(255, 225, 120) else Color3.new(1, 1, 1)
-		label.TextStrokeTransparency = 0.3
-		label.Text = text
-		label.Parent = board
-	end
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.Name = "OpenShop"
-	prompt.ActionText = "افتح المحل"
-	prompt.ObjectText = shop.Name
-	prompt.HoldDuration = 0
-	prompt.MaxActivationDistance = ShopConfig.ShopDistance
-	prompt.RequiresLineOfSight = false
-	prompt.Parent = root
+	local prompt = Npc.Prompt(root, "OpenShop", "افتح المحل", shop.Name, ShopConfig.ShopDistance)
 	prompt.Triggered:Connect(function(player)
 		if nearShop(player, shop.Id) then
 			Net.Fire("ShopOpen", player, shop.Id)
 		end
 	end)
-	rig.Parent = parent
-	return rig
 end
 
 -- كشك صغير (للمحلات اللي ما لها مبنى في الماب)

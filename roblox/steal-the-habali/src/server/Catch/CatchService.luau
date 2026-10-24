@@ -310,7 +310,7 @@ local function startDrag(player: Player, model: Model, rarity: string, parts: { 
 	end
 	model:SetAttribute("DraggedBy", player.UserId)
 	setWalkSpeed(player, CatchConfig.Drag.WalkSpeed[rarity] or CatchConfig.Drag.NormalWalkSpeed)
-	Net.Notify(player, "🪢 اسحبه لسيارتك واضغط: حطه في السيارة")
+	Net.Notify(player, "🚙 اسحبه لسيارتك واضغط: حطه في السيارة")
 end
 
 local function onGrab(player: Player, model: Model)

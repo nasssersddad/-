@@ -371,8 +371,19 @@ local function onUnload(player: Player, plot: Plot)
 	end
 end
 
+-- اللاعب داخل قاعدته؟ (الزر يبان من قريب بس، بس الغشاش يقدر يضغطه من بعيد)
+local function atPlot(player: Player, plot: Plot): boolean
+	local root = rootOf(player)
+	if not root then
+		return false
+	end
+	local localPos = plot.Floor.CFrame:PointToObjectSpace(root.Position)
+	local half = plot.Floor.Size.X / 2 + 12
+	return math.abs(localPos.X) <= half and math.abs(localPos.Z) <= half
+end
+
 local function onCollect(player: Player, plot: Plot)
-	if plot.Owner ~= player then
+	if plot.Owner ~= player or not atPlot(player, plot) then
 		return
 	end
 	local amount = math.floor(plot.Pending)
@@ -387,7 +398,7 @@ local function onCollect(player: Player, plot: Plot)
 end
 
 local function onLock(player: Player, plot: Plot)
-	if plot.Owner ~= player then
+	if plot.Owner ~= player or not atPlot(player, plot) then
 		return
 	end
 	local t = now()

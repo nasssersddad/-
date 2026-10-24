@@ -5,7 +5,7 @@ local OnboardingConfig = {}
 
 -- الخطوات بالترتيب. Id يستخدمه السيرفر (Tutorial.Step)، و Text يطلع للاعب فوق الشاشة
 OnboardingConfig.Steps = {
-	{ Id = "Stun", Text = "اضرب الهبالي بالعقال 🪢" },
+	{ Id = "Stun", Text = "اضرب الهبالي بالعقال 💥" },
 	{ Id = "Grab", Text = "دوّخته! قرّب واضغط اسحب" },
 	{ Id = "Car", Text = "اضغط زر سيارتي 🚙" },
 	{ Id = "Load", Text = "حطه في حوض السيارة" },

@@ -46,7 +46,7 @@ Lang.Words = {
 	["أبو عقيل"] = "Abu Aqeel",
 	["محل العقّال"] = "Agal Shop",
 	["أبو كفر"] = "Abu Kafr",
-	["ورشة أبو كفر 🔧"] = "Abu Kafr's Garage 🔧",
+	["ورشة أبو كفر 🔧"] = "Garage 🔧",
 	["أبو فلّة"] = "Abu Fella",
 	["محطة البنزين ⛽"] = "Gas Station ⛽",
 	["محطة بنزين ⛽"] = "Gas Station ⛽",
@@ -141,7 +141,7 @@ Lang.Words = {
 	["♾️ الإنفنتي هرب! يرجع الجمعة الجاية"] = "♾️ The Infinity escaped! Back next Friday",
 
 	-- أول 3 دقايق
-	["اضرب الهبالي بالعقال 🪢"] = "Hit a Habali with your agal 🪢",
+	["اضرب الهبالي بالعقال 💥"] = "Hit a Habali with your agal 💥",
 	["دوّخته! قرّب واضغط اسحب"] = "It's dizzy! Get close and press Pull",
 	["اضغط زر سيارتي 🚙"] = "Press My Car 🚙",
 	["حطه في حوض السيارة"] = "Put it in the car bed",
@@ -198,7 +198,7 @@ Lang.Words = {
 	["🛡️ هذا مبتدئ محمي، ما تقدر تطيّح منه شي"] = "🛡️ Protected newbie, you can't knock anything off them",
 	["😵 ضربوك وفلت منك الهبالي!"] = "😵 You got hit and dropped the Habali!",
 	["💥 طيّحته! امسك الهبالي"] = "💥 Knocked it loose! Grab the Habali",
-	["🪢 اسحبه لسيارتك واضغط: حطه في السيارة"] = "🪢 Drag it to your car and press: Put in car",
+	["🚙 اسحبه لسيارتك واضغط: حطه في السيارة"] = "🚙 Drag it to your car and press: Put in car",
 	["😤 صحى ونطحك! دوّخه مرة ثانية"] = "😤 It woke up and headbutted you! Stun it again",
 	["ما يدخل السيارة"] = "It won't fit in the car",
 	["فلت منك! لازم تحطه في السيارة وأنت برا"] = "It got away! Load it while you're outside the car",
